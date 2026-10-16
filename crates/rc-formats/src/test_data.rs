@@ -20,6 +20,15 @@ pub fn root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../extracted"))
 }
 
+/// The Going Commando development data root: `RC_EXTRACTED_RAC2` (when set and non-empty), else
+/// `<workspace>/extracted-rac2` (`rerac-extract extract` of an `SCUS_972.68` disc).
+pub fn rac2_root() -> PathBuf {
+    std::env::var_os("RC_EXTRACTED_RAC2")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../extracted-rac2"))
+}
+
 /// `levels/NN` under [`root`].
 pub fn level_dir(level: u32) -> PathBuf { root().join(format!("levels/{level:02}")) }
 

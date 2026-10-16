@@ -46,6 +46,7 @@ pub mod transition;
 pub mod volumes;
 pub mod cameras;
 pub mod pss;
+pub mod rac2;
 pub mod sha1;
 pub mod test_data;
 
