@@ -88,6 +88,22 @@ pub struct JumpBlock {
     /// The vertical speed the jump applied (`0x18a2d0` / `0x18a2d4`).
     pub applied: f32,
     pub pending: f32,
+    /// `0x18a2ce` (s16): the landing ETA in ticks, as the descending animation timing last computed it.
+    pub land_eta: i16,
+    /// `0x18a2bf`: no double jump from this jump (set by the flip 0xb and the scripted jumps).
+    pub no_double: u8,
+    /// `0x18a346` (s16): the ticks before the glide may start.
+    pub f346: i32,
+    /// The flip 0xb: `0x18a2f4` its direction (`0x2c3cf8`: 0 left, 1 right, 2 forward, 3 back), `0x18a2e4` the yaw 10
+    /// ticks before, `0x18a2a0` the forward row, `0x18a2e0` / `0x18a290` the stick's target yaw and direction,
+    /// `0x18a2f8` the ground speed carried (above 0.025), `0x18a2fc` the push along the stick.
+    pub flip_dir: i32,
+    pub flip_yaw: f32,
+    pub flip_fwd: V3,
+    pub flip_target_yaw: f32,
+    pub flip_stick_dir: V3,
+    pub flip_speed: f32,
+    pub flip_push: f32,
 }
 
 /// The hero block. Addresses are L00 (the boot ELF's .bss: the same in every level).
@@ -304,6 +320,12 @@ impl Hero {
         self.seq_timer += 1;
         if self.land_lag != 0 { self.land_lag -= 1; }
         if self.jump.landed != 0 { self.jump.landed = self.jump.landed.saturating_add(1); }
+    }
+
+    /// `0x2ae0e8(n)`: the yaw `n` ticks before the newest in the history (at most 31, at most what it holds).
+    pub fn yaw_ago(&self, n: usize) -> f32 {
+        let k = n.min(31).min(self.yaw_hist_count);
+        self.yaw_hist[(self.yaw_hist_idx + 63 - k) & 31]
     }
 
     /// Write-back to Ratchet's moby: position, Euler angles, rows.

@@ -4,10 +4,10 @@
 //!
 //! Not ported (the branches are noted in place): the sliding floors (`0x18b2b2` → 0x2e / 0x2f, `0x18b2ba` → 0x76),
 //! the look / strafe stance 1 (L1), the weapon stances (`0x2cb1c8`), the idle fidgets and back items, the water
-//! effects, the crouch's own jumps (`0x2cadb0`) and the ledges (0x27).
+//! effects, the crouch's pack jumps (in `0x2cadb0`; its flip and plain jump are ported) and the ledges (0x27).
 
 use super::physics::*;
-use super::states::Entry;
+use super::states::{Entry, FLIP_DIRS};
 use super::Hero;
 use rc_game::hero::anim::AnimCtl;
 use rc_game::pad::button;
@@ -129,6 +129,7 @@ impl Hero {
                     self.set_anim(anim, -2.0, seq, 0);
                     return None;
                 }
+                if self.crouch_jump(anim, env) { return None; }
                 if 9 <= self.air_ticks {
                     if self.prev_state == 8 && self.timer < 0xf { return None; }
                     return Some(6);
@@ -137,6 +138,20 @@ impl Hero {
             }
             _ => None,
         }
+    }
+
+    /// `0x2cadb0`: the crouch's jumps. R1 held, the stick not ahead, ✕ and a direction press within 12 ticks of each
+    /// other (both within 17) → the flip 0xb; after 7 crouched ticks ✕ within 9 → the jump 7 (with the Heli-Pack /
+    /// Thruster-Pack the long jumps 10, 0xd, 0xf, 0x10: not ported, Ratchet has no pack on Aranos's opening).
+    fn crouch_jump(&mut self, anim: &mut dyn AnimCtl, env: &Env) -> bool {
+        let gap = self.flip_gap(env);
+        if env.pad.held & button::R1 != 0 && 0 < gap && env.pad.combo(button::CROSS, FLIP_DIRS, gap + 5, gap) {
+            self.set_state(anim, env, 0xb, true);
+            return true;
+        }
+        if self.timer < 7 || !Self::cross_within(env, 9) { return false; }
+        self.set_state(anim, env, 7, true);
+        true
     }
 
     /// `0x2a9ea8(target, ticks, k, step)`: the playback speed that reaches frame `target` in `ticks` ticks;

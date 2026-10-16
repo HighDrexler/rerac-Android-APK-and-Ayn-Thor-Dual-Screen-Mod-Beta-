@@ -3,7 +3,7 @@
 //! whether the port has it. A state without `ported` freezes the hero ([`super::HeroTick::Unported`]).
 //!
 //! The ids R&C1 also has keep R&C1's meaning where the code shows it (idle 0, walk 2, stop 3, crouch 4, fall 6, jump 7,
-//! run jump 9, long jump 0xb, double jump 0xe); the rest are named by their group or left unnamed until ported.
+//! run jump 9, double jump 0xe; 0xb, R&C1's long jump, is R&C2's crouch flip); the rest are named by their group or left unnamed until ported.
 
 /// The module that owns a state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,7 +14,7 @@ pub enum Module {
     Walk,
     /// `air.rs`: fall 6.
     Air,
-    /// `jump.rs`: the jump group (group 4; ported: 7, 9).
+    /// `jump.rs`: the jump group (group 4; ported: 7, 9, the flip 0xb, the double jump 0xe).
     Jump,
     /// Not ported yet.
     Unported,
@@ -37,8 +37,8 @@ use Module::*;
 pub const STATES: &[StateInfo] = &[
     s(0x00, 0, Ground, true), s(0x01, 0, Unported, false), s(0x02, 1, Walk, true), s(0x03, 1, Ground, true),
     s(0x04, 0xc, Ground, true), s(0x06, 2, Air, true), s(0x07, 4, Jump, true), s(0x08, 5, Unported, false),
-    s(0x09, 4, Jump, true), s(0x0a, 4, Unported, false), s(0x0b, 4, Unported, false), s(0x0c, 4, Unported, false),
-    s(0x0d, 4, Unported, false), s(0x0e, 4, Unported, false), s(0x0f, 4, Unported, false), s(0x10, 4, Unported, false),
+    s(0x09, 4, Jump, true), s(0x0a, 4, Unported, false), s(0x0b, 4, Jump, true), s(0x0c, 4, Unported, false),
+    s(0x0d, 4, Unported, false), s(0x0e, 4, Jump, true), s(0x0f, 4, Unported, false), s(0x10, 4, Unported, false),
     s(0x11, 4, Unported, false), s(0x12, 4, Unported, false), s(0x13, -1, Unported, false), s(0x14, -1, Unported, false),
     s(0x15, -1, Unported, false), s(0x16, 7, Unported, false), s(0x17, 3, Unported, false), s(0x18, 3, Unported, false),
     s(0x19, 3, Unported, false), s(0x1a, 3, Unported, false), s(0x1b, 4, Unported, false), s(0x1c, 9, Unported, false),

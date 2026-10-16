@@ -224,9 +224,12 @@ Ratchet's mesh is the armour's (`rac2::armor`), and his sequences are compressed
 nibble, decoded by `0x313fa8`: `moby_anim::decode_compressed_frame`).
 
 **Done:** idle, walk / run (the walk ↔ run selector `0x2ca358`), stop, crouch, fall with its landings, jump 7 and run
-jump 9 (height ramp, windup, air control `0x2b6cd0` / `0x2b62a0`, landing `0x2cab40`). Engine: crate::rac2_play
-(pad, hero, camera, Ratchet's instance and pose); the follow camera (§6.5). **Not yet:** every other state (long jump 0xb,
-double jump 0xe, wrench, swingshot, gadgets, water, ledges, damage / death), the moby collision of the queries, the
+jump 9 (height ramp, windup, air control `0x2b6cd0` / `0x2b62a0`, landing `0x2cab40`), the double jump 0xe and the
+flip 0xb. R&C2 reuses R&C1's id 0xb (R&C1's long jump) for the crouch flip: R1, a direction and ✕ together, its
+direction picked by `0x2c3cf8`, also chained on landing. R&C2's long jumps (10, 0xd, 0xf, 0x10) need the Heli-Pack or
+Thruster-Pack (`0x2cadb0`), which Ratchet does not have on Aranos's opening. Engine: crate::rac2_play
+(pad, hero, camera, Ratchet's instance and pose); the follow camera (§6.5). **Not yet:** every other state (the pack jumps,
+the wrench, swingshot, gadgets, water, ledges, damage / death), the moby collision of the queries, the
 lighting of Ratchet, his sounds, Clank on his back.
 
 ### 6.5 The follow camera (milestone F, 2026-10-16)

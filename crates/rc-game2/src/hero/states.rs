@@ -12,7 +12,11 @@
 //! Not ported in the shared part: the vehicle / body branches (`0x18c0d4` ≠ 0), the state-change hook `0x2af450`
 //! (sounds, the held item's pose), the Clank / item side effects of the epilogue.
 
-use super::physics::Env;
+use super::physics::{rot_dist, sub_rot, Env, PI};
+use rc_game::pad::button;
+
+/// `0x1f000`: the d-pad and the stick flick, the flip's direction presses.
+pub(super) const FLIP_DIRS: u32 = button::UP | button::RIGHT | button::DOWN | button::LEFT | button::FLICK;
 use super::registry::{module_of, Module};
 use super::Hero;
 use rc_game::hero::anim::AnimCtl;
@@ -89,14 +93,36 @@ impl Hero {
     }
 
     /// `0x330240(0x40, n, 0)`: ✕ pressed within the last `n` ticks.
-    pub fn cross_within(env: &Env, n: i32) -> bool { env.pad.pressed_within(rc_game::pad::button::CROSS, n).is_some() }
+    pub fn cross_within(env: &Env, n: i32) -> bool { env.pad.pressed_within(button::CROSS, n).is_some() }
 
-    /// `0x2ca270(n, no_plain)`: the jump chooser. ✕ within `n` ticks: the long jump 0xb from a crouch (R1 held with the
-    /// combo window `0x2c3cc0`) or a strafing flip — neither ported —, else the plain jump 7 unless `no_plain` (the
-    /// caller picks 7 or 9 itself). Returns whether a jump was set.
+    /// `0x2ca270(n, no_plain)`: the jump chooser. ✕ within `n` ticks: with R1 held and the stick not forward, ✕ and a
+    /// d-pad press or stick flick within 12 ticks of each other (both within `n` + 12) → the flip 0xb; the strafing
+    /// flip (L1 / L2, `0x18b274`) is not ported; else the plain jump 7 unless `no_plain` (the caller picks 7 or 9
+    /// itself). Returns whether a jump was set.
     pub fn try_jump(&mut self, anim: &mut dyn AnimCtl, env: &Env, n: i32, no_plain: bool) -> bool {
         if !Self::cross_within(env, n) { return false; }
+        let gap = self.flip_gap(env);
+        if env.pad.held & button::R1 != 0 && 0 < gap && env.pad.combo(button::CROSS, FLIP_DIRS, n + gap, gap) {
+            return self.set_state(anim, env, 0xb, true);
+        }
         if no_plain { return false; }
         self.set_state(anim, env, 7, true)
     }
+
+    /// `0x2c3cf8`: the stick's direction against the facing, after `0x2b3af8(1, 0)` (strafing: the strafe's own, not
+    /// ported): 3 behind (within 45° of it), 1 right, 0 left, else 2 ahead.
+    pub fn flip_direction(&mut self, env: &Env) -> i32 {
+        self.stick_target(env, 1.0, 0);
+        let d = sub_rot(self.target_yaw, self.rot[2]);
+        let q = std::f32::consts::FRAC_PI_4;
+        if q <= rot_dist(d, PI) {
+            if rot_dist(d, -PI / 2.0) < q { return 1; }
+            if rot_dist(d, PI / 2.0) < q { return 0; }
+            return 2;
+        }
+        3
+    }
+
+    /// `0x2c3cc0`: the flip's press window, 12 ticks, or 0 with the stick ahead (no flip).
+    pub fn flip_gap(&mut self, env: &Env) -> i32 { if self.flip_direction(env) == 2 { 0 } else { 0xc } }
 }
