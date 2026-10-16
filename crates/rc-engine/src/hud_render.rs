@@ -453,6 +453,8 @@ impl UiMaterial for HudComposite {
         if let Some(f) = descriptor.fragment.as_mut() {
             f.entry_point = Some("composite".into());
             f.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
+            // Premultiplied: the additive draws (coverage 0) add (hud.wgsl `composite`).
+            for t in f.targets.iter_mut().flatten() { t.blend = Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING); }
         }
         descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
     }
