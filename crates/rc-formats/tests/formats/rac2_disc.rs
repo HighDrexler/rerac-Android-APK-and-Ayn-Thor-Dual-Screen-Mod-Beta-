@@ -2,7 +2,7 @@
 //! sprites and the boot ELF's tables, against the values read in Ghidra (docs/plan/rac2_bringup.md §5). Skipped
 //! without `extracted-rac2/`.
 
-use rc_formats::rac2::boot::{BootElf, MAIN_MENU};
+use rc_formats::rac2::boot::{BootElf, GLYPHS, MAIN_MENU};
 use rc_formats::rac2::front_end::FrontEnd;
 use rc_formats::rac2::gui_sprite::{self, Prim};
 use rc_formats::rac2::toc::{movie_row, Toc, MISC_FRONT_END};
@@ -34,7 +34,7 @@ fn front_end_and_main_menu() {
     let boot = BootElf::parse(&elf).unwrap();
     let rows = boot.menu(MAIN_MENU).unwrap();
     assert_eq!(rows.iter().map(|r| (r.text, r.kind)).collect::<Vec<_>>(), [(0x2c35, 4), (0x2c2b, 5), (0x2bec, 3)]);
-    let g = boot.glyphs().unwrap();
+    let g = boot.glyphs(GLYPHS).unwrap();
     assert_eq!((g[b'A' as usize].u, g[b'A' as usize].v, g[b'A' as usize].advance), (0, 0, 14));
     assert_eq!((g[b'0' as usize].v, g[b'0' as usize].advance), (0x40, 13));
 }

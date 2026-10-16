@@ -1,6 +1,6 @@
 # R&C2 (Going Commando) bring-up
 
-Status: **started 2026-10-16.** Goal for 0.3.5: Going Commando can be selected, starts, and shows its own main menu.
+Status: **started 2026-10-16; the front end runs (milestones 1–3).** Goal for 0.3.5: Going Commando can be selected, starts, and shows its own main menu.
 New Game says "not yet". Nothing of R&C1 is rewritten for it.
 
 ## 1. Approach
@@ -24,8 +24,12 @@ New Game says "not yet". Nothing of R&C1 is rewritten for it.
 2. **Front-end map (Ghidra).** The boot flow from the boot ELF's entry (0x131ae8) to the main menu: logos and
    movies, the title, the main menu's pages, the game-mode values, and the assets each needs (fonts, menu textures,
    text, background, music).
-3. **Engine boot path.** A game switch in the engine (from the data folder's `extract-info.json`) and an R&C2 front
-   end in `rc-game2`: the logo movie and the main menu.
+3. **Engine boot path (done).** A data folder holding `RC2.HDR` starts Going Commando (`rc-engine` `disc_source::game`,
+   `rac2.rs`); the front end's logic is `rc-game2` (`front_end.rs`, `gui.rs`), its data readers `rc-formats` `rac2/`.
+   The splashes, the Insomniac movie, the title (couch movies, "Press START") and the main menu run and draw through
+   one `hud_render::Layer`. Not yet: any sound (movie audio, menu sounds, music), what the rows open (New Game, Load,
+   Options log "not in this version yet"), the subtitles over movies, PAL / other languages.
+   Run: `RC_DATA_DIR=<repo>/extracted-rac2 cargo dev`.
 4. **Ship.** The launcher lists Going Commando, installs it to `games/rac2`, and starts it on the main menu.
 
 ## 3. Disc facts (SCUS_972.68 v2.00)
@@ -74,7 +78,7 @@ end (0x26ede8); after each run `0x131cb8` copies the code overlay of what was lo
 **Boot sequence** (0x26ede8): wait for the memory card and pad checks; unpack the blob; splash 10 fades in
 (`0x26ea00`: 0x80 → 0 in steps of 2), 45 frames; fade 30; splash 11; sound and text set up; then movie 0xb2 (the
 Insomniac logo) plays (`0x2894c8(0x1bacc0, 0xb2)`) and the game-mode loop starts with the idle counter at 0x708. So
-the first mode-0 frame starts the **title**: the attract playlist (`0x26ec58`: 24 shuffled ids from 0xb3..0xb9, each
+the first mode-0 frame starts the **title**: the attract playlist (`0x26ec58`: 24 entries from three shuffles of 0xb3..0xbb, each
 the couch scene with a different clip on the TV) with "Press START" over every frame (`0x27db38`: text 0x2db6 at
 (60, 328), colour pulsing 0x5ff0c070 ↔ 0x7fe0e0e0 over 100 frames, drawn by the PSS player's frame callback
 `0x2b73a0` while `0x1bacc0` is set; otherwise that callback draws subtitles, `0x27dc40`). Start ends the playlist,
@@ -90,7 +94,7 @@ Ids map to rows by `0x2efe68` (ids above 0xb0: id − 0x91; 0xb2 = row 33).
 
 | Mode | Front-end loop | Meaning |
 | --- | --- | --- |
-| 0, −1 | draw the backdrop, push mode 3 with kind 6; after 0x708 idle frames: shuffled attract movies (0xb3..0xb9) | title |
+| 0, −1 | draw the backdrop, push mode 3 with kind 6; after 0x708 idle frames: shuffled attract movies (0xb3..0xbb) | title |
 | 1 | `0x2f6e10`: the PSS player (`0x34fca0`), movies from MPEG.WAD (header 0x14b544, 16-byte rows) | movie |
 | 3 | `0x2cb860` update, `0x2ccc18` draw; 0x708 idle frames → pop | menu |
 | 4, 6 | other screens | not mapped yet |

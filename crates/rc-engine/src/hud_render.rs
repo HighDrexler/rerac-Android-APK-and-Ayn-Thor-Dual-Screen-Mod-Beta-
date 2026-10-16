@@ -644,6 +644,85 @@ pub struct SceneLayer {
     pub prims: Vec<Prim>,
 }
 
+/// A 2D layer for a caller with its own textures and primitive list (Going Commando's front end, crate::rac2): this
+/// pass's atlas, material, mesh and composite without the Ratchet & Clank HUD. Its textures are [`Tex::Frame`] n; the
+/// composite sits on the frame's 4:3 box (crate::display::UiBoxed), drawn by `ui_camera`.
+pub struct Layer {
+    pub atlas: Handle<Image>,
+    pub mesh: Handle<Mesh>,
+    /// Atlas rectangle of each texture.
+    pub frames: Vec<[u32; 4]>,
+}
+
+impl Layer {
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn(
+        commands: &mut Commands,
+        images: &mut Assets<Image>,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<HudMaterial>,
+        composites: &mut Assets<HudComposite>,
+        textures: &[Texture],
+        scaling: Vec4,
+        ui_camera: Entity,
+    ) -> Layer {
+        let atlas = build_atlas(textures, &[]);
+        let mut img = Image::new(
+            Extent3d { width: ATLAS_W, height: atlas.height, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            atlas.rgba,
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::all(),
+        );
+        img.sampler = bevy::image::ImageSampler::nearest();
+        let atlas_handle = images.add(img);
+        let target = images.add(Image::new_target_texture(W as u32, H as u32, TextureFormat::Rgba16Float, None));
+        commands.spawn((
+            Camera2d,
+            Camera { order: -10, clear_color: ClearColorConfig::Custom(Color::NONE), ..default() },
+            RenderTarget::Image(target.clone().into()),
+            Hdr,
+            Msaa::Off,
+            Tonemapping::None,
+            DebandDither::Disabled,
+            RenderLayers::layer(HUD_LAYER),
+            Name::new("2d layer camera (512x416 offscreen)"),
+        ));
+        let mesh = meshes.add(empty_mesh());
+        commands.spawn((
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(materials.add(HudMaterial { atlas: atlas_handle.clone(), additive: false })),
+            Transform::IDENTITY,
+            NoFrustumCulling,
+            RenderLayers::layer(HUD_LAYER),
+            Name::new("2d layer primitives"),
+        ));
+        commands.spawn((
+            Node { position_type: PositionType::Absolute, ..default() },
+            crate::display::UiBoxed,
+            MaterialNode(composites.add(HudComposite { image: target, scaling })),
+            UiTargetCamera(ui_camera),
+            Name::new("2d layer composite"),
+        ));
+        Layer { atlas: atlas_handle, mesh, frames: atlas.frames }
+    }
+
+    /// The mesh of a primitive list.
+    pub fn build(&self, d: &Hud2d) -> Mesh { build_mesh(&d.prims, &d.fine, &d.add, &self.frames, &[], &[], 0) }
+
+    /// Rewrites texture `i`'s texels (its own size, raw GS bytes): a movie's picture.
+    pub fn write(&self, images: &mut Assets<Image>, i: usize, rgba: &[u8]) {
+        let Some(&[x, y, w, h]) = self.frames.get(i) else { return };
+        let Some(mut img) = images.get_mut(&self.atlas) else { return };
+        let Some(data) = img.data.as_mut() else { return };
+        for row in 0..h.min(rgba.len() as u32 / (w * 4).max(1)) {
+            let src = &rgba[(row * w * 4) as usize..((row + 1) * w * 4) as usize];
+            let dst = (((y + row) * ATLAS_W + x) * 4) as usize;
+            data[dst..dst + src.len()].copy_from_slice(src);
+        }
+    }
+}
+
 /// The system set that ticks the HUD and builds the primitive mesh.
 #[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HudBuild;

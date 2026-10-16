@@ -4,8 +4,10 @@
 
 use crate::buf::{invalid, Buf, Result};
 
-/// The 16×16-cell font's glyph table (`FUN_003377b0`: text objects use 0x263b10).
+/// The glyph table of the font in texture slot 1 (`FUN_003377b0`: the menus' text objects use 0x263b10).
 pub const GLYPHS: u32 = 0x263b10;
+/// The glyph table of the font in texture slot 2 (`FUN_0027fc28`: "Press START", the subtitles).
+pub const GLYPHS_2: u32 = 0x263eb0;
 /// The main menu's definition (`FUN_002d63b0` → `FUN_00342dc0(gui, 0x261520)`).
 pub const MAIN_MENU: u32 = 0x261520;
 
@@ -39,9 +41,10 @@ impl<'a> BootElf<'a> {
         invalid(format!("boot ELF: {vaddr:#x}+{n:#x} is not in a loaded segment"))
     }
 
-    /// The font's glyphs: 256 × `{u, v, y offset (signed), advance}` (`FUN_0027fcb0`).
-    pub fn glyphs(&self) -> Result<[Glyph; 256]> {
-        let t = self.read(GLYPHS, 256 * 4)?;
+    /// A glyph table (`GLYPHS`, `GLYPHS_2`): 256 × `{u, v, y offset (signed), advance}` (`FUN_0027fcb0`). The tables
+    /// lie 0x3a0 bytes apart, so the first one's characters past 0xe7 read the second's (no string uses them).
+    pub fn glyphs(&self, table: u32) -> Result<[Glyph; 256]> {
+        let t = self.read(table, 256 * 4)?;
         Ok(std::array::from_fn(|c| Glyph { u: t[c * 4], v: t[c * 4 + 1], y: t[c * 4 + 2] as i8, advance: t[c * 4 + 3] }))
     }
 

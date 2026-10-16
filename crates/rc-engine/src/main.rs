@@ -74,6 +74,7 @@ mod walloper_render;
 mod visibomb_view;
 mod gs_post;
 mod reactive_render;
+mod rac2;
 mod saves;
 mod scene_render;
 mod sea_render;
@@ -128,6 +129,8 @@ fn main() -> anyhow::Result<()> {
     crash_log::install();
     // `--version-json` exits here; a missing or wrong data folder exits with a clear error (crate::disc_source).
     let root = disc_source::startup();
+    // Going Commando's data folder: its own front end (crate::rac2).
+    if disc_source::game(&root) == disc_source::Game::Rac2 { return rac2::run(root); }
     let index = level_load::level_index();
     // The one level load (the boot's and every runtime level change's, crate::level_switch): the level data, the loader's
     // ship and the load-time update pass (crate::moby_spawn; RC_SPAWN_RULES=0 skips it), the fog zones and the
@@ -262,7 +265,7 @@ fn ms(d: Duration) -> f64 { d.as_secs_f64() * 1e3 }
 /// `../Resources/assets` inside a macOS `.app`; otherwise the repo's `crates/rc-engine/assets` (`cargo dev`,
 /// `target/*/rerac`). The executable path is resolved through symlinks first, so a symlinked binary finds the
 /// folder beside its real file.
-fn asset_dir() -> String {
+pub(crate) fn asset_dir() -> String {
     let exe = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let dir = exe.as_deref().and_then(std::path::Path::parent);
     [dir.map(|d| d.join("assets")), dir.map(|d| d.join("../Resources/assets"))]

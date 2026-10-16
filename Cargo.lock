@@ -4391,6 +4391,7 @@ dependencies = [
  "rc-data",
  "rc-formats",
  "rc-game",
+ "rc-game2",
  "rc-video",
 ]
 
@@ -4413,6 +4414,13 @@ dependencies = [
 
 [[package]]
 name = "rc-game"
+version = "0.3.4"
+dependencies = [
+ "rc-formats",
+]
+
+[[package]]
+name = "rc-game2"
 version = "0.3.4"
 dependencies = [
  "rc-formats",
