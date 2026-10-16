@@ -148,7 +148,11 @@ branch is taken on `rc_formats::Game::Rac2` only, and R&C1's default paths stay 
   - **Ties**: the class header holds R&C1's fields in another order (`tie::rac2_tie_header`); the packets, strips and
     GS packets are R&C1's (73 of 74 classes walk). There are no per-vertex colour indices (count 0) and the region
     at +0x34 is not a fixed 64-normal table: R&C2 lights ties another way (to map: R&C2's tie draw).
-  - **Moby classes**: another header (class 0 starts `{0, 0x5502163f, …}`); a new reader is needed.
+  - **Moby classes**: R&C1's class header and packets; only the vertex table header differs, eight u16s (0x10
+    bytes) with no RGBA multiplier blob. R&C2's relocation (L00 `0x2ffe70`) converts an "old format" class — R&C1's
+    eight u32s — to that form. `moby::parse_moby_class_for` reads every class of every level checked (127–208 per
+    level). Class 0 (Ratchet) has no mesh in the level (`{0, 0x5502163f, …}`). The core's words 0x88 / 0x8c are not a
+    gadget table on R&C2 (Aranos: 0xa7, 8); gadgets are in `GADGET.WAD`.
   - **Gameplay**: another section table (pointer order differs; 0x1c89c0 bytes on Aranos).
 - **Code** (`tools/ghidra/scripts/crossgame_diff.py`, `work/crossgame/level01.tsv`, R&C1 level 1 against R&C2):
   identical or nearly so: `TfragProc`, `PatchTfragGifs`, the sky (`LoadSky`, `SkyDrawShell*`, `SkyTransformVertices`),
@@ -189,9 +193,9 @@ branch is taken on `rc_formats::Game::Rac2` only, and R&C1's default paths stay 
 
 | # | Milestone | Shared | New |
 | --- | --- | --- | --- |
-| A | Aranos world: the level file's lumps, tfrags, shrubs, sky, collision, textures, ties (unlit), fly camera; New Game loads Aranos | the renderers, `level_load` | `rac2::level`, the R&C2 load path |
+| A | Aranos world: the level file's lumps, tfrags, shrubs, sky, collision, textures, ties (unlit), fly camera (done, `RC_LEVEL=0`); New Game loads Aranos (not yet) | the renderers, `level_load` | `rac2::level`, the R&C2 load path |
 | B | The gameplay file: section table, tie / shrub / moby instances, level settings (fog, background, death height), cameras, volumes, splines, lights | the instance readers where equal | the R&C2 section map |
-| C | Moby classes: mesh, skeleton, animation, textures; drawn and animated at their instances | moby renderer, anim eval | the R&C2 moby class reader |
+| C | Moby classes: mesh, skeleton, animation, textures; drawn and animated at their instances (done: 384 of 472 Aranos instances placed, 156 animated; not yet the loader's ground snap, the spawn rules, Ratchet's armour mesh) | moby renderer, anim eval | the R&C2 vertex table header |
 | D | Tie and moby lighting as R&C2 does it | light passes where equal | R&C2's tie colours |
 | E | Sound: the level's bank, sound instances, music, movie audio, the front end's sounds | `audio_out`, 989snd, VAG | R&C2's bank tables |
 | F | Ratchet: hero states for Aranos (walk, jump, swing, wrench, the tutorial's gadgets), follow camera, collision | collision queries | `rc-game2::hero` |

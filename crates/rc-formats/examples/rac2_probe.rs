@@ -39,9 +39,9 @@ fn main() -> anyhow::Result<()> {
     let (mut ok, mut bad) = (0, Vec::new());
     for e in &core.moby_classes {
         let Some(b) = core.block(&data, &format!("moby_class/{:04}", e.o_class)) else { continue };
-        match moby::parse_moby_class(b) { Ok(_) => ok += 1, Err(err) => bad.push((e.o_class, err.to_string())) }
+        match moby::parse_moby_class_for(Game::Rac2, b) { Ok(_) => ok += 1, Err(err) => bad.push((e.o_class, err.to_string())) }
     }
-    println!("moby classes: {ok} ok, {} failed: {:?}", bad.len(), bad.iter().take(5).collect::<Vec<_>>());
+    println!("moby classes: {ok} ok, {} failed: {:?}", bad.len(), bad.iter().take(8).collect::<Vec<_>>());
     if let Some(g) = w.part_bytes(Part::Gameplay)? {
         println!("gameplay part starts {:02x?}", &g[..32]);
         let g = if wad::is_wad(g) { wad::decompress(g)? } else { g.to_vec() };

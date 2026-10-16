@@ -450,7 +450,7 @@ struct ListState { cache: Vec<Option<MobyVertex>>, slots: Vu0Slots, texture: i32
 
 impl ListState { fn new() -> Self { ListState { cache: vec![None; 512], slots: Vu0Slots::default(), texture: -1 } } }
 
-fn read_packet(blob: Buf, e: &MobyPacketEntry, metal: bool, state: &mut ListState) -> Result<MobySubmesh> {
+fn read_packet(game: crate::Game, blob: Buf, e: &MobyPacketEntry, metal: bool, state: &mut ListState) -> Result<MobySubmesh> {
     // VIF list: ST (regular only), indices, optional ad-gifs.
     let list = blob.sub(e.vif_list_offset as usize, e.vif_list_size as usize * 0x10, "moby VIF list")?;
     let codes = parse_vif(list.bytes())?;
@@ -515,7 +515,22 @@ fn read_packet(blob: Buf, e: &MobyPacketEntry, metal: bool, state: &mut ListStat
             });
         }
     } else {
-        let h: MobyVertexTableHeader = blob.pod(vo, "moby vertex table header")?;
+        // Going Commando's vertex table header is eight u16s (0x10 bytes) and has no RGBA multiplier blob: its level
+        // code converts an R&C1-layout class ("moby %d is in an old format", L00 0x2ffe70) by halving the eight words
+        // to u16s, moving the rest down 0x10 bytes and zeroing the multiplier offset.
+        let (h, head) = match game {
+            crate::Game::Rac1 => (blob.pod::<MobyVertexTableHeader>(vo, "moby vertex table header")?, 0x20),
+            crate::Game::Rac2 => {
+                let w: [u16; 8] = blob.pod(vo, "moby vertex table header")?;
+                let [matrix, two, three, main, dup, transfer, table, mult] = w.map(u32::from);
+                let h = MobyVertexTableHeader {
+                    matrix_transfer_count: matrix, two_way_blend_vertex_count: two, three_way_blend_vertex_count: three,
+                    main_vertex_count: main, duplicate_vertex_count: dup, transfer_vertex_count: transfer,
+                    vertex_table_offset: table, unknown_e: mult,
+                };
+                (h, 0x10)
+            }
+        };
         sub.vertex_table = h;
         let (n2, n3) = (h.two_way_blend_vertex_count as usize, h.three_way_blend_vertex_count as usize);
         let in_file = n2 + n3 + h.main_vertex_count as usize;
@@ -525,20 +540,24 @@ fn read_packet(blob: Buf, e: &MobyPacketEntry, metal: bool, state: &mut ListStat
         if e.unknown_d as u32 != (tvc * 6).div_ceil(0x10) || e.unknown_e as u32 != tvc.div_ceil(4) {
             return invalid("moby packet: redundant entry fields do not match");
         }
-        sub.transfers = blob.pod_slice(vo + 0x20, h.matrix_transfer_count as usize, "moby matrix transfers")?;
-        let mut ofs = vo + 0x20 + h.matrix_transfer_count as usize * 2;
+        sub.transfers = blob.pod_slice(vo + head, h.matrix_transfer_count as usize, "moby matrix transfers")?;
+        let mut ofs = vo + head + h.matrix_transfer_count as usize * 2;
         if !ofs.is_multiple_of(4) { ofs += 2; }
         if !ofs.is_multiple_of(8) { ofs += 4; }
         sub.duplicates = blob.pod_slice(ofs, h.duplicate_vertex_count as usize, "moby duplicate vertices")?;
-        if h.unknown_e < h.vertex_table_offset { return invalid("moby packet: unknown_e before vertex table"); }
-        let epilogue = ((h.unknown_e - h.vertex_table_offset) / 0x10) as usize;
+        // The vertex records end where the multiplier blob starts (R&C1) or with the packet's vertex data (R&C2).
+        let records_end = if game == crate::Game::Rac2 { e.vertex_data_size as u32 * 0x10 } else { h.unknown_e };
+        if records_end < h.vertex_table_offset { return invalid("moby packet: unknown_e before vertex table"); }
+        let epilogue = ((records_end - h.vertex_table_offset) / 0x10) as usize;
         let epilogue = epilogue.wrapping_sub(in_file);
         if !(1..7).contains(&epilogue) { return invalid(format!("moby packet: epilogue vertex count {}", epilogue as isize)); }
-        let mult_size = e.vertex_data_size as usize * 0x10;
-        if mult_size < h.unknown_e as usize { return invalid("moby packet: multiplier blob starts past the vertex data"); }
-        sub.rgba_multipliers = blob.sub(vo + h.unknown_e as usize, mult_size - h.unknown_e as usize, "moby RGBA multipliers")?.bytes().to_vec();
-        if sub.rgba_multipliers.len() != (h.transfer_vertex_count as usize * 4).div_ceil(16) * 16 {
-            return invalid("moby packet: multiplier blob is not align16(4 * transfer_vertex_count)");
+        if game == crate::Game::Rac1 {
+            let mult_size = e.vertex_data_size as usize * 0x10;
+            if mult_size < h.unknown_e as usize { return invalid("moby packet: multiplier blob starts past the vertex data"); }
+            sub.rgba_multipliers = blob.sub(vo + h.unknown_e as usize, mult_size - h.unknown_e as usize, "moby RGBA multipliers")?.bytes().to_vec();
+            if sub.rgba_multipliers.len() != (h.transfer_vertex_count as usize * 4).div_ceil(16) * 16 {
+                return invalid("moby packet: multiplier blob is not align16(4 * transfer_vertex_count)");
+            }
         }
         let vbase = vo + h.vertex_table_offset as usize;
         sub.raw_vertices = blob.sub(vbase, (in_file + epilogue) * 0x10, "moby vertices")?.bytes().to_vec();
@@ -589,7 +608,11 @@ fn read_packet(blob: Buf, e: &MobyPacketEntry, metal: bool, state: &mut ListStat
 }
 
 /// Parses one moby class blob (a `moby_class/NNNN` block of the level core data).
-pub fn parse_moby_class(blob: &[u8]) -> Result<MobyClass> {
+pub fn parse_moby_class(blob: &[u8]) -> Result<MobyClass> { parse_moby_class_for(crate::Game::Rac1, blob) }
+
+/// [`parse_moby_class`] for a class of `game`: Going Commando's class header is R&C1's (its relocation, L00
+/// 0x2ffe70, walks the same fields); its packets differ only in the vertex table header ([`read_packet`]).
+pub fn parse_moby_class_for(game: crate::Game, blob: &[u8]) -> Result<MobyClass> {
     let b = Buf(blob);
     let h: MobyClassHeader = b.pod(0, "moby class header")?;
     let sequence_pointers = if h.sequence_count > 0 { b.pod_slice(0x48, h.sequence_count as usize, "moby sequence pointers")? } else { Vec::new() };
@@ -601,7 +624,7 @@ pub fn parse_moby_class(blob: &[u8]) -> Result<MobyClass> {
         // Vertex cache, VU0 slots and GS texture state carry across the packets of one list.
         let list = |first: usize, count: usize, is_metal: bool, out: &mut Vec<MobySubmesh>| -> Result<()> {
             let mut st = ListState::new();
-            for e in &entries[first..first + count] { out.push(read_packet(b, e, is_metal, &mut st)?); }
+            for e in &entries[first..first + count] { out.push(read_packet(game, b, e, is_metal, &mut st)?); }
             Ok(())
         };
         list(0, h.high_lod_count as usize, false, &mut high_lod)?;
@@ -642,7 +665,7 @@ pub fn parse_level_mobys(core: &LevelCore, core_data: &[u8]) -> Result<Vec<Level
             return invalid(format!("moby class {}: no core block", e.o_class));
         };
         let blob = Buf(core_data).sub(blk.offset, blk.size, "moby class blob")?;
-        let class = parse_moby_class(blob.bytes()).map_err(|err| crate::FormatError::Invalid(format!("moby class {}: {err}", e.o_class)))?;
+        let class = parse_moby_class_for(core.game, blob.bytes()).map_err(|err| crate::FormatError::Invalid(format!("moby class {}: {err}", e.o_class)))?;
         out.push(LevelMobyClass { o_class: e.o_class, entry: *e, class });
     }
     Ok(out)

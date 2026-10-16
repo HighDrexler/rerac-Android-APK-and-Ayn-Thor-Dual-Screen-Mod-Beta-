@@ -119,7 +119,8 @@ pub fn parse_level_core(index: &[u8], data_size: usize) -> Result<LevelCore> { p
 pub fn parse_level_core_for(game: crate::Game, index: &[u8], data_size: usize) -> Result<LevelCore> {
     let idx = Buf(index);
     let h: LevelCoreHeader = idx.pod(0, "core header")?;
-    let gadgets = if h.gadget_count > 0 && h.gadget_offset > 0 { idx.pod_slice(h.gadget_offset as usize, h.gadget_count as usize, "gadget table")? } else { Vec::new() };
+    // Going Commando keeps its gadgets in GADGET.WAD; its words 0x88 / 0x8c are not a gadget table (Aranos: 0xa7, 8).
+    let gadgets = if game == crate::Game::Rac2 { Vec::new() } else if h.gadget_count > 0 && h.gadget_offset > 0 { idx.pod_slice(h.gadget_offset as usize, h.gadget_count as usize, "gadget table")? } else { Vec::new() };
     let ratchet_seqs = if h.ratchet_seqs > 0 { idx.pod_slice::<i32>(h.ratchet_seqs as usize, 256, "ratchet seq table")? } else { Vec::new() };
     let mut core = LevelCore {
         game,
