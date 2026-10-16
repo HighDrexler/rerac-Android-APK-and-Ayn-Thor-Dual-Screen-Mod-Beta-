@@ -377,6 +377,19 @@ fn item_data(lv: &crate::level_load::LoadedLevel) -> anyhow::Result<ItemTablesOu
         item_targets.push((g.moby.o_class as i16, targets));
         classes.push(ItemClass { o_class: g.moby.o_class as i16, anim: rc_formats::moby_anim::MobyAnimClass::new(c, seqs), scale: c.header.scale, chains });
     }
+    // The Swingshot's hook (0xd1) is a class of the level, not of the gadget table (`0x2dcbf0`'s `CreateMoby`;
+    // crate::moby_attach draws it from there too): the claws' animation (rc_game::hero::swingshot's hook update) needs
+    // its sequences, or the hook stays on its first frame with the claws folded.
+    let hook = rc_game::hero::swingshot::HOOK_CLASS;
+    if !classes.iter().any(|c| c.o_class == hook) {
+        if let Some(ci) = lv.mobys.classes.iter().position(|c| c.o_class == hook as i32) {
+            let c = &lv.mobys.classes[ci].class;
+            let chains = crate::interact_render::class_blob(hook as i32)
+                .map(|b| (0..16).map_while(|l| gadget::joint_list(&b, &c.header, l).ok().map(|(a, _)| a)).collect())
+                .unwrap_or_default();
+            classes.push(ItemClass { o_class: hook, anim: lv.mobys.anim[ci].clone(), scale: c.header.scale, chains });
+        }
+    }
     let ammo = tables.records.iter().map(|r| (r.has_ammo(), u16::from_le_bytes([r.0[0xe], r.0[0xf]]))).collect();
     Ok((ItemData { defs, hero_chains, classes }, ammo, weapon_defs, seconds, firsts, item_targets))
 }
