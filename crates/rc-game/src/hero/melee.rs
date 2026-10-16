@@ -1036,7 +1036,7 @@ mod tests {
         let mut frame = 100;
         let mut hand = Vec::new();
         for _ in 0..8 {
-            let env = ItemEnv { data: &data, pad: &pad, frame, hero_moby: 0, coll: None, camera: None, camera_up: None, targets: &[] };
+            let env = ItemEnv { data: &data, pad: &pad, frame, hero_moby: 0, coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
             items::items_update(&mut r.hero, &mut g, &mut table, &anim, &mut rng, &env, &mut items::NoHits);
             hand.push((r.hero.items.slot.id, r.hero.items.slot.state, r.hero.items.slot.item.as_ref().map(|m| m.o_class)));
             frame += 1;
@@ -1053,7 +1053,7 @@ mod tests {
         // □ with the glove in hand swaps back to the wrench.
         let mut p = crate::pad::PadState::default();
         p.update(Some(&PadInput::neutral().press(button::SQUARE).bytes()), false);
-        let env = ItemEnv { data: &data, pad: &p, frame, hero_moby: 0, coll: None, camera: None, camera_up: None, targets: &[] };
+        let env = ItemEnv { data: &data, pad: &p, frame, hero_moby: 0, coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
         items::items_update(&mut r.hero, &mut g, &mut table, &anim, &mut rng, &env, &mut items::NoHits);
         assert_eq!((r.hero.items.target, r.hero.items.slot.state, g.wrench_flag), (8, 3, 1));
     }

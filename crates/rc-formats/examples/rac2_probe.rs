@@ -42,6 +42,20 @@ fn main() -> anyhow::Result<()> {
         match moby::parse_moby_class_for(Game::Rac2, b) { Ok(_) => ok += 1, Err(err) => bad.push((e.o_class, err.to_string())) }
     }
     println!("moby classes: {ok} ok, {} failed: {:?}", bad.len(), bad.iter().take(8).collect::<Vec<_>>());
+    if let Some(dir) = std::path::Path::new(&path).parent().and_then(|g| g.parent()) {
+        let hdr = std::fs::read(dir.join("RC2.HDR"))?;
+        let toc = rc_formats::rac2::toc::Toc::parse(&hdr)?;
+        let parts = rc_formats::rac2::armor::armors(&toc)?;
+        let wad = std::fs::read(dir.join("G/ARMOR.WAD"))?;
+        let a = rc_formats::rac2::armor::read(&wad, parts[0])?;
+        let blk = core.block(&data, "moby_class/0000").unwrap();
+        let mut c = moby::parse_moby_class_for(Game::Rac2, blk)?;
+        moby::attach_packets(Game::Rac2, &mut c, &a.mesh)?;
+        let tris: usize = c.high_lod.iter().map(|p| p.triangles.len()).sum();
+        let texs: std::collections::BTreeSet<i32> = c.high_lod.iter().flat_map(|p| p.triangles.iter().map(|t| t.texture)).collect();
+        println!("armours {}; armour 0: {} textures {:?}; Ratchet: {} high / {} low / {} metal packets, {tris} high triangles, textures used {texs:?}, joints {}",
+            parts.len(), a.textures.len(), a.textures.iter().map(|t| (t.width, t.height)).collect::<Vec<_>>(), c.high_lod.len(), c.low_lod.len(), c.metal.len(), c.header.joint_count);
+    }
     if let Some(g) = w.part_bytes(Part::Gameplay)? {
         println!("gameplay part starts {:02x?}", &g[..32]);
         let g = if wad::is_wad(g) { wad::decompress(g)? } else { g.to_vec() };

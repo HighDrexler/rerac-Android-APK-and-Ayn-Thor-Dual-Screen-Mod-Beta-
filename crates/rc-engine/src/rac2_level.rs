@@ -17,6 +17,29 @@ use std::time::Instant;
 /// Level `index`'s file in the data folder.
 pub fn file_name(index: u32) -> String { format!("G/LEVEL{index}.WAD") }
 
+/// Ratchet's body (rc_formats::rac2::armor): level class 0's header and skeleton with armour `armor`'s packets, its
+/// textures appended to the level's moby texture table (slot `k` of the armour = entry `moby_textures.len() + k`).
+fn attach_ratchet(root: &Path, core: &level::LevelCore, mobys: &mut crate::moby_render::LevelMobys, textures: &mut Vec<texture::LevelTexture>, armor: usize) -> Result<()> {
+    use rc_formats::rac2::{armor as ar, toc::Toc};
+    let hdr = crate::disc_source::read(root, "RC2.HDR")?;
+    let parts = ar::armors(&Toc::parse(&hdr)?)?;
+    let part = *parts.get(armor).with_context(|| format!("no armour {armor}"))?;
+    let a = ar::read(&crate::disc_source::read(root, "G/ARMOR.WAD")?, part)?;
+    let class = mobys.classes.iter_mut().find(|c| c.o_class == 0).context("no class 0 in the level")?;
+    rc_formats::moby::attach_packets(Game::Rac2, &mut class.class, &a.mesh)?;
+    let base = core.moby_textures.len().max(textures.iter().filter(|t| t.table == texture::TextureTable::Moby).map(|t| t.index + 1).max().unwrap_or(0));
+    for (k, t) in a.textures.into_iter().enumerate() {
+        let index = base + k;
+        let slot = u8::try_from(index).context("moby texture index past 255")?;
+        if let Some(e) = class.entry.textures.get_mut(k) { *e = slot; }
+        textures.push(texture::LevelTexture { table: texture::TextureTable::Moby, index, source: texture::TextureSource::Entry(bytemuck_zeroed()), texture: t });
+    }
+    Ok(())
+}
+
+/// An empty texture-table entry (the armour's textures have no entry in the level's table).
+fn bytemuck_zeroed() -> rc_formats::level::TextureEntry { rc_formats::level::TextureEntry { data_offset: 0, width: 0, height: 0, ty: 0, palette: 0, mipmap: 0, pad: 0 } }
+
 pub fn load(root: &Path, index: u32) -> Result<LoadedLevel> {
     let mut t = LoadTimings::default();
     let t0 = Instant::now();
@@ -56,7 +79,9 @@ pub fn load(root: &Path, index: u32) -> Result<LoadedLevel> {
     let ties = crate::tie_render::load_ties(&core, &core_data, gs_ram, &gameplay, &textures).context("loading ties")?;
     let shrubs = crate::shrub_render::load_shrubs(&core, &core_data, gs_ram, &gameplay, &textures).context("loading shrubs")?;
     let sky = crate::sky_render::load(&core, &core_data, index).context("loading the sky")?;
-    let mobys = crate::moby_render::load_mobys_with_gs(root, &core, &core_data, &gameplay, gs_ram, collision.as_ref()).context("loading mobys")?;
+    let mut textures = textures;
+    let mut mobys = crate::moby_render::load_mobys_with_gs(root, &core, &core_data, &gameplay, gs_ram, collision.as_ref()).context("loading mobys")?;
+    if let Err(e) = attach_ratchet(root, &core, &mut mobys, &mut textures, 0) { eprintln!("rac2: Ratchet's armour not attached ({e:#}); he has no mesh"); }
     let occlusion = crate::occlusion::load(&core, &core_data, &gameplay, &tfrags, &ties.instances, &mobys.instances).context("loading occlusion")?;
     let particles = crate::particle_render::LevelParticles {
         textures: rc_formats::particle_tex::parse_particle_textures(&core, core_index, &core_data).map_err(|e| eprintln!("rac2: no particle textures ({e})")).ok(),

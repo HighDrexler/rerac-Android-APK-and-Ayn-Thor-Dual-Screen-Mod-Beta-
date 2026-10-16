@@ -7,8 +7,10 @@
 //!   (the font), the text tables.
 //! - [`gui_sprite`]: the GUI sprite block (`BE_H`, `HUD.WAD`): the menus' vector sprites.
 //! - [`level`]: a level file `G/LEVELn.WAD` and its lumps; [`gameplay`]: its gameplay file.
+//! - [`armor`]: `ARMOR.WAD`, Ratchet's mesh and textures for level class 0.
 //! - [`boot`]: reads from the boot ELF's loaded image (the font's glyph table, the menu definitions).
 
+pub mod armor;
 pub mod boot;
 pub mod front_end;
 pub mod gameplay;

@@ -638,6 +638,27 @@ pub fn parse_moby_class_for(game: crate::Game, blob: &[u8]) -> Result<MobyClass>
     Ok(MobyClass { header: h, sequence_pointers, high_lod, low_lod, metal, skeleton })
 }
 
+/// Gives `class` the packets of a separate mesh blob: `u8 high, low, metal, metal_begin`, `+4` the packet table,
+/// offsets from the blob's start (Going Commando's armour, `crate::rac2::armor`; its level class 0 has none).
+pub fn attach_packets(game: crate::Game, class: &mut MobyClass, mesh: &[u8]) -> Result<()> {
+    let b = Buf(mesh);
+    let (high, low, metal, metal_begin) = (b.u8(0)? as usize, b.u8(1)? as usize, b.u8(2)? as usize, b.u8(3)? as usize);
+    let table = b.u32(4)? as usize;
+    let total = high + low + metal;
+    if metal > 0 && metal_begin + metal > total { return invalid("moby mesh: metal packets past the packet table"); }
+    let entries: Vec<MobyPacketEntry> = b.pod_slice(table, total, "moby mesh packet table")?;
+    let list = |first: usize, count: usize, is_metal: bool| -> Result<Vec<MobySubmesh>> {
+        let mut st = ListState::new();
+        entries[first..first + count].iter().map(|e| read_packet(game, b, e, is_metal, &mut st)).collect()
+    };
+    class.high_lod = list(0, high, false)?;
+    class.low_lod = list(high, low, false)?;
+    class.metal = list(metal_begin, metal, true)?;
+    let h = &mut class.header;
+    (h.high_lod_count, h.low_lod_count, h.metal_count, h.metal_begin) = (high as u8, low as u8, metal as u8, metal_begin as u8);
+    Ok(())
+}
+
 /// A level's moby class with its core-index entry (whose `textures[16]` maps a triangle's
 /// `texture` >= 0 to an index into `LevelCore::moby_textures`).
 #[derive(Clone, Debug)]
