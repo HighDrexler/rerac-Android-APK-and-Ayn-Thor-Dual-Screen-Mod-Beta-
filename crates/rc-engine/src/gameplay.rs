@@ -1363,6 +1363,20 @@ fn setup(
         }
         Err(e) => eprintln!("gameplay: no body joint lists ({e:#}): Clank / Giant Clank's joint points sit at the body's origin"),
     }
+    // The scene actors' classes (rc_game::scene_actors, game modes 2 / 6): Ratchet's (0) head manipulator target (list
+    // 0x18) and the Clank actors' (10, 0x1a3, 0x555) joint lists 1 / 6 for their antenna sprite and 1 / 2 for the noggin.
+    // Without them the sprite sat at the actor's origin, his feet.
+    match class_joint_data_where(lv, |o| matches!(o, 0 | 10 | 0x1a3 | 0x555)) {
+        Ok(m) => {
+            for (o, l) in m {
+                let targets: Vec<u8> = l.iter().map(|(_, s)| rc_formats::moby_anim::list_target(s).unwrap_or(0xff)).collect();
+                svc.joint_targets.entry(o).or_insert(targets);
+                // (Class 0 is the hero moby's too: only its manipulator targets, so no other joint query on Ratchet changes.)
+                if o != 0 { svc.joint_lists.entry(o).or_insert_with(|| l.into_iter().map(|(a, _)| a).collect()); }
+            }
+        }
+        Err(e) => eprintln!("gameplay: the scene actors' classes: no joint lists ({e:#})"),
+    }
     // A ship class the level itself carries (Gemlik's placed 533, which `rc_game::travel::ship::adopt` makes the ship): its
     // joint lists from the level's class, as for any class (the canopy glass sits on joint list 0).
     match class_joint_data_where(lv, |o| rc_game::travel::ship::CLASSES.contains(&o)) {
