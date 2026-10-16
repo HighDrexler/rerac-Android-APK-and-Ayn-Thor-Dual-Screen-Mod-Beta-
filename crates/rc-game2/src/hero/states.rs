@@ -39,6 +39,7 @@ impl Hero {
         self.prev_group = self.group;
         self.substate = 0;
         self.state = id;
+        self.cam_mode = 0;
         let entry = match module_of(id) {
             Module::Ground => self.ground_entry(anim, env, id, play),
             Module::Walk => self.walk_entry(anim, env, id, play),

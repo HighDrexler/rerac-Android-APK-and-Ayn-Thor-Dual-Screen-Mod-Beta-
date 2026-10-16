@@ -225,7 +225,30 @@ nibble, decoded by `0x313fa8`: `moby_anim::decode_compressed_frame`).
 
 **Done:** idle, walk / run (the walk ↔ run selector `0x2ca358`), stop, crouch, fall with its landings, jump 7 and run
 jump 9 (height ramp, windup, air control `0x2b6cd0` / `0x2b62a0`, landing `0x2cab40`). Engine: crate::rac2_play
-(pad, hero, camera, Ratchet's instance and pose). **Interim:** the camera (`rc_game2::camera`: the game's target
-point, a spring follow in place of the type-0 update `0x4278c8`). **Not yet:** every other state (long jump 0xb,
+(pad, hero, camera, Ratchet's instance and pose); the follow camera (§6.5). **Not yet:** every other state (long jump 0xb,
 double jump 0xe, wrench, swingshot, gadgets, water, ledges, damage / death), the moby collision of the queries, the
 lighting of Ratchet, his sounds, Clank on his back.
+
+### 6.5 The follow camera (milestone F, 2026-10-16)
+
+**What the code shows.** The camera update `0x2d9f38` calls the current camera's type update from the table at
+`0x2a3a0c` (0x14 bytes a type). Type 0, the follow camera (update `0x4278c8`, init `0x424908`), is R&C1's type 0
+evolved: the same pre-steps (collision flags `0x2d9ba8`, motion `0x2d9760`) and the same steps in the same order
+(platform carry, state tweaks, targets with the target modes and the vertical target, leash, stick, avoidance with
+the sphere chain and end sphere, placement, rows, spring back), each a function of its own. R&C2's differences:
+
+* the vertical spring is 0.0125 (R&C1 0.015), and in the air the state tweaks ramp it from the smoothed target's
+  vertical gap;
+* the leash blends at 0.85;
+* the stick's yaw rates are 1° / 1.3° / 2.2° a tick (the option at `0x1a7bb4`);
+* target mode 1 also starts in group 0x1e;
+* the knock-down state is 0x74 (R&C1 0x77);
+* the placement has no 15° clamp: a 0.25 sphere (flags 0x36) pushes the camera out up to three times instead;
+* the rows' pitch bias applies only on the ground;
+* the snap behind Ratchet at the init only pulls in on the line from the look point, 0.5 short of the wall.
+
+The hero tells the camera about jumps through `0x18c2c0` (0x50 in the jump states; the smoothed hero height holds
+while it is set). The port is `rc_game2::camera` (one function per step, the L00 address on each), in native f32.
+**Not ported** (none is in use on Aranos's opening): the camera-tweak requests `0x2d7568`, the camera-collision grid,
+the moby collision of the camera's queries, the avoidance's moby nudges, the focus mobys, the stick auto-centre, the
+Clank and Giant Clank cameras, water, the knock-down view, the other camera types, the blends and the shakes.

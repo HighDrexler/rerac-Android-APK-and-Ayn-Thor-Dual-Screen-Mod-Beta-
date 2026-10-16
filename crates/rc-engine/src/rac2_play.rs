@@ -24,7 +24,7 @@ use rc_game::follow_camera::CameraView;
 use rc_game::hero::anim::RatchetAnim;
 use rc_game::pad::PadState;
 use rc_game::ps2v::Pf;
-use rc_game2::camera::FollowCamera;
+use rc_game2::camera::{CamInput, FollowCamera};
 use rc_game2::hero::physics::Env;
 use rc_game2::hero::{hero_update, Hero};
 
@@ -102,18 +102,19 @@ fn tick(
     p.pad.update(Some(&input.bytes()), false);
     let class = &lv.mobys.anim[p.class];
     {
-        let env = Env { coll, pad: &p.pad, cam_yaw: p.camera.yaw, cam_rows: p.camera.rows, mirror: false };
+        let env = Env { coll, pad: &p.pad, cam_yaw: p.camera.yaw(), cam_rows: p.camera.rows, mirror: false };
         let mut ctl = p.anim.ctl(class);
         hero_update(&mut p.hero, &env, &mut ctl);
     }
-    p.camera.update(&p.hero, Some(coll), [p.pad.rx.to_f32(), p.pad.ry.to_f32()]);
+    p.camera.update(&cam_input(&p.hero, Some(coll), [p.pad.rx.to_f32(), p.pad.ry.to_f32()]));
     if p.trace {
         let v = rc_game::hero::anim::AnimCtl::view(&p.anim.ctl(class));
         let h = &p.hero;
         println!(
-            "rac2 tick {}: state {:#x}/{} pos ({:.2}, {:.2}, {:.2}) vel ({:.3}, {:.3}, {:.3}) air {} h {:.2} slope {:.2} seq {}/{} f {:.1} spd {:.2} cap {} at ({:.2}, {:.2}, {:.2}) n ({:.2}, {:.2}, {:.2}) capsule {:.2}/{:.2}/{:.2}",
+            "rac2 tick {}: state {:#x}/{} pos ({:.2}, {:.2}, {:.2}) vel ({:.3}, {:.3}, {:.3}) air {} h {:.2} slope {:.2} seq {}/{} f {:.1} spd {:.2} cap {} at ({:.2}, {:.2}, {:.2}) n ({:.2}, {:.2}, {:.2}) capsule {:.2}/{:.2}/{:.2} cam ({:.2}, {:.2}, {:.2}) yaw {:.2} pitch {:.2}",
             p.ticks, h.state, h.substate, h.pos[0], h.pos[1], h.pos[2], h.vel[0], h.vel[1], h.vel[2], h.air_ticks, h.height, h.slope, v.seq_a, v.seq_b, v.frame, h.anim_speed,
-            h.cap_hit, h.contact_point[0], h.contact_point[1], h.contact_point[2], h.contact_normal[0], h.contact_normal[1], h.contact_normal[2], h.cap_bottom, h.cap_top, h.cap_radius
+            h.cap_hit, h.contact_point[0], h.contact_point[1], h.contact_point[2], h.contact_normal[0], h.contact_normal[1], h.contact_normal[2], h.cap_bottom, h.cap_top, h.cap_radius,
+            p.camera.pos[0], p.camera.pos[1], p.camera.pos[2], p.camera.yaw(), p.camera.pitch()
         );
     }
     if let Some(o) = occl.as_mut() {
@@ -140,7 +141,7 @@ fn start(lv: &crate::level_load::LoadedLevel) -> Option<Play> {
     let inst = &m.instances[instance];
     let scale = m.placed.get(instance).copied().flatten().map_or(1.0, |pl| pl.scale);
     let hero = Hero::spawn(inst.position, inst.rotation[2]);
-    let camera = FollowCamera::behind(&hero);
+    let camera = FollowCamera::new(&cam_input(&hero, lv.collision.as_ref(), [0.0; 2]));
     println!("rac2: Ratchet at ({:.1}, {:.1}, {:.1}), yaw {:.2}: game tick on", inst.position[0], inst.position[1], inst.position[2], inst.rotation[2]);
     Some(Play {
         anim: RatchetAnim::new(&m.anim[class]),
@@ -149,7 +150,12 @@ fn start(lv: &crate::level_load::LoadedLevel) -> Option<Play> {
     })
 }
 
+/// The camera's inputs: the options' yaw and pitch normal (`0x1a7bb0` / `0x1a7bac`, the defaults).
+fn cam_input<'a>(hero: &'a Hero, coll: Option<&'a rc_formats::collision::Collision>, rstick: [f32; 2]) -> CamInput<'a> {
+    CamInput { hero, coll, rstick, yaw_normal: true, pitch_normal: true }
+}
+
 fn camera_view(c: &FollowCamera) -> CameraView {
     let v = |a: [f32; 3]| [Pf::f(a[0]), Pf::f(a[1]), Pf::f(a[2]), Pf::ZERO];
-    CameraView { pos: v(c.pos), euler: [Pf::ZERO, Pf::f(c.pitch), Pf::f(c.yaw), Pf::ZERO], rows: c.rows.map(v), class: 0 }
+    CameraView { pos: v(c.pos), euler: [Pf::ZERO, Pf::f(c.pitch()), Pf::f(c.yaw()), Pf::ZERO], rows: c.rows.map(v), class: 0 }
 }

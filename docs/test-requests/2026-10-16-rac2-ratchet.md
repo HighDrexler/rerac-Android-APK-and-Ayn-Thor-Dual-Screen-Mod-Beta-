@@ -12,7 +12,11 @@ Run: `RC_DATA_DIR=<repo>/extracted-rac2 cargo dev` → title → Start → New G
 | Walking off an edge falls (6); a high fall plays sequence 0xb and lands with a short lag | walk off the platform |
 | R1 crouches (4); releasing stands up | hold R1 |
 | He stays on the floor and steps down small ledges, collides with walls | run into the rails / steps |
-| The camera follows behind; the right stick turns it; walls pull it in | **interim camera, not the game's** |
+| The camera sits 4.64 behind and 2 above him at the start and follows with the game's lag (it trails when he runs, catches up when he stops) | run forward, stop |
+| Right stick left / right turns the camera about him at about 1° a tick; up / down tilts it (up to 40°) and it eases back when released | use the right stick |
+| Running toward the camera pulls it out (up to 6) instead of letting him run into it | run at the camera |
+| In a jump the camera holds its height until he comes down; then it follows | jump on the spot and off a ledge |
+| Walls and the dome pull the camera in, and it eases back out over time once clear; it never ends up inside a wall | back him into a wall, turn the camera into the dome's pillars |
 
 Not expected to work yet: any other move (long jump, double jump, wrench, swingshot, gadgets, ledges, swimming,
 damage), Ratchet's lighting (drawn unlit), his sounds, Clank on his back, mobys reacting to him. A state that is not

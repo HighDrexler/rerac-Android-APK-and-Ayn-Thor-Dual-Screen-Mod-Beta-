@@ -31,6 +31,7 @@ const RUN_JUMP_SPEED: f32 = 0.82;
 impl Hero {
     pub(super) fn jump_entry(&mut self, anim: &mut dyn AnimCtl, _env: &Env, id: i32, _play: bool) -> Entry {
         self.group = 4;
+        self.cam_mode = 0x50;
         self.vel = self.eff;
         let j = &mut self.jump;
         *j = super::JumpBlock {
@@ -206,7 +207,7 @@ impl Hero {
     }
 
     /// The ticks until the feet reach the ground at gravity `g` (`0x2d4138`, here from the current height).
-    fn land_eta(&self, g: f32) -> f32 {
+    pub fn land_eta(&self, g: f32) -> f32 {
         let (vz, h) = (self.vel[2], (self.pos[2] - self.ground_z).max(0.0));
         if g <= 0.0 { return 1.0; }
         ((vz + (vz * vz + 2.0 * g * h).sqrt()) / g).max(1.0)

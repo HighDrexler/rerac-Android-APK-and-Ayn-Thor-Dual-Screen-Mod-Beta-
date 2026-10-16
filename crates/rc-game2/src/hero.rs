@@ -198,6 +198,9 @@ pub struct Hero {
     pub prev2_state: i32,
     pub prev2_group: i32,
     pub prev_timer: i32,
+    /// `0x18c2c0`: the camera's view of the state (0x50 in the jumps, 0 otherwise; the follow camera holds its smoothed
+    /// height while 0x50).
+    pub cam_mode: u8,
     /// `0x18c0d4`: the body (0 = Ratchet).
     pub mode: u8,
     pub jump: JumpBlock,
@@ -230,7 +233,7 @@ impl Hero {
             slope: 0.0, last_ground_point: [0.0; 3], surface: -1, grounded_ticks: 0, air_ticks: 0, f16c: 0, snap_vel: 0.0,
             drag: [0.0; 3], drag_src: [0.0; 3], stick: [0.0; 2], stick_mag: 0.0, stick_mag_prev: 0.0, run_hold: 0,
             quick_turn: 0, run_dir: [1.0, 0.0, 0.0], run_yaw: 0.0, anim_speed: 1.0, state: 0, substate: 0, group: 0,
-            prev_state: 0, prev_group: 0, prev2_state: 0, prev2_group: 0, prev_timer: 0, mode: 0, jump: JumpBlock { air_turn: 0.250_011_4, terminal: 0.833_333_3, ..JumpBlock::default() },
+            prev_state: 0, prev_group: 0, prev2_state: 0, prev2_group: 0, prev_timer: 0, cam_mode: 0, mode: 0, jump: JumpBlock { air_turn: 0.250_011_4, terminal: 0.833_333_3, ..JumpBlock::default() },
             pos_hist: [[0.0; 3]; HISTORY], pos_hist_idx: 0, pos_hist_count: 0, yaw_hist: [0.0; HISTORY], yaw_hist_idx: 0,
             yaw_hist_count: 0, unported_seen: Vec::new(),
         }
