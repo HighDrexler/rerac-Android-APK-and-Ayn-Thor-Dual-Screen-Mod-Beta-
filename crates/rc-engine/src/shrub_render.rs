@@ -110,7 +110,11 @@ pub struct LevelShrubs {
 pub fn load_shrubs(core: &rc_formats::level::LevelCore, core_data: &[u8], gs_ram: &[u8], gameplay: &[u8], textures: &[LevelTexture]) -> Result<LevelShrubs> {
     let t0 = Instant::now();
     let classes = shrub::parse_level_shrubs(core, core_data).context("parsing shrub classes")?;
-    let instances = shrub::parse_shrub_instances(gameplay).context("parsing shrub instances")?;
+    let instances = match core.game {
+        rc_formats::Game::Rac1 => shrub::parse_shrub_instances(gameplay),
+        rc_formats::Game::Rac2 => rc_formats::rac2::gameplay::shrub_instances(gameplay),
+    }
+    .context("parsing shrub instances")?;
     let by_class: HashMap<i32, usize> = classes.iter().enumerate().map(|(i, c)| (c.o_class, i)).collect();
     let class_of: Vec<Option<usize>> = instances.iter().map(|i| by_class.get(&i.o_class).copied()).collect();
     let used: HashSet<usize> = classes
@@ -119,7 +123,11 @@ pub fn load_shrubs(core: &rc_formats::level::LevelCore, core_data: &[u8], gs_ram
         .collect();
     let parse_time = t0.elapsed();
     let t0 = Instant::now();
-    let palettes = crate::shrub_light::light_instances(gameplay, &classes, &instances, &class_of)?;
+    // Going Commando's shrub lighting is not mapped yet: neutral palettes (docs/plan/rac2_bringup.md §6.3 D).
+    let palettes = match core.game {
+        rc_formats::Game::Rac1 => crate::shrub_light::light_instances(gameplay, &classes, &instances, &class_of)?,
+        rc_formats::Game::Rac2 => vec![[[0x80; 4]; rc_formats::shrub_light::PALETTE]; instances.len()],
+    };
     let light_time = t0.elapsed();
 
     let t0 = Instant::now();

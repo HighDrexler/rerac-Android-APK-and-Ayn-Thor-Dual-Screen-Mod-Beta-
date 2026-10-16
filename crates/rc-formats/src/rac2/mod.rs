@@ -6,11 +6,14 @@
 //! - [`front_end`]: the front-end blob (`MISC.WAD` part 4): splash screens, the menu backdrop, the texture set
 //!   (the font), the text tables.
 //! - [`gui_sprite`]: the GUI sprite block (`BE_H`, `HUD.WAD`): the menus' vector sprites.
+//! - [`level`]: a level file `G/LEVELn.WAD` and its lumps; [`gameplay`]: its gameplay file.
 //! - [`boot`]: reads from the boot ELF's loaded image (the font's glyph table, the menu definitions).
 
 pub mod boot;
 pub mod front_end;
+pub mod gameplay;
 pub mod gui_sprite;
+pub mod level;
 pub mod toc;
 
 /// A picture as the GS holds it: RGBA bytes, alpha 0x80 = opaque (not scaled).

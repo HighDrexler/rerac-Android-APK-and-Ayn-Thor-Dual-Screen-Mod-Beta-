@@ -130,3 +130,71 @@ colour / 128.
 **Font** (`0x27fcb0`): glyph table at 0x263b10, 4 bytes per character `{u, v, y offset, advance}` in the 16×16 cells
 of texture slot 1; a glyph is drawn 16·scale wide at (x, y + y offset·scale); characters 8..15 change the colour,
 those below 0x20 are pad-button icons (24×16, drawn grey), 0x80..0xa7 carry an accent from character + 0x40.
+
+## 6. Aranos (level 0): what is shared, what is new
+
+Goal (2026-10-16): the first level, Aranos (level 0; the planet table in the help text starts Aranos, Oozla, Maktar
+Nebula, …), playable with its cinematics, mobys, effects, sound and saves. R&C1 does not change behaviour: every R&C2
+branch is taken on `rc_formats::Game::Rac2` only, and R&C1's default paths stay byte for byte what they were.
+
+### 6.1 Evidence
+
+- **Data** (`crates/rc-formats/examples/rac2_probe.rs` over `G/LEVEL0.WAD`). The level file is a 0x60-byte header
+  `{0x60, 0, id, reverb}` then `{sector, sectors}` parts: data, core sound bank, gameplay (WAD), occlusion, chunks.
+  The data part opens with a 0x80-byte `{offset, size}` table: overlay (0x80), core index, gs_ram, a 0xfdc-byte
+  lump (not mapped), HUD header, four HUD banks, core data (WAD), transition (`rc_formats::rac2::level`).
+  - The **core index** has R&C1's header and tables, unchanged: 833 tfrags, 351 textures, shrubs, sky (6 shells),
+    collision and occlusion parse with R&C1's readers as they are.
+  - **Ties**: the class header holds R&C1's fields in another order (`tie::rac2_tie_header`); the packets, strips and
+    GS packets are R&C1's (73 of 74 classes walk). There are no per-vertex colour indices (count 0) and the region
+    at +0x34 is not a fixed 64-normal table: R&C2 lights ties another way (to map: R&C2's tie draw).
+  - **Moby classes**: another header (class 0 starts `{0, 0x5502163f, …}`); a new reader is needed.
+  - **Gameplay**: another section table (pointer order differs; 0x1c89c0 bytes on Aranos).
+- **Code** (`tools/ghidra/scripts/crossgame_diff.py`, `work/crossgame/level01.tsv`, R&C1 level 1 against R&C2):
+  identical or nearly so: `TfragProc`, `PatchTfragGifs`, the sky (`LoadSky`, `SkyDrawShell*`, `SkyTransformVertices`),
+  `MobyAnimEval`, `MobyAnimProc`, `ProcessMobyAnimData`, `PatchMobyGifs`, `PatchShrubGifs`, collision
+  (`CollCellLookup`, `coll_sphere_hero_groups`, `CollType`), `UpdateFog`, `ParseOcclGrid`, GS register resets,
+  `SoundInstanceUpdate`, `memcard_GetDataSize`, many particle types (08, 21, 26, 27, 45, 47, 52, 60, 66, 72).
+  Rewritten (0.1–0.4): the hero (`HeroStatePhysics`, `HeroStateTransitions`, `HeroInit`), `GameStateUpdate`,
+  `LoadLevelCoreData`, `MobyProc`, `TieProc`, `ShrubProc`, `LightTies`, the path enemies.
+
+### 6.2 Decisions
+
+1. **One engine app, the game picks its logic.** `rc-engine` keeps one Bevy app: the renderers (tfrag, tie, shrub,
+   sky, mobys, particles, water, display, GS state, AA, graphics settings), the frame pace, the capture, audio out.
+   The game-specific layer is a plugin: R&C1's `gameplay`, menus, travel and front end; R&C2's `rac2` (logic in
+   `rc-game2`). No second copy of a renderer.
+2. **Formats branch, not fork.** A reader whose layout differs takes the game from `LevelCore::game` (or a `Game`
+   argument) and maps R&C2's bytes into the same structure (`tie::parse_tie_class_for`). A reader gets an R&C2
+   twin only when the structure itself differs (moby classes, the gameplay table) — in `rc_formats::rac2`.
+3. **Truly shared code moves once.** What the diff shows identical (the list above) is one implementation; when
+   R&C2 is its second consumer it moves out of `rc-game` into a shared place with a re-export left in `rc-game`, so
+   R&C1's paths and behaviour do not change. Nothing is moved before R&C2 calls it.
+4. **Rewritten code is reimplemented, with R&C1 as the map.** The hero, the game state, the moby classes, the
+   menus and the cameras are written from R&C2's code in `rc-game2`, in the same organisation as R&C1's: the hero as
+   a state registry (state → group module, the game's dispatchers for SetState, physics and transitions), one module
+   per state group, a `physics` pipeline and an `anim` interface, field names with the R&C2 addresses. R&C1's
+   modules are the hint for where to look, never the source of a behaviour.
+5. **Port options are the same options.** The settings (graphics preset, anti-aliasing, detail, textures, HUD
+   resolution, sound volumes where the port adds them) are engine settings in the one settings file and apply to
+   both games. Each game shows them on a "Port Options" page in its own menu style: R&C2's page is built from its
+   own GUI sprites, font and sounds, as R&C1's is from its page machinery.
+6. **Saves: same model, R&C2's tables.** R&C1's save code reads its chunk tables from the boot ELF, checks a
+   CRC-16 and keeps one folder per card (`rc_formats::save_game`, `rc_game::memcard`). `memcard_GetDataSize` is
+   identical in R&C2 and `memcard_TestChecksum` nearly so: R&C2's saves are read with the same reader given R&C2's
+   table addresses and file names (475 KB per save, R&C2's icon), on the same native card folder under a per-game
+   directory; R&C2's progression (what a save holds) is `rc-game2`'s.
+
+### 6.3 Milestones (each one runs and is committed on its own)
+
+| # | Milestone | Shared | New |
+| --- | --- | --- | --- |
+| A | Aranos world: the level file's lumps, tfrags, shrubs, sky, collision, textures, ties (unlit), fly camera; New Game loads Aranos | the renderers, `level_load` | `rac2::level`, the R&C2 load path |
+| B | The gameplay file: section table, tie / shrub / moby instances, level settings (fog, background, death height), cameras, volumes, splines, lights | the instance readers where equal | the R&C2 section map |
+| C | Moby classes: mesh, skeleton, animation, textures; drawn and animated at their instances | moby renderer, anim eval | the R&C2 moby class reader |
+| D | Tie and moby lighting as R&C2 does it | light passes where equal | R&C2's tie colours |
+| E | Sound: the level's bank, sound instances, music, movie audio, the front end's sounds | `audio_out`, 989snd, VAG | R&C2's bank tables |
+| F | Ratchet: hero states for Aranos (walk, jump, swing, wrench, the tutorial's gadgets), follow camera, collision | collision queries | `rc-game2::hero` |
+| G | Aranos's mobys: the tutorial's objects, enemies, crates, bolts, doors, the ship; HUD and pause menu | moby scheduler services | `rc-game2` classes |
+| H | Cinematics: Aranos's scenes (SCENE0) and movies, subtitles | `scene_render`, movies | R&C2's scene format |
+| I | Saves and the level end (to Oozla, or the "not yet" screen) | `save_game`, card folder | R&C2's tables |

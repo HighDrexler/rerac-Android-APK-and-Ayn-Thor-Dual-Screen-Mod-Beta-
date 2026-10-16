@@ -75,6 +75,7 @@ mod visibomb_view;
 mod gs_post;
 mod reactive_render;
 mod rac2;
+mod rac2_level;
 mod saves;
 mod scene_render;
 mod sea_render;
@@ -130,13 +131,15 @@ fn main() -> anyhow::Result<()> {
     // `--version-json` exits here; a missing or wrong data folder exits with a clear error (crate::disc_source).
     let root = disc_source::startup();
     // Going Commando's data folder: its own front end (crate::rac2).
-    if disc_source::game(&root) == disc_source::Game::Rac2 { return rac2::run(root); }
+    // With RC_LEVEL it starts in that level instead, drawn by the shared renderers (crate::rac2_level).
+    let rac2 = disc_source::game(&root) == disc_source::Game::Rac2;
+    if rac2 && std::env::var("RC_LEVEL").is_err() { return rac2::run(root); }
     let index = level_load::level_index();
     // The one level load (the boot's and every runtime level change's, crate::level_switch): the level data, the loader's
     // ship and the load-time update pass (crate::moby_spawn; RC_SPAWN_RULES=0 skips it), the fog zones and the
     // underwater test (crate::fog_state).
     // The boot's game state first: the level's spawn test reads its save bits (crate::gameplay::level_spawn_save).
-    let boot = gameplay::boot_state(&root, index);
+    let boot = if rac2 { None } else { gameplay::boot_state(&root, index) };
     let save = gameplay::level_spawn_save(boot.as_ref().map(|(gs, _)| gs), index);
     let level_switch::LevelBundle { mut level, spawn, fog: fog_state, .. } = level_switch::load_bundle(&root, index, &save)?;
     let t = &level.timings;

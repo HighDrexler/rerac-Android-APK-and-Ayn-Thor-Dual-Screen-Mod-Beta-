@@ -155,6 +155,12 @@ pub enum Game { Rac1, Rac2 }
 /// The game of the data folder [`startup`] checked.
 pub fn game(root: &Path) -> Game { if root.join(RAC2_TOC).is_file() && !root.join("toc.bin").is_file() { Game::Rac2 } else { Game::Rac1 } }
 
+/// The game of the process's data folder ([`data_root`]), once.
+pub fn current() -> Game {
+    static GAME: OnceLock<Game> = OnceLock::new();
+    *GAME.get_or_init(|| game(&data_root()))
+}
+
 static ROOT: OnceLock<PathBuf> = OnceLock::new();
 
 /// The process start (`main`, first line): handles `--version-json`, resolves and checks the data root, and
