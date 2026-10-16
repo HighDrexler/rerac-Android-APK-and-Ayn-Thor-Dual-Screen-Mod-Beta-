@@ -131,9 +131,8 @@ fn main() -> anyhow::Result<()> {
     // `--version-json` exits here; a missing or wrong data folder exits with a clear error (crate::disc_source).
     let root = disc_source::startup();
     // Going Commando's data folder: its own front end (crate::rac2).
-    // With RC_LEVEL it starts in that level instead, drawn by the shared renderers (crate::rac2_level).
+    // Going Commando runs the same app on its level (crate::rac2_level), its front end over it (crate::rac2).
     let rac2 = disc_source::game(&root) == disc_source::Game::Rac2;
-    if rac2 && std::env::var("RC_LEVEL").is_err() { return rac2::run(root); }
     let index = level_load::level_index();
     // The one level load (the boot's and every runtime level change's, crate::level_switch): the level data, the loader's
     // ship and the load-time update pass (crate::moby_spawn; RC_SPAWN_RULES=0 skips it), the fog zones and the
@@ -242,6 +241,7 @@ fn main() -> anyhow::Result<()> {
     .add_systems(Startup, setup_camera)
     .add_systems(level_switch::LevelStartup, setup)
     .add_systems(Update, report_fps);
+    if rac2 && rac2::requested() { app.add_plugins(rac2::FrontEndPlugin::new(&root)?); }
     // RC_RENDER_DIAG=1: Bevy's per-pass render timings (CPU only on Metal) and the views rendered, logged every 5 s.
     if std::env::var("RC_RENDER_DIAG").is_ok_and(|v| v.trim() == "1") {
         app.add_plugins((

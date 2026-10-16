@@ -29,7 +29,8 @@ New Game says "not yet". Nothing of R&C1 is rewritten for it.
    The splashes, the Insomniac movie, the title (couch movies, "Press START") and the main menu run and draw through
    one `hud_render::Layer`. Not yet: any sound (movie audio, menu sounds, music), what the rows open (New Game, Load,
    Options log "not in this version yet"), the subtitles over movies, PAL / other languages.
-   Run: `RC_DATA_DIR=<repo>/extracted-rac2 cargo dev`.
+   Run: `RC_DATA_DIR=<repo>/extracted-rac2 cargo dev` (front end, then New Game → Aranos);
+   `RC_LEVEL=n` starts in level n without the front end (`RC_FRONTEND=1` keeps it).
 4. **Ship.** The launcher lists Going Commando, installs it to `games/rac2`, and starts it on the main menu.
 
 ## 3. Disc facts (SCUS_972.68 v2.00)
@@ -193,7 +194,7 @@ branch is taken on `rc_formats::Game::Rac2` only, and R&C1's default paths stay 
 
 | # | Milestone | Shared | New |
 | --- | --- | --- | --- |
-| A | Aranos world: the level file's lumps, tfrags, shrubs, sky, collision, textures, ties (unlit), fly camera (done, `RC_LEVEL=0`); New Game loads Aranos (not yet) | the renderers, `level_load` | `rac2::level`, the R&C2 load path |
+| A | Aranos world: the level file's lumps, tfrags, shrubs, sky, collision, textures, ties (unlit), fly camera (done, `RC_LEVEL=0`); New Game loads Aranos (done: the front end runs over the loaded level in the one app, crate::rac2; the save-slot page between is §I) | the renderers, `level_load` | `rac2::level`, the R&C2 load path |
 | B | The gameplay file: section table, tie / shrub / moby instances, level settings (fog, background, death height), cameras, volumes, splines, lights | the instance readers where equal | the R&C2 section map |
 | C | Moby classes: mesh, skeleton, animation, textures; drawn and animated at their instances (done: 384 of 472 Aranos instances placed, 156 animated; not yet the loader's ground snap, the spawn rules, Ratchet's armour mesh) | moby renderer, anim eval | the R&C2 vertex table header |
 | D | Tie and moby lighting as R&C2 does it | light passes where equal | R&C2's tie colours |

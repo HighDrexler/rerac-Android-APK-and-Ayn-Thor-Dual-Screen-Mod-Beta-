@@ -652,6 +652,8 @@ pub struct Layer {
     pub mesh: Handle<Mesh>,
     /// Atlas rectangle of each texture.
     pub frames: Vec<[u32; 4]>,
+    /// The layer's camera, primitives and composite, for [`Layer::despawn`].
+    pub entities: [Entity; 3],
 }
 
 impl Layer {
@@ -677,7 +679,7 @@ impl Layer {
         img.sampler = bevy::image::ImageSampler::nearest();
         let atlas_handle = images.add(img);
         let target = images.add(Image::new_target_texture(W as u32, H as u32, TextureFormat::Rgba16Float, None));
-        commands.spawn((
+        let camera = commands.spawn((
             Camera2d,
             Camera { order: -10, clear_color: ClearColorConfig::Custom(Color::NONE), ..default() },
             RenderTarget::Image(target.clone().into()),
@@ -687,25 +689,28 @@ impl Layer {
             DebandDither::Disabled,
             RenderLayers::layer(HUD_LAYER),
             Name::new("2d layer camera (512x416 offscreen)"),
-        ));
+        )).id();
         let mesh = meshes.add(empty_mesh());
-        commands.spawn((
+        let prims = commands.spawn((
             Mesh2d(mesh.clone()),
             MeshMaterial2d(materials.add(HudMaterial { atlas: atlas_handle.clone(), additive: false })),
             Transform::IDENTITY,
             NoFrustumCulling,
             RenderLayers::layer(HUD_LAYER),
             Name::new("2d layer primitives"),
-        ));
-        commands.spawn((
+        )).id();
+        let composite = commands.spawn((
             Node { position_type: PositionType::Absolute, ..default() },
             crate::display::UiBoxed,
             MaterialNode(composites.add(HudComposite { image: target, scaling })),
             UiTargetCamera(ui_camera),
             Name::new("2d layer composite"),
-        ));
-        Layer { atlas: atlas_handle, mesh, frames: atlas.frames }
+        )).id();
+        Layer { atlas: atlas_handle, mesh, frames: atlas.frames, entities: [camera, prims, composite] }
     }
+
+    /// Removes the layer's entities (its images and mesh go with their last handles).
+    pub fn despawn(&self, commands: &mut Commands) { for e in self.entities { commands.entity(e).despawn(); } }
 
     /// The mesh of a primitive list.
     pub fn build(&self, d: &Hud2d) -> Mesh { build_mesh(&d.prims, &d.fine, &d.add, &self.frames, &[], &[], 0) }
