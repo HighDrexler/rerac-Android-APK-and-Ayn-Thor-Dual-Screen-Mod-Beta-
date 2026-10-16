@@ -618,7 +618,8 @@ fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level
             }
         }
         for item in a.items.iter_mut().filter(|i| i.attach.slot == Slot::Hook) {
-            item.visible = hook.is_some();
+            // `0x2dccd8`: hidden with the Swingshot (first person) and while the gold bolt's pickup hides the hand (0x1413ff).
+            item.visible = hook.is_some() && !fp && !hand_off;
             if let Some(k) = hook.as_ref() {
                 // The claws' animation as the hook's update (`0x2dccd8`, rc_game::hero::swingshot) left it.
                 item.state = k.anim;
