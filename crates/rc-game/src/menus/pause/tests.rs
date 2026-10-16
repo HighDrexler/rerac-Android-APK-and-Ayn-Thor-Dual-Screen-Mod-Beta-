@@ -413,6 +413,15 @@ fn port_page_from_the_disc() {
     assert_eq!((pg.seqs, pg.parent, pg.focus), (sub.seqs, port::OPTIONS, port::LIST_W));
     assert_eq!((pg.widgets[1], pg.widgets[2], pg.widgets[4]), (sub.widgets[1], sub.widgets[2], sub.widgets[4]));
     assert!(matches!(&m.widgets[&port::TITLE_W].data, Data::Label(t) if t.flags == 0xf && t.id == port::text::TITLE as u32));
+    // The main menu's copy: the front end's Sound page's frames (its title label at slot 2), parent the front end's
+    // Options, the same title and list; "Port Options" last in both front-end Options lists (NTSC, PAL).
+    let (front, sound) = (&m.pages[&port::PAGE_FRONT], m.pages[&0x1b8e38].clone());
+    assert_eq!((front.seqs, front.parent, front.focus), (sound.seqs, port::FRONT_OPTIONS, port::LIST_W));
+    assert_eq!((front.widgets[2], front.widgets[3], front.widgets[4]), (port::TITLE_W, port::LIST_W, sound.widgets[4]));
+    for list in &m.saves.front_options {
+        assert_eq!(list.last().map(|i| (i.label, i.action, i.arg)), Some((port::text::ENTRY as i16, 3, port::PAGE_FRONT)));
+    }
+    assert_eq!(m.saves.front_options[0].len(), 3);
 
     // Pause → Options → Up twice (wrap to Quit Game, then Port Options) → ✕ → the page; ✕ cycles; △ back.
     let mut g = gs();
@@ -464,4 +473,5 @@ fn port_page_from_the_disc() {
     m.tick(&press(button::TRIANGLE), &mut g, &env);
     assert_eq!(m.target, port::OPTIONS);
 }
+
 

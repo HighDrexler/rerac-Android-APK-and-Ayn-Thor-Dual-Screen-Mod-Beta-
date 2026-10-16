@@ -88,6 +88,8 @@ pub struct Addrs {
     pub port_options_list: u32,
     pub port_options_label: u32,
     pub port_quit: u32,
+    /// The front end's Options page (`port::FRONT_OPTIONS`).
+    pub port_front_options: u32,
     pub port_model_few: u32,
     pub port_model_many: u32,
     /// The Help / Weapons and Help / Gadgets label tables (`pages::data::WEAPON_TEXTS`, `GADGET_TEXTS_A` / `_B`).
@@ -122,6 +124,7 @@ impl Addrs {
             port_options_list: a(port::OPTIONS_LIST),
             port_options_label: a(port::OPTIONS_LABEL),
             port_quit: a(port::QUIT_PAGE),
+            port_front_options: a(port::FRONT_OPTIONS),
             port_model_few: a(port::MODEL_FEW),
             port_model_many: a(port::MODEL_MANY),
             help_texts: [a(pages::data::WEAPON_TEXTS), a(pages::data::GADGET_TEXTS_A), a(pages::data::GADGET_TEXTS_B)],

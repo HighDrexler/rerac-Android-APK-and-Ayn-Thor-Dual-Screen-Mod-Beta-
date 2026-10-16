@@ -66,7 +66,7 @@
 //! (0..524288, F 255..0): at the frames' depth (≈ 5 units) the two differ by at most one step of F.
 //!
 //! **Port Options** (port-only, `rc_game::menus::pause::port`): an extra "Port Options" entry in the Options
-//! list opens a page built from the game's machinery; its graphics rows are synced with crate::graphics's
+//! list (the pause menu's and the main menu's) opens a page built from the game's machinery; its graphics rows are synced with crate::graphics's
 //! `GraphicsSettings` around every menu tick (the shadows row likewise with `shadow_render::ShadowSettings`, the display
 //! rows with `display::DisplaySettings`): the resource's value is shown, a ✕ writes it back and saves it to the port
 //! settings file. The anti-aliasing row offers only the sample counts the GPU supports ([`SupportedMsaa`]; ✕ skips the
