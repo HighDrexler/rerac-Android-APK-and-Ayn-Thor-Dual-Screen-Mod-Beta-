@@ -1400,6 +1400,9 @@ fn setup(
     svc.groups = statics.groups(&lv.gameplay);
     // The "use" system: talk tables, text, talk slots, save values (crate::interact_render; before the load pass).
     crate::interact_render::install(&mut svc, lv, &statics.instance_to_moby, state.as_ref().map(|s| &s.0));
+    // InitLevelRenderGlobals: the ship it creates is the hook slot 0 (`MobyUnknown74Hook(ship, 0)`: the map's ship
+    // marker); an adopted ship (level 13's 533, 0x13e030 set by `0x2a2360`) is not created, so not hooked.
+    if let Some(id) = ship_id.filter(|_| !crate::level_load::ship_adopted()) { svc.interact.register_talk_mobys([(id, 0)]); }
     if let Some(gs) = &state {
         svc.counters.bolts = gs.0.global.bolts;
         // 0x15ee20 (the challenge-gated pads 1135 and gold-weapon offers read it) and 0x13e520.
@@ -1897,6 +1900,7 @@ fn death_reload(p: &mut Play, lv: &crate::level_load::LoadedLevel, state: Option
     p.svc.hits = Default::default();
     // The "use" system's talk slots and save values by the new instance → moby map (before the load pass, as the load).
     crate::interact_render::install(&mut p.svc, lv, &statics.instance_to_moby, state);
+    if let Some(id) = ship_id.filter(|_| !crate::level_load::ship_adopted()) { p.svc.interact.register_talk_mobys([(id, 0)]); }
     p.svc.build_grid(&mut p.game.mobys);
     p.reload_shown = shown;
     println!(
