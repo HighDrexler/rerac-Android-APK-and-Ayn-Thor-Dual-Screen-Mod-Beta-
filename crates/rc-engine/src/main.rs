@@ -76,6 +76,7 @@ mod gs_post;
 mod reactive_render;
 mod rac2;
 mod rac2_level;
+mod rac2_play;
 mod saves;
 mod scene_render;
 mod sea_render;
@@ -116,7 +117,7 @@ use level_load::LoadedLevel;
 use tfrag_render::{game_to_bevy, TfragMaterial};
 
 #[derive(Resource)]
-struct Level(LoadedLevel);
+pub(crate) struct Level(pub(crate) LoadedLevel);
 
 #[derive(Resource)]
 struct ScreenshotRequest {
@@ -242,6 +243,7 @@ fn main() -> anyhow::Result<()> {
     .add_systems(level_switch::LevelStartup, setup)
     .add_systems(Update, report_fps);
     if rac2 && rac2::requested() { app.add_plugins(rac2::FrontEndPlugin::new(&root)?); }
+    if rac2 { app.add_plugins(rac2_play::Rac2PlayPlugin); }
     // RC_RENDER_DIAG=1: Bevy's per-pass render timings (CPU only on Metal) and the views rendered, logged every 5 s.
     if std::env::var("RC_RENDER_DIAG").is_ok_and(|v| v.trim() == "1") {
         app.add_plugins((

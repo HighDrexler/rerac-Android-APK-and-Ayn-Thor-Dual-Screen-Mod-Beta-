@@ -4423,7 +4423,9 @@ dependencies = [
 name = "rc-game2"
 version = "0.3.4"
 dependencies = [
+ "anyhow",
  "rc-formats",
+ "rc-game",
 ]
 
 [[package]]

@@ -203,3 +203,29 @@ branch is taken on `rc_formats::Game::Rac2` only, and R&C1's default paths stay 
 | G | Aranos's mobys: the tutorial's objects, enemies, crates, bolts, doors, the ship; HUD and pause menu | moby scheduler services | `rc-game2` classes |
 | H | Cinematics: Aranos's scenes (SCENE0) and movies, subtitles | `scene_render`, movies | R&C2's scene format |
 | I | Saves and the level end (to Oozla, or the "not yet" screen) | `save_game`, card folder | R&C2's tables |
+
+### 6.4 Ratchet (milestone F, started 2026-10-16)
+
+**What the code shows.** R&C2's hero is R&C1's hero evolved, not rewritten: the same driver (`0x2b37e8` = R&C1
+`0x231d18`: stick with the d-pad below 0.25, per-state physics, yaw / position rings, rows, capsule, move, post-move),
+the same two dispatchers (physics `0x2ba8e0`, transitions `0x2cb650`), SetState `0x2c4560` with R&C1's bookkeeping,
+the same helpers (stick target `0x2b3af8`, turn `0x2b4000`, speed `0x2b42c0`, drag `0x2b5600`, edge brake `0x2ba008`,
+wall check `0x2b4560`, move `0x2b5c68`, probe `0x2b4a08`, snap `0x2b5358`) and the same core state ids (idle 0, walk
+2, stop 3, crouch 4, fall 6, jump 7, run jump 9), with R&C2's constants (run speed 5.95, jump 1.28–2.3 / 1.0–2.7,
+gravity 0.00825) and additions (gravity frames, strafe, 0x93 states). From the velocity on, the hero block's fields
+sit at R&C1's address + 0x4aae0. The crossgame diff's 0.1–0.4 similarity came from those additions inside long
+functions. So the port follows R&C1's organisation (`rc_game2::hero`: registry, states, physics, ground, walk, air,
+jump), each function read from R&C2's code, in native f32. Details that differ were found that way (the stick
+magnitude `(max(|x|, |y|) + |stick|) / 2`, the spring's pre-clamp, the snap constants).
+
+**Shared, used as they are:** the pad record (`0x3306b0` = R&C1's `ProcessPadInput`), the collision kernels, and
+Ratchet's animation player (SetAnim `0x2d2508` = R&C1's `0x247a90`). New in R&C2 and now read by `rc_formats`:
+Ratchet's mesh is the armour's (`rac2::armor`), and his sequences are compressed (frame pointers with 0xf in the top
+nibble, decoded by `0x313fa8`: `moby_anim::decode_compressed_frame`).
+
+**Done:** idle, walk / run (the walk ↔ run selector `0x2ca358`), stop, crouch, fall with its landings, jump 7 and run
+jump 9 (height ramp, windup, air control `0x2b6cd0` / `0x2b62a0`, landing `0x2cab40`). Engine: crate::rac2_play
+(pad, hero, camera, Ratchet's instance and pose). **Interim:** the camera (`rc_game2::camera`: the game's target
+point, a spring follow in place of the type-0 update `0x4278c8`). **Not yet:** every other state (long jump 0xb,
+double jump 0xe, wrench, swingshot, gadgets, water, ledges, damage / death), the moby collision of the queries, the
+lighting of Ratchet, his sounds, Clank on his back.

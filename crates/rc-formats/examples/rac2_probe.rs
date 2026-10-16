@@ -51,6 +51,17 @@ fn main() -> anyhow::Result<()> {
         let blk = core.block(&data, "moby_class/0000").unwrap();
         let mut c = moby::parse_moby_class_for(Game::Rac2, blk)?;
         moby::attach_packets(Game::Rac2, &mut c, &a.mesh)?;
+        println!("class 0: {} sequence pointers, {} non-zero; ratchet_seq blocks: {}", c.sequence_pointers.len(), c.sequence_pointers.iter().filter(|&&p| p != 0).count(),
+            (0..core.ratchet_seqs.len()).filter(|i| core.block(&data, &format!("ratchet_seq/{i:03}")).is_some()).count());
+        for i in [0usize, 3, 4, 7] {
+            if let Some(b) = core.block(&data, &format!("ratchet_seq/{i:03}")) {
+                match moby_anim::parse_sequence_joints(b, 0, Some(111)) {
+                    Ok(sq) => println!("seq {i}: {} frames, rate override {}, first frame {:?}", sq.frames.len(), sq.header.rate_override, sq.frames.first().map(|f| f.header)),
+                    Err(e) => println!("seq {i}: ERR {e}; header bytes {:02x?}", &b[..0x30]),
+                }
+            } else { println!("seq {i}: no block"); }
+        }
+        println!("ratchet_seqs[0..40] = {:x?}", &core.ratchet_seqs[..40]);
         let tris: usize = c.high_lod.iter().map(|p| p.triangles.len()).sum();
         let texs: std::collections::BTreeSet<i32> = c.high_lod.iter().flat_map(|p| p.triangles.iter().map(|t| t.texture)).collect();
         println!("armours {}; armour 0: {} textures {:?}; Ratchet: {} high / {} low / {} metal packets, {tris} high triangles, textures used {texs:?}, joints {}",

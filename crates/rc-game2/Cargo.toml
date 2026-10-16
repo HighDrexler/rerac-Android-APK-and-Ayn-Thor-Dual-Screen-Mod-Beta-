@@ -9,3 +9,8 @@ description = "Game logic of Ratchet & Clank: Going Commando (PS2), ported from 
 # Like rc-game: no engine dependency; the engine draws what this crate lays out.
 [dependencies]
 rc-formats = { path = "../rc-formats" }
+# The systems both games share (rc-game: the pad record, the collision queries, Ratchet's animation player).
+rc-game = { path = "../rc-game" }
+
+[dev-dependencies]
+anyhow.workspace = true

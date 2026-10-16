@@ -170,7 +170,7 @@ impl Playing {
 }
 
 #[derive(Resource)]
-struct Rac2 {
+pub(crate) struct Rac2 {
     /// The opaque camera the layer's composite draws on (above the world, below the frame's present camera).
     camera: Option<Entity>,
     /// New Game was taken: the layer is gone and nothing ticks.
@@ -185,6 +185,11 @@ struct Rac2 {
     ticks: u64,
     trace: bool,
     layer: Option<Layer>,
+}
+
+impl Rac2 {
+    /// New Game was taken (the game ticks from now on, crate::rac2_play).
+    pub(crate) fn done(&self) -> bool { self.done }
 }
 
 /// The front end runs: `RC_FRONTEND=1`, or no `RC_LEVEL` (crate::saves::front_end_requested's rule for R&C1).
