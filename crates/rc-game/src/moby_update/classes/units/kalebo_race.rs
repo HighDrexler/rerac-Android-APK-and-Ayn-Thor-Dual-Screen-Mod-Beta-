@@ -2,7 +2,7 @@
 //! race girl 918 (`rilgar_story`; her talk update and teleport are the same code, level05 `0x2903a8` / `0x244090` =
 //! level16 `0x261888` / `0x213dc0`). Her talk's node 3 starts the race: Ratchet is teleported to the start, the finish
 //! becomes his entry pose (0x141050 / 0x141060), the race's moby groups are switched on and the others off
-//! (`0x2e70c0`), the death height drops to 74, the sea (1111) is told to sink to 76 and the race music plays; the race
+//! (`0x2e70c0`), the death height drops to 74, the sea (1111) drops to 76 and the race music plays; the race
 //! (Ratchet's group-0x16 code, **G-LVL-007**) reports through her +0xbc: 1 won (back to the finish; the Hologuise not
 //! yet acquired → her talk jumps to node 4), 2 lost, 3 a restart; Ratchet back in group 0 ends it (`0x2e7168`). Node 4
 //! played → item movie 0 → the Hologuise (item 31) and a save. A race score past 4499 earns skill point 0x13d422.
@@ -37,8 +37,8 @@
 //! | state 4 | game mode 0: → 1, `GiveItem(31, 1)` (the Hologuise), `memcard_Save` | [`update`] |
 //! | tail | seq B = 0: look at Ratchet's body point within 8 in front (±90°) for `ticks(120)` after he moved (0x13f450 > 0.01), else at a glance point (every `trunc(scale(randf(180, 300)))`: 6 ahead at yaw + `randf(±90°)`, `randf(0, 30°)` up); targets: pitch −atan(\|d.xy\|, d.z) clamped ±30°, yaw (clamped ±90°) ·0.7 / ·0.3 on the two records | [`look`] |
 //! | tail | the actors' cheat: the head record's scale 2.75; `0x25ddd0(k·0.02 (0.04 on Ratchet), 0.3, self, +0xe0, 0)` and `(…, +0x160, 1)` | [`look`] (`manip::look`) |
-//! | 0x2e70c0 | the race groups +0x60 on (update, drawn, collision), +0xa0 off; death height 74; the sea word gp−0x4f8c = 76; `MusicRequestTrack(2, 6)` | [`race_on`] (the sea class 1111 (`Sea(6)`) does not read the word yet: noted in G-CLS-032) |
-//! | 0x2e7168 | +0x60 off; +0xa0 on, drawn, collision off; the sea word = 100; `MusicRequestTrack(0, 8)` | [`race_off`] |
+//! | 0x2e70c0 | the race groups +0x60 on (update, drawn, collision), +0xa0 off; death height 74; `0x2de3b8(76)`: the sea 1111's base gp−0x4f8c, drawn there from its next update; `MusicRequestTrack(2, 6)` | [`race_on`] (`water::sea::set_ocean_base`) |
+//! | 0x2e7168 | +0x60 off; +0xa0 on, drawn, collision off; `0x2de3b8(100)`; `MusicRequestTrack(0, 8)` | [`race_off`] |
 
 use crate::moby_runtime::MobyId;
 use crate::moby_update::creature as c;
@@ -72,8 +72,9 @@ const FINISH: ([f32; 3], [f32; 3]) = ([f32::from_bits(0x42f0_e666), f32::from_bi
 /// The race's words (written by the race code, G-LVL-007): the score 0x13fbf8 and the best score 0x15ee6c.
 pub const SCORE_WORD: u32 = 0x13_fbf8;
 pub const BEST_WORD: u32 = 0x15_ee6c;
-/// gp−0x4f8c: the sea 1111's target height.
-pub const SEA_WORD: u32 = 0x16_1c74;
+/// gp−0x4f8c (0x161c74): the sea 1111's base height, set through `0x2de3b8` (`water::sea::set_ocean_base`).
+pub const SEA_RACE: f32 = 76.0;
+pub const SEA_REST: f32 = 100.0;
 /// The skill point 0x13d422.
 const SKILL: u32 = 0x13_d422;
 /// The Hologuise (item 31) and the Hoverboard (item 30).
@@ -93,7 +94,7 @@ pub fn race_on(w: &mut World, id: MobyId) {
     for k in 0..16 { let g = c::pi32(w, id, pvo::GROUPS_ON + 4 * k); story::group_set(w, g, 1, 1, 1); }
     for k in 0..8 { let g = c::pi32(w, id, pvo::GROUPS_OFF + 4 * k); story::group_set(w, g, 0, 0, 0); }
     set_death_z(w, 74.0);
-    w.svc.units.set_word(SEA_WORD, 76.0f32.to_bits());
+    crate::water::sea::set_ocean_base(&mut w.svc.water, SEA_RACE);
     music(w, 2, 6);
 }
 
@@ -101,7 +102,7 @@ pub fn race_on(w: &mut World, id: MobyId) {
 pub fn race_off(w: &mut World, id: MobyId) {
     for k in 0..16 { let g = c::pi32(w, id, pvo::GROUPS_ON + 4 * k); story::group_set(w, g, 0, 0, 0); }
     for k in 0..8 { let g = c::pi32(w, id, pvo::GROUPS_OFF + 4 * k); story::group_set(w, g, 1, 1, 0); }
-    w.svc.units.set_word(SEA_WORD, 100.0f32.to_bits());
+    crate::water::sea::set_ocean_base(&mut w.svc.water, SEA_REST);
     music(w, 0, 8);
 }
 
