@@ -32,7 +32,8 @@ pub fn rgba(r: f32, g: f32, b: f32, a: f32) -> u32 {
 /// pool is full.
 pub fn spawn(sys: &mut Particles, rng: &mut Rng, moby: usize, at: [f32; 4]) -> Option<usize> {
     let i = sys.create_part(TYPE)?;
-    let def = sys.def_first(TYPE);
+    // `*0x1b2520`: the first frame of def[8] (the type-8 sprites' table), not def[32].
+    let def = sys.def_first(8);
     let rot = rng.randf(0.0, 1.0);
     let size = rng.randf(50000.0, 50000.0);
     let r = &mut sys.pool.recs[i];
