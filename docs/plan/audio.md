@@ -324,8 +324,10 @@ RAND_PLAY, WAIT_FOR_ALL_VOICES, STOP, LFO: all ported; unported types (2, 3, 5�
 are counted (none occur). The IOP `rand()` is not reversed: a newlib-style LCG seeded 1 (M). SPU voice
 allocation (U, the proposal of §6): free voice in the group range (groups 1/2/4 → 0x18–0x2f, others 0–47),
 else the lowest-priority, oldest tone with priority ≤ the new one, else drop; streams are never taken.
-OpenGOAL has no voice limit. `SetSoundParams` mask: 1 vol, 2/4 pan, 8 pm, 0x10 pb (the EE's bits; the IOP's
-reading of 4 vs 2 is inferred).
+Implementation invariant (tested, not new IRX evidence): a preseeked stream's inactive SPU voice is reserved
+until `Continue`; `audio::music::tests::preseeked_stream_keeps_its_voice` covers the fleet-mission failure where
+a tone took it. OpenGOAL has no voice limit. `SetSoundParams` mask: 1 vol, 2/4 pan, 8 pm, 0x10 pb (the EE's
+bits; the IOP's reading of 4 vs 2 is inferred).
 
 **Music (H for the EE, M for the IOP).** `music_Update`, start / preseek / body / transition, the request
 `FUN_0027a248`, `music_UpdateStream`, and the seven callbacks, disassembled here: start 0x27af20 (`handle = h`;
