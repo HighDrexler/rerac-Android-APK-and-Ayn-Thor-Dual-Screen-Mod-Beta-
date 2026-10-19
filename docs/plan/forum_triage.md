@@ -152,7 +152,13 @@ the ocean 1111 and the strip water draw from — the port's order too, so their 
 unless the game masks Z for faded mobys (ZBUF ZMSK, not read). Needs a PS2 capture of a throw over water. The canisters
 and enemy attacks (§1.10): the tanks 1261 take any record through `MobyGetHitMessage(0x330001)` and the resolver gives
 out5 = 2 for every attack type, and enemy shots with a template (the turret's 1238, flags 0x10001) line-test into
-mobys with mode 0x4000 as the hero's do; the Space Commandos' class is not identified (needs the spot).
+mobys with mode 0x4000 as the hero's do; the Space Commandos' class is not identified (needs the spot). Hoven's helicopter static (§1.25): the clip
+clips only a handful of samples; the noise is a broadband 4–7 kHz block before the first explosion and two clicks on
+later ones; the copter 1255's own code plays no death sound (its burst's sound is −1), so the source is another
+voice (its rotor loop or the explosions' shared sounds): needs an `RC_AUDIO_TRACE` run of the turret section. Orxon's
+Clank-area textures (§1.32): the PS2 shots show lit square panels on the walls and the door, and vent grilles on the
+raised blocks, that the port's shots lack — missing objects or a layer rather than wrong textures; needs a run there
+to name the classes at those spots.
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
