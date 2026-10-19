@@ -1,0 +1,110 @@
+name: Android source-built native core
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/native-core-035]
+    paths:
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
+      - android/native/**
+      - .github/workflows/android-native-build.yml
+permissions:
+  contents: read
+concurrency:
+  group: native-core-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/integration/native-core-035'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/native-core-035
+          fetch-depth: 1
+      - name: Commit reviewed Android hooks as normal editable source
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 android/native/apply_engine_hooks.py
+          git diff --check
+          git add crates/rc-engine/Cargo.toml crates/rc-engine/src/main.rs crates/rc-engine/src/input_map.rs crates/rc-engine/src/frame_pace.rs crates/rc-engine/src/menu_render.rs
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'Wire source-built Android runtime into engine entry point and native schedules'
+            git push origin HEAD:integration/native-core-035
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  native:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+          - abi: x86_64
+            target: x86_64-linux-android
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
+      CARGO_PROFILE_RELEASE_DEBUG: 0
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source }}
+          persist-credentials: false
+      - uses: android-actions/setup-android@v3
+      - name: Prepare Rust and Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add '${{ matrix.target }}'
+          sdkmanager 'ndk;28.2.13676358'
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          mkdir -p out
+          rustc --version > out/rust-version.txt
+          git rev-parse HEAD > out/source-commit.txt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-native-r28-${{ matrix.abi }}
+          cache-on-failure: true
+      - name: Test production input adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --edition=2021 --test crates/rc-engine/src/touch_input.rs -o /tmp/touch-tests
+          /tmp/touch-tests --nocapture | tee out/touch-tests.txt
+      - name: Install pinned Android Cargo adapter
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Compile native game engine from source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo ndk -t '${{ matrix.abi }}' -p 28 -o out/jniLibs build -p rc-engine --lib --release 2>&1 | tee out/native-build.log
+          cp Cargo.lock out/Cargo.lock
+          readelf -lW out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-segments.txt
+          readelf --dyn-syms --wide out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-exports.txt
+          sha256sum out/jniLibs/${{ matrix.abi }}/* > out/SHA256SUMS
+          git archive --format=tar HEAD | gzip > out/source.tar.gz
+      - name: Retain compiler output and native artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-core-${{ matrix.abi }}
+          path: out
+          retention-days: 14
+          if-no-files-found: error
