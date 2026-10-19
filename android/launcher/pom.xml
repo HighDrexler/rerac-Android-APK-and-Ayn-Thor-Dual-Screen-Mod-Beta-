@@ -12,6 +12,18 @@
     <sourceDirectory>android/src</sourceDirectory><testSourceDirectory>android/tests</testSourceDirectory>
     <plugins>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+      <!-- Maven does not put classes.jar inside transitive AARs on the JVM classpath.
+           These classes belong to the test harness only, never the shipped APK. -->
+      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-antrun-plugin</artifactId><version>3.1.0</version>
+        <executions><execution><id>androidx-test-runtime</id><phase>process-test-classes</phase><goals><goal>run</goal></goals>
+          <configuration><target>
+            <unzip src="${settings.localRepository}/androidx/test/monitor/1.7.2/monitor-1.7.2.aar" dest="${project.build.directory}/test-aars/monitor"/>
+            <unzip src="${settings.localRepository}/androidx/test/espresso/espresso-idling-resource/3.6.1/espresso-idling-resource-3.6.1.aar" dest="${project.build.directory}/test-aars/espresso"/>
+            <unzip src="${project.build.directory}/test-aars/monitor/classes.jar" dest="${project.build.testOutputDirectory}"/>
+            <unzip src="${project.build.directory}/test-aars/espresso/classes.jar" dest="${project.build.testOutputDirectory}"/>
+          </target></configuration>
+        </execution></executions>
+      </plugin>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version>
         <configuration><argLine>-Xmx3g --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.reflect=ALL-UNNAMED</argLine>
           <systemPropertyVariables><robolectric.logging.enabled>true</robolectric.logging.enabled></systemPropertyVariables>
