@@ -10,7 +10,7 @@ def click(out, text, prefix=False):
         root = screen(out, 'navigation')
         for node in root.iter('node'):
             value = node.get('text', '')
-            if (value.startswith(text) if prefix else value == text) and node.get('enabled') == 'true':
+            if (value.startswith(text) if prefix else value == text) and node.get('enabled') == 'true' and node.get('clickable') == 'true':
                 box = list(map(int, re.findall(r'\d+', node.get('bounds', ''))))
                 if len(box) == 4 and box[2] > box[0] and box[3] > box[1]:
                     tap_text(root, value)
