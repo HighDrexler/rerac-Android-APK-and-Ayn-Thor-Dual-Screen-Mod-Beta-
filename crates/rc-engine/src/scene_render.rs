@@ -741,6 +741,16 @@ fn enter_mode2(rt: &mut SceneRuntime, p: &mut Play) {
         let m = &mut p.game.mobys.mobys[npc];
         if m.mode & 1 == 0 { m.mode |= 1; rt.hid.push((npc, 1)); }
     }
+    // FUN_002486c0 with Clank the hero (0x1413f4 = 1): his antenna glow moby 0x140974 hidden too (+0x34 |= 1; shown again
+    // by FUN_002487a8 at the end). It stayed lit where Clank stood before the scene, over the scene's own Clank.
+    if p.game.hero.mode == 1 {
+        if let Some(g) = p.game.hero.bodies.glow {
+            if let Some(m) = p.game.mobys.mobys.get_mut(g).filter(|m| m.mode & 1 == 0) {
+                m.mode |= 1;
+                rt.hid.push((g, 1));
+            }
+        }
+    }
     for (id, m) in p.game.mobys.mobys.iter_mut().enumerate() {
         if m.state < 0x80 && SCENE_HIDDEN_CLASSES.contains(&m.o_class) && m.mode & SCENE_HIDDEN_BIT == 0 {
             m.mode |= SCENE_HIDDEN_BIT;
