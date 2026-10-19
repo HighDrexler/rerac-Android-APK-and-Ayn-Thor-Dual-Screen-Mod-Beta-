@@ -1,0 +1,96 @@
+name: Publish verified launcher beta.3
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/launcher-1.1-polish-core035]
+    paths: [.github/workflows/android-polish-publish.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: publish-launcher-beta3
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: launcher-v1.1.0-beta.3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require the successful signed-APK test and matching release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os,subprocess
+          repo=os.environ['GITHUB_REPOSITORY']
+          assert repo=='HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-'
+          def api(path):return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/{path}']))
+          run=api('actions/runs/39333056672')
+          assert run['conclusion']=='success' and run['head_sha']=='c53bd8548a53269d5f6833bbebe271c6a3ff7c02'
+          assert run['path']=='.github/workflows/android-polish-test.yml' and run['repository']['id']==1424927008
+          def app_tree(sha):
+              tree=api(f'git/trees/{sha}?recursive=1');assert not tree['truncated']
+              return {x['path']:x['sha'] for x in tree['tree'] if x['path'].startswith('android/launcher/') and x['type']=='blob'}
+          assert app_tree('53e20ea572614d5ce4b670b6b37a35a9408f594f')==app_tree('d8692a45371cf9a2bd7de7cd66473558c47862a2')
+          pr=api('pulls/2');assert pr['merged'] and pr['base']['ref']=='dev' and pr['head']['sha']=='53e20ea572614d5ce4b670b6b37a35a9408f594f'
+          PY
+      - name: Retrieve the exact passing signed artifact
+        run: gh run download 39333056672 --repo "$GITHUB_REPOSITORY" --name launcher-polish-signed-test --dir verified
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Independently verify APK identity, signature, native metadata and test evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          echo '06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3  verified/signed/ReRAC-Launcher-1.1.0-beta.3.apk' | sha256sum -c -
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs verified/signed/ReRAC-Launcher-1.1.0-beta.3.apk > verified/signature.txt
+          grep -F '25c5eebb05a013bf3fb84706f9ad87904b8d4d8a99ba7857d62e665d2b94e24a' verified/signature.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 verified/signed/ReRAC-Launcher-1.1.0-beta.3.apk
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          apk=Path('verified/signed/ReRAC-Launcher-1.1.0-beta.3.apk');assert apk.stat().st_size==221604777
+          report=json.loads(Path('verified/reports/theme-smoke-report.json').read_text())
+          assert report['status']=='passed' and report['same_signer_upgrade'] and report['tested_actual_theme_apk']
+          assert report['apk_sha256']==hashlib.sha256(apk.read_bytes()).hexdigest()
+          with zipfile.ZipFile(apk) as z:
+              meta=json.loads(z.read('assets/rerac-build.json'))
+              assert meta['core_version']=='0.3.4' and meta['version_code']==19 and not meta['native_source_rebuild']
+              for name,digest in meta['native_sha256'].items():assert hashlib.sha256(z.read(name)).hexdigest()==digest
+          PY
+      - name: Publish new Development prerelease without replacing any prior release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Release already exists. Refusing to overwrite published assets.' >&2
+            exit 1
+          fi
+          cat > verified/notes.md <<'NOTES'
+          ## Launcher 1.1.0-beta.3 — Gadgetron presentation update
+          **Development test only. Actual ReRAC core remains 0.3.4/v16. The native Android 0.3.5 upgrade is not included.**
+
+          The launcher, Mods and Updates screens now use technical beveled panels, vector action icons, restrained blue/yellow highlights and visible controller/keyboard focus. Separate launcher/core versions remain in a small footer. Update details distinguish launcher-only updates from core changes.
+
+          Install over your existing launcher; do not uninstall. Existing app identity and signer are retained. The included mod remains the AYN Thor Dual-Screen Mod.
+
+          Verification: 55 Java/Robolectric tests passed with no failures or skips. This exact signed APK passed Android 15 x86-64 in-place beta.2-to-beta.3 upgrade checks, private-data/mod/channel preservation, resolution dialog, both dual-screen-toggle directions, update checking, help, compact layout navigation and downgrade refusal. Native engine/importer/gameplay payloads remain unchanged. Physical Thor gameplay, cutscenes, real save files and companion-display rendering were not tested by the emulator.
+
+          SHA-256: `06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3`
+          Android versionCode: 19. Application: `org.rerac.android.uipreview`.
+
+          The complete native Android port source is still required to rebuild the actual 0.3.5 engine. See `android/native/INTEGRATION_STATUS.md`. Stable and v1.0 remain unchanged.
+          NOTES
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --target 53e20ea572614d5ce4b670b6b37a35a9408f594f --prerelease --latest=false --title 'ReRAC Launcher 1.1 beta.3 — Gadgetron UI (core 0.3.4)' --notes-file verified/notes.md verified/signed/ReRAC-Launcher-1.1.0-beta.3.apk verified/signed/SHA256SUMS.txt verified/reports/theme-smoke-report.json verified/reports/02-themed-launcher.png verified/reports/04-themed-mods.png verified/reports/05-themed-updates.png
+          echo 'Published beta.3 Development prerelease. Stable and update manifests were not modified by this job.' >> "$GITHUB_STEP_SUMMARY"
