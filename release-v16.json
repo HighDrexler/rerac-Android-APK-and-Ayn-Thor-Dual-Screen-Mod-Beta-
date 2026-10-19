@@ -1,0 +1,20 @@
+{
+  "release": "ReRAC Mobile v16",
+  "versionCode": 16,
+  "packageId": "org.rerac.android.uipreview",
+  "apk": {
+    "filename": "ReRAC-Mobile-v16.apk",
+    "sizeBytes": 221575958,
+    "sha256": "cb13360fc1796e2c1e9ef00029eacbb853bd8e966837140878bd65df55f3b477"
+  },
+  "inputArchive": {
+    "filename": "ReRAC-Mobile-v16-clean (5).zip",
+    "sha256": "8533b9464d00d6fcccb20f8f189ac655ecec52a9473e412f6bc149046344f9fd",
+    "sourceEntries": 153
+  },
+  "status": {
+    "repositorySourceSynchronized": false,
+    "apkPublished": false,
+    "reason": "Source bundle is a cumulative patch source tree, not the complete upstream checkout. GitHub normal Git blobs cannot hold the 221575958-byte APK. Do not claim 1:1 until upload + full source integration is verified."
+  }
+}
