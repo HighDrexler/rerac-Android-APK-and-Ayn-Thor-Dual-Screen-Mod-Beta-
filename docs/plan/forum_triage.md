@@ -114,19 +114,25 @@ grind rail (accd9d3: Ratchet's aim frame 0x13f990, the rail's yaw plus the aim l
 auto-aim (23a24cf: the wrench states run the target search `0x22e238`); the escape / air timers over the pause menu
 (14c8b55).
 
-**Looked at 2026-10-19, not fixed (what the code says):**
-- §1.6 soldiers: the brawlers' and troopers' notice logic reads as the original's; telling why they stay put needs a
-  run with Ratchet in those rooms (their states, targets and area polygons live).
-- §1.7 Orxon's bombs: the grey bombs are not the lava rocks (938) nor the breakables 1855 / 1856 (both break in
-  place); the class still has to be matched to the model in the footage.
-- §1.13 warp pad: no pad class on Gemlik (Oltanis Orbit) or Oltanis found; needs the spot.
-- §1.14 autosave icon: no reader of the card status draws anything for the autosave (status 22) in the original's
-  code; needs a PS2 capture of the icon.
-- §1.18 the FOV after the dogfight: the original's jet also leaves its last FOV (65°, 85° with ✕ held) when the
-  mission ends; nothing on level 11 resets it there. Needs a PS2 check with the booster held at the cutaway.
-- §1.26 the reverb after the sewer teleport: the teleport re-reads the nearest env point and the reverb box keeps
-  the reverb when left through its +x face, both as the original; which boxes the original updates far from Ratchet
-  is still open.
+**Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
+camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
+view, FUN_002ac608); the autosave icon (8447e57: the main loop's card icon 0x755d while the card is in use).
+
+**Verified 2026-10-19 as the original's behaviour (code, data and a run of the classes):**
+- §1.6 soldiers. Blarg Station's troopers 1048 wake and close in from 30 inside their arena (19 of 20 in a run; the
+  leapers wait for their trigger cuboid, group 23 is parked in 0x12 until the boss / escape unparks it); they never
+  leave the arena polygon, so the one behind the force field in the clip stays there. Orxon's brawlers 1202: the ten
+  lone ones (idle +0x1b4 = 1) chase from 30 when Ratchet is within 3 in height; the 47 in packs sleep (state 1, sight 0)
+  until a path scout calls them, a member is hit or touched (the group wakes), the Taunter or the Morph-o-Ray — the
+  original's `0x2e1d38` / `0x2e3ef0` / `0x2e47d8` line for line; the seven scouts fly and wake their brawlers (one,
+  #626, is zapped by the barrier 794 it flies through after its calls, as the original's zap lists any moby with
+  collision). The clips show a soldier on a ledge above Ratchet (more than 3 in height) and packs not yet called.
+- §1.26 the reverb after the sewer teleport: Pokitaru has no reverb boxes; its two reverb env points sit at the sewer
+  pads, and the pad up top has no point within 8, while `HeroTeleport` is the only caller of `EnvNearestSamplePoint` on
+  level 11 — the original keeps the sewer reverb too.
+- §1.7 Orxon's bombs are the lava rocks 938 (the PS2 clip: hit, red, flown, burst). They ignore the wrench because the
+  port's wrench hits name no attacker (the game's name the wrench moby, `FUN_0026e808`); the shared fix (a wrench
+  marker on hit records for the classes that test the attacker) is on hold.
 
 **Fixed on main, not yet released:** the Morph-o-Ray while moving (849f873); the Glove of Doom glow blue or yellow by
 planet (fc51251); Ratchet on the ground during Giant Clank (6126b01); Kalebo III's race water (f8b3016); Clank's antenna
