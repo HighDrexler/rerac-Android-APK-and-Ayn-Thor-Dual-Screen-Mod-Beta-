@@ -136,7 +136,12 @@ are the hand item's take-out (the Blaster's class sounds 2 / 3, its sequence 0's
 which runs Ratchet's update as his moby's) runs the item pass as the gameplay frame does, so the original creates it
 during the landing too. The port matches that code; whether the PS2 takes the sound out somewhere else needs a PCSX2
 capture of a landing with the Blaster in hand. Clank's footsteps through the Hydrodisplacer scene (§1.16) need a run of
-that scene as Clank (text-only report).
+that scene as Clank (text-only report). Giant Clank red during his △ attack (§1.20): the emulator clip shows the beam's screen record
+(0x15f330, `draw_fogged_fullscreen_sprite` after the shrubs in `DrawWorld`) reddening the terrain, ties and shrubs only;
+the mobys and particles are drawn after it. The port's `screen_tint` pass runs after all the 3-D (its [L] note), so
+Clank and his shot are tinted too: needs the tint inside the world pass, before the mobys (a renderer change). The blurry aerial turret HUD (§1.30): the gauges are 2-D HUD
+art at the game's 512×416, scaled to the window and smoothed by the HUD option's Original setting (the TV's look);
+the Sharp setting shows the pixels. The fix the post wants is the planned HUD High resolution option, not a bug.
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
