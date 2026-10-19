@@ -17,7 +17,7 @@ import java.nio.file.Files;
 import static org.junit.Assert.*;
 
 @RunWith(org.robolectric.RobolectricTestRunner.class)
-@Config(sdk=34,manifest="android/test-manifest.xml",assetDir="android/test-assets")
+@Config(sdk=34)
 public class LauncherIntegrationTest {
     @Before public void setup(){LauncherExtras.prefs(RuntimeEnvironment.getApplication()).edit().putBoolean("automatic",false).commit();}
     @Test public void dualScreenUsesOriginalFileAndSurvivesReopen()throws Exception{
