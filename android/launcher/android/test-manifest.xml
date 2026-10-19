@@ -1,3 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.rerac.android.uipreview" android:versionCode="17" android:versionName="1.1.0-beta.1">
-<uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34"/>
-<application android:theme="@android:style/Theme.Material.NoActionBar"><activity android:name="org.rerac.android.LauncherToolsActivity" android:exported="false"/><provider android:name="org.rerac.android.UpdateApkProvider" android:authorities="org.rerac.android.uipreview.updates" android:exported="false" android:grantUriPermissions="true"/></application></manifest>
