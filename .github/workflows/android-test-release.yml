@@ -45,7 +45,8 @@ jobs:
           Path('work/approval.json').write_bytes(raw)
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('run='+str(doc['candidate_run'])+'\n')
           PY
-          gh run download '${{ steps.approval.outputs.run }}' --repo "$GITHUB_REPOSITORY" --name launcher-1.1-candidates --dir work/candidates
+      - name: Download verified candidate artifact
+        run: gh run download '${{ steps.approval.outputs.run }}' --repo "$GITHUB_REPOSITORY" --name launcher-1.1-candidates --dir work/candidates
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
