@@ -2286,6 +2286,7 @@ fn tick(
         w.camera_yaw = cam.yaw().to_f32();
         w.camera_rows = cam.rows_f32();
         w.camera_class = cam.class;
+        w.camera_flyby_phase = cam.flyby_phase;
         w.coll = Some(coll);
         w.particles = parts.as_deref_mut().map(|p| &mut p.sys);
         w.view = view_cull.as_ref();

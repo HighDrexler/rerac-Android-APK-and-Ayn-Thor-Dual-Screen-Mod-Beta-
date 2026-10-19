@@ -102,6 +102,8 @@ pub struct CameraView {
     pub rows: [V4; 3],
     /// The current camera's class (`[0x167280]+0x86`: [`Camera::current_class`]), as this update left it.
     pub class: i32,
+    /// The fly-by's phase (class 19's D+0x54, [`flyby`]) while class 19 is current; 0 otherwise.
+    pub flyby_phase: i16,
 }
 
 impl CameraView {
@@ -870,6 +872,7 @@ impl Camera {
         self.out.pos = pos;
         self.out.rows = rows;
         self.out.class = self.current_class();
+        self.out.flyby_phase = if self.out.class == flyby::CLASS_FLYBY { self.class_cam.flyby.phase } else { 0 };
         let f = self.out.rows[0];
         // 0x2721f0: yaw = atan2(fwd.y, fwd.x); pitch / roll from the rows (see the module doc).
         let yaw = fast_arctan(f[0], f[1]);
