@@ -1,8 +1,9 @@
 //! Particle type 70, the flat decal that lingers and fades (level01 update `PartType70Update` 0x28a078, read from the
 //! decomp; the update is the same code on levels 00–14, 16 and 18 (`overlay-diff`; on 15 and 17 the matcher paired it
 //! with another function, not a real difference [L]). Its spawner is level-specific: level00 `0x274cf8` and its copies
-//! on 04, 07, 09, 10, 12, 13, 14, 17 (the most-spawned unported type: `CreatePart(0x46)` in 9 overlays; their callers
-//! are unported classes, G-PRT-001).
+//! on 04, 07, 09, 10, 12, 13, 14, 17 (`CreatePart(0x46)` in 9 overlays). The first ported consumer is the level-12
+//! hero footprint (`hero::fx::footprint`, wrapper `0x228e58`); the other overlays' callers are unported classes
+//! (G-PRT-001). Hoven's list has the two frames 52 / 53, the left / right prints.
 //!
 //! **Spawn** `(angle f12, pos a0, frame a1)` (level00 `0x274cf8`): position = pos, RGBA 0x80404040, ALPHA 0x44,
 //! **render kind 1** (byte1 = 1: a flat quad in the world XY plane), byte9 `trunc(2) + 0x20` = 0x22, texture = frame

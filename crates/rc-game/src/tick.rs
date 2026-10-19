@@ -354,7 +354,8 @@ impl Game {
         };
         let hm = self.hero.hero_moby(self.hero_moby);
         let hero_moby = Some(hm);
-        drop(scene);
+        // The walk's footprints query the scene as the moby loop left it (the hero update does not move other mobys).
+        let scene_view = scene.as_ref().map(OwnedScene::scene);
         // The hand request as the hero update left it (the disguise's update clears 0x141408: crate::hero::hologuise).
         if self.hero.gadgets.hand_request != self.item_globals.request { self.item_globals.request = self.hero.gadgets.hand_request; }
         // The mobys the hero update created (CreateMoby inside it: the water splash 775), before anything else can take a
@@ -475,8 +476,8 @@ impl Game {
             // `0x229158` (after HeroItemsUpdate): the Hologuise's squash on Ratchet's moby and the hand item.
             crate::hero::hologuise::squash(&mut self.hero, &mut self.mobys.mobys[self.hero_moby]);
             crate::hero::hologuise::squash_hand(&mut self.hero);
-            // FUN_00227e90: the walk / run footsteps (after HeroItemsUpdate in 0x228870).
-            crate::hero::fx::walk_footsteps(&mut self.hero, &self.mobys.mobys[self.hero_moby], &anim.view(), hero_sounds, &mut self.rng);
+            // FUN_00227e90: the walk / run footsteps (after HeroItemsUpdate in 0x228870), and Hoven's footprints.
+            crate::hero::fx::walk_footsteps(&mut self.hero, &self.mobys.mobys[self.hero_moby], &*anim, coll, scene_view.as_ref(), hero_sounds, &mut self.rng);
             // FUN_002285a0: the cheat entry (the last moves against the patterns; crate::cheats).
             let h = &self.hero;
             let inp = crate::cheats::MoveInput { state_ticks: h.timer, group: h.group, state: h.state, flip_sector: h.jump.kind7a0, combo: h.melee.combo, mirror: self.options.cheats.on(crate::cheats::slot::MIRROR) };

@@ -24,14 +24,18 @@
 //!   ground under the feet 0x14063d (collision type bits 5–6, set by the ground probe), variant 1 with the Magneboots
 //!   worn. Walking and running play them at fixed key times of sequences 3 / 4 ([`walk_footsteps`], `FUN_00227e90`,
 //!   after the hand item's update); the landing of the fall (0x242930 case 6 / 0x2d, on the ground) plays both feet
-//!   ([`HeroFx::footsteps`], queued in the transitions and played by [`flush`]).
+//!   ([`HeroFx::footsteps`], queued in the transitions and played by [`flush`]). On Hoven the wrapper `0x228e58`
+//!   also spawns a type-70 flat decal at the foot ([`footprint`]): the snow prints.
 
 use super::swim::SwimEvent;
 use super::{Hero, HeroSounds};
+use crate::collision_query::MobyScene;
 use crate::follow_camera::{ShakeAxis, ShakeRequest};
 use crate::moby_runtime::Moby;
-use crate::particles::{type02, type04, type12, type25, type34, type35, type45, type46, type47, type53, Particles};
+use crate::particles::{type02, type04, type12, type25, type34, type35, type45, type46, type47, type53, type70, Particles};
+use crate::ps2v::Pf;
 use crate::rng::Rng;
+use rc_formats::collision::Collision;
 
 /// A particle spawn the hero code made this tick, with its spawner's random draws already made.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -92,6 +96,9 @@ pub enum PartSpawn {
     /// `PartType19Spawn(pos, vel)` 0x281748: a streak (the wrench's hit burst, [`wrench_burst`]); `rng` = the stream at
     /// its `randi(6)` (made at the call).
     Streak19 { pos: [f32; 4], vel: [f32; 4], rng: Rng },
+    /// Level 12 `0x28d510` (the same code as level00 `0x274cf8`): a flat decal, the Hoven snow footprints
+    /// ([`footprint`]); `frame` 1 is the left foot's texture, 0 the right.
+    Footprint { angle: f32, pos: [f32; 4], frame: usize },
 }
 
 /// A moby the hero code created this tick (`CreateMoby` inside the hero update), with the creator's draws already made.
@@ -501,6 +508,7 @@ pub fn create_one(sys: &mut Particles, s: &PartSpawn, gold: u8) {
                 if normal { r[3] = 0x44; }
             }
         }
+        PartSpawn::Footprint { angle, pos, frame } => { type70::spawn(sys, angle, pos, frame); }
     }
 }
 
@@ -530,7 +538,13 @@ pub(super) fn begin(h: &mut Hero, moby: &Moby) {
 /// formula as [`crate::moby_update::services::World::joint_point`] for the table's mobys ([`joint_world_point`]).
 /// Without the list or animation data the point is the moby's origin (as there). Native `f32`.
 pub fn joint_point(h: &Hero, anim: &dyn super::AnimCtl, list: usize) -> [f32; 4] {
-    let f = &h.fx.frame;
+    joint_point_in(h, anim, &h.fx.frame, list)
+}
+
+/// [`joint_point`] at an explicit moby frame. The calls before the write-back (the landing's footprints, the foot
+/// motes) pass [`HeroFx::frame`]; the walk's footprints run after it and pass the moby's current rows and position
+/// (`MobyJointPoint` 0x268508 reads the moby).
+fn joint_point_in(h: &Hero, anim: &dyn super::AnimCtl, f: &JointFrame, list: usize) -> [f32; 4] {
     // While a body is the hero moby, its class's lists (super::bodies).
     let chains = h.body_joints().map_or(&*h.fx.joints.hero, |b| &b.chains);
     let chain = chains.get(list).filter(|c| !c.is_empty());
@@ -711,14 +725,20 @@ pub fn footstep(h: &Hero, moby: &Moby, class: u8, foot: u8, sounds: &mut dyn Her
 /// `FUN_00227e90` (in `0x228870` after `HeroItemsUpdate`, mode 0): the walk / run footsteps. Unless Ratchet is in state
 /// 2 for fewer than 15 ticks: in state 2 at exactly tick 22 the left foot; then on sequence 3 (walk) the key times 49.5
 /// (left) and 17.0 (right), on sequence 4 (run) 12.5 (left) and 1.0 (right), when passed this tick (`0x231f18`) and no
-/// blend runs (0x13fdec). `view` = Ratchet's anim fields after this tick's advance.
-pub fn walk_footsteps(h: &mut Hero, moby: &Moby, view: &super::AnimView, sounds: &mut dyn HeroSounds, rng: &mut Rng) {
+/// blend runs (0x13fdec). `anim` = Ratchet's animation after this tick's advance; `moby` = his moby after the
+/// write-back (the level-12 footprints' joint frame).
+pub fn walk_footsteps(h: &mut Hero, moby: &Moby, anim: &dyn super::AnimCtl, coll: &Collision, mobys: Option<&MobyScene<'_>>, sounds: &mut dyn HeroSounds, rng: &mut Rng) {
     use super::physics::ticks;
     if h.mode != 0 { return; }
     if h.state == 2 && h.timer < ticks(0xf) { return; }
+    let view = anim.view();
     let class = h.footstep;
-    if h.state == 2 && h.timer == ticks(0x16) { footstep(h, moby, class, 0, sounds, rng); }
-    let passed = |f: f32| super::comet::passed(view, f);
+    let mut step = |h: &mut Hero, foot: u8| {
+        footstep(h, moby, class, foot, sounds, rng);
+        if let Some(p) = footprint(h, anim, Some(moby), coll, mobys, foot) { h.fx.parts.push(p); }
+    };
+    if h.state == 2 && h.timer == ticks(0x16) { step(h, 0); }
+    let passed = |f: f32| super::comet::passed(&view, f);
     let keys: &[(f32, u8)] = match view.seq_b {
         3 => &[(49.5, 0), (17.0, 1)],
         4 => &[(12.5, 0), (1.0, 1)],
@@ -726,8 +746,46 @@ pub fn walk_footsteps(h: &mut Hero, moby: &Moby, view: &super::AnimView, sounds:
     };
     if view.blending() { return; }
     for &(f, foot) in keys {
-        if passed(f) { footstep(h, moby, class, foot, sounds, rng); }
+        if passed(f) { step(h, foot); }
     }
+}
+
+/// The two-foot pair at a state change (`0x228e58` with its sound flag clear): the fall landing and level 12's
+/// idle → walk entry. Both feet in order, at the pre-write-back frame ([`HeroFx::frame`]).
+pub(super) fn footprints(h: &mut Hero, anim: &dyn super::AnimCtl, env: &super::physics::Env) {
+    for foot in [0, 1] {
+        if let Some(p) = footprint(h, anim, None, env.coll, env.mobys, foot) { h.fx.parts.push(p); }
+    }
+}
+
+/// The feet' joint lists (`MobyJointPoint(hero, 0x16 + foot)`; the foot motes' lists 22 / 23).
+const FOOT_LISTS: [usize; 2] = [0x16, 0x17];
+
+/// The level-12 tail of the footstep wrapper `0x228e58`: a snow footprint decal.
+///
+/// The wrapper plays `PlayFootstepSound` (when its variant flag is set) and then, on Hoven only, with footstep
+/// class 0 (0x14063d) and level ground under the feet (0x13f64c = 0), takes the foot's joint point
+/// (`MobyJointPoint(hero, 0x16 + foot)`), moves it 0.15 ahead along Ratchet's yaw (`FastCos` on x, `FastSin` on
+/// y), snaps it with `GroundHeight(0.5)` (`0x26e618`: a line from z + 0.5 down to 0.01) and raises it 0.04. The
+/// decal's frame is 1 for the left foot, 0 for the right. No RNG. `moby` is the walk's current moby (its call
+/// point is after the write-back); `None` uses [`HeroFx::frame`] (the landing, before the write-back).
+fn footprint(h: &Hero, anim: &dyn super::AnimCtl, moby: Option<&Moby>, coll: &Collision, mobys: Option<&MobyScene<'_>>, foot: u8) -> Option<PartSpawn> {
+    if h.mode != 0 || h.idle.level != 12 || h.footstep != 0 || h.ground_moby.is_some() { return None; }
+    let list = *FOOT_LISTS.get(usize::from(foot))?;
+    let frame = moby.map_or_else(|| h.fx.frame.clone(), moby_frame);
+    let mut pos = joint_point_in(h, anim, &frame, list);
+    let (cos, sin) = (super::physics::fast_cos(h.rot[2]), super::physics::fast_sin(h.rot[2]));
+    let ahead = Pf::b(0x3e19_999a); // 0.15
+    pos[0] = (Pf::f(pos[0]) + cos * ahead).to_f32();
+    pos[1] = (Pf::f(pos[1]) + sin * ahead).to_f32();
+    let at = [Pf::f(pos[0]), Pf::f(pos[1]), Pf::f(pos[2]), Pf::ZERO];
+    let z = super::physics::ground_height(coll, mobys, Pf::b(0x3f00_0000), at, 0) + Pf::b(0x3d23_d70a);
+    Some(PartSpawn::Footprint { angle: h.rot[2].to_f32(), pos: [at[0], at[1], z, Pf::ZERO].map(Pf::to_f32), frame: usize::from(foot == 0) })
+}
+
+/// Ratchet's moby as [`JointFrame`] (the walk's call point is after the write-back).
+fn moby_frame(m: &Moby) -> JointFrame {
+    JointFrame { rows: [m.rows[0], m.rows[1], m.rows[2]], position: m.position, scale: m.scale, mods: m.joint_mods.clone() }
 }
 
 #[cfg(test)]
@@ -747,6 +805,15 @@ mod tests {
         }
     }
 
+    fn anim(seq_a: u8, seq_b: u8, frame: f32, step: f32) -> super::super::RecordingAnim {
+        let mut a = super::super::RecordingAnim::default();
+        a.v.seq_a = seq_a;
+        a.v.seq_b = seq_b;
+        a.v.frame = frame;
+        a.v.frame_step = step;
+        a
+    }
+
     /// `FUN_00227e90`: the run (sequence 4) steps at key times 12.5 (left) and 1.0 (right) when passed this tick, none
     /// during a blend or in the first 15 ticks of state 2; the landing's two steps from the queue.
     #[test]
@@ -757,17 +824,16 @@ mod tests {
         h.footstep = 1;
         h.idle.level = 1;
         let moby = Moby::zeroed();
+        let coll = super::super::testkit::floor(0.0, 100, 106, 100, 106);
         let mut rng = Rng::new();
         let mut log = Log(Vec::new());
-        let view = |frame: f32, step: f32| super::super::AnimView { seq_a: 4, seq_b: 4, frame, frame_step: step, ..Default::default() };
-        walk_footsteps(&mut h, &moby, &view(12.6, 0.3), &mut log, &mut rng);
-        walk_footsteps(&mut h, &moby, &view(12.9, 0.3), &mut log, &mut rng);
-        walk_footsteps(&mut h, &moby, &view(1.2, 0.3), &mut log, &mut rng);
+        walk_footsteps(&mut h, &moby, &anim(4, 4, 12.6, 0.3), &coll, None, &mut log, &mut rng);
+        walk_footsteps(&mut h, &moby, &anim(4, 4, 12.9, 0.3), &coll, None, &mut log, &mut rng);
+        walk_footsteps(&mut h, &moby, &anim(4, 4, 1.2, 0.3), &coll, None, &mut log, &mut rng);
         assert_eq!(log.0, vec![(1100, 0xf), (1110, 0xf)]);
-        let blend = super::super::AnimView { seq_a: 0xff, ..view(12.6, 0.3) };
-        walk_footsteps(&mut h, &moby, &blend, &mut log, &mut rng);
+        walk_footsteps(&mut h, &moby, &anim(0xff, 4, 12.6, 0.3), &coll, None, &mut log, &mut rng);
         h.timer = 10;
-        walk_footsteps(&mut h, &moby, &view(12.6, 0.3), &mut log, &mut rng);
+        walk_footsteps(&mut h, &moby, &anim(4, 4, 12.6, 0.3), &coll, None, &mut log, &mut rng);
         assert_eq!(log.0.len(), 2);
         h.fx.footsteps.extend([(0, 0), (0, 1)]);
         flush(&mut h, &moby, &mut log, &mut rng);
@@ -819,6 +885,104 @@ mod tests {
             super::super::ledge::physics(&mut h, &env, &mut anim, &mut Rng::new());
             assert_eq!(h.packs.sounds.contains(&SoundCmd::Voice { index: 4, flags: 0 }), want, "back {back} frame {frame}");
         }
+    }
+
+    /// Hoven's walk: each step spawns the type-70 decal at the foot joint, 0.15 ahead along the yaw, 0.04 above
+    /// the ground, with the left / right texture frame. Nothing on another level, for a footstep class other than
+    /// 0, or while the ground is a moby.
+    #[test]
+    fn hoven_walk_leaves_snow_footprints() {
+        let coll = super::super::testkit::floor(100.0, 20, 40, 20, 40);
+        let mut h = Hero::spawn([100.0, 100.0, 102.0], 0.0);
+        h.state = 2;
+        h.timer = 40;
+        h.footstep = 0;
+        h.idle.level = 12;
+        h.ground_moby = None;
+        let mut moby = Moby::zeroed();
+        moby.position = h.pos.map(Pf::to_f32);
+        moby.scale = 1024.0;
+        moby.rows = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+        let mut log = Log(Vec::new());
+        let mut rng = Rng::new();
+        let step = |h: &mut Hero, log: &mut Log, rng: &mut Rng| {
+            walk_footsteps(h, &moby, &anim(4, 4, 12.6, 0.3), &coll, None, log, rng);
+        };
+        step(&mut h, &mut log, &mut rng);
+        assert_eq!(log.0, vec![(12000, 0xf)]);
+        let PartSpawn::Footprint { angle, pos, frame } = h.fx.parts[0] else { panic!("no footprint: {:?}", h.fx.parts) };
+        assert_eq!((angle, frame), (0.0, 1), "left foot, frame 1");
+        assert!((pos[0] - 100.15).abs() < 1e-4 && (pos[1] - 100.0).abs() < 1e-4 && (pos[2] - 100.04).abs() < 1e-4, "{pos:?}");
+        h.idle.level = 11;
+        h.fx.parts.clear();
+        step(&mut h, &mut log, &mut rng);
+        assert!(h.fx.parts.is_empty(), "no footprints on another level");
+        h.idle.level = 12;
+        h.footstep = 1;
+        h.fx.parts.clear();
+        step(&mut h, &mut log, &mut rng);
+        assert!(h.fx.parts.is_empty(), "no footprints for footstep class 1");
+        h.footstep = 0;
+        h.ground_moby = Some(0);
+        h.fx.parts.clear();
+        step(&mut h, &mut log, &mut rng);
+        assert!(h.fx.parts.is_empty(), "no footprints on a moby");
+    }
+
+    /// The landing's two queued steps spawn both decals, with the frames 1 (left) / 0 (right).
+    #[test]
+    fn hoven_landing_leaves_two_snow_footprints() {
+        let coll = super::super::testkit::floor(100.0, 20, 40, 20, 40);
+        let mut h = Hero::spawn([100.0, 100.0, 102.0], 0.0);
+        h.footstep = 0;
+        h.idle.level = 12;
+        let mut moby = Moby::zeroed();
+        moby.position = h.pos.map(Pf::to_f32);
+        moby.scale = 1024.0;
+        moby.rows = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+        begin(&mut h, &moby);
+        let pad = crate::pad::PadState::default();
+        let (cam_rows, cam_yaw) = super::super::testkit::cam_x();
+        let env = super::super::Env { coll: &coll, pad: &pad, cam_yaw, cam_rows, mirror: false, death_z: Pf::ZERO, mobys: None, hero_moby: None, water: None, world: None };
+        footprints(&mut h, &anim(4, 4, 0.0, 0.0), &env);
+        let frames: Vec<usize> = h.fx.parts.iter().filter_map(|p| match *p { PartSpawn::Footprint { frame, .. } => Some(frame), _ => None }).collect();
+        assert_eq!(frames, vec![1, 0]);
+    }
+
+    /// Level 12's idle → walk transition (`tr_idle`, transitions case 0) spawns both feet's decals before the entry
+    /// animation, with the frames 1 (left) / 0 (right).
+    #[test]
+    fn hoven_idle_to_walk_leaves_snow_footprints() {
+        let coll = super::super::testkit::floor(100.0, 20, 40, 20, 40);
+        let mut h = Hero::spawn([100.0, 100.0, 102.0], 0.0);
+        h.idle.level = 12;
+        h.footstep = 0;
+        h.stick_mag = Pf::ONE;
+        let mut moby = Moby::zeroed();
+        moby.position = h.pos.map(Pf::to_f32);
+        moby.scale = 1024.0;
+        moby.rows = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
+        begin(&mut h, &moby);
+        let pad = crate::pad::PadState::default();
+        let (cam_rows, cam_yaw) = super::super::testkit::cam_x();
+        let env = super::super::Env { coll: &coll, pad: &pad, cam_yaw, cam_rows, mirror: false, death_z: Pf::ZERO, mobys: None, hero_moby: None, water: None, world: None };
+        let mut anim = anim(0, 0, 0.0, 0.0);
+        let mut rng = Rng::new();
+        let mut c = super::super::states::Ctx { env: &env, anim: &mut anim, rng: &mut rng, voice: None };
+        h.tr_idle(&mut c);
+        assert_eq!(h.state, 2, "entered the walk");
+        let frames: Vec<usize> = h.fx.parts.iter().filter_map(|p| match *p { PartSpawn::Footprint { frame, .. } => Some(frame), _ => None }).collect();
+        assert_eq!(frames, vec![1, 0]);
+    }
+
+    /// The queued spawn reaches the pool as the game's type-70 record.
+    #[test]
+    fn footprint_spawn_creates_a_type70_record() {
+        let mut sys = Particles::new(None, Vec::new());
+        create_one(&mut sys, &PartSpawn::Footprint { angle: 0.0, pos: [1.0, 2.0, 3.0, 1.0], frame: 1 }, 0);
+        assert_eq!(sys.pool.count, 1);
+        let r = &sys.pool.recs[0];
+        assert_eq!((r[0], r[1], r[3], r[9]), (type70::TYPE, 1, 0x44, 0x22));
     }
 
     #[test]
