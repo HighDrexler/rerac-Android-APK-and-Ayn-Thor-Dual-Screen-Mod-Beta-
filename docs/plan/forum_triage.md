@@ -158,7 +158,12 @@ later ones; the copter 1255's own code plays no death sound (its burst's sound i
 voice (its rotor loop or the explosions' shared sounds): needs an `RC_AUDIO_TRACE` run of the turret section. Orxon's
 Clank-area textures (§1.32): the PS2 shots show lit square panels on the walls and the door, and vent grilles on the
 raised blocks, that the port's shots lack — missing objects or a layer rather than wrong textures; needs a run there
-to name the classes at those spots.
+to name the classes at those spots. Space too close during travel (§1.19): in the clips (16:9) the flight's
+stars are larger and stretched sideways, the arrival's (the level's sky) round and fine. The flight sky is the
+transition lump's six shells (`flight_render::update_sky`, one scalar scale each) with the sky camera's tangents raised to
+at least `view_tans(sky_tan)` (Hor+ included), so the stretch is not in those two places; next: capture a flight at 4:3
+and 16:9 (take off from Novalis's pad, choose a planet) and compare the sky camera's projection and the shells'
+texture against the level's.
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
