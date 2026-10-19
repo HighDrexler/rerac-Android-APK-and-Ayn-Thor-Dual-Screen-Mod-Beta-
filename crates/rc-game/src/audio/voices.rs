@@ -798,7 +798,14 @@ impl VoiceManager {
     /// Picks an SPU voice for a tone (or a stream with priority 127) of `group`.
     pub fn allocate(&mut self, spu: &mut Spu, group: usize, priority: i8, tick: u64) -> Option<usize> {
         let (lo, hi) = self.ranges[group.min(31)];
-        let free = |i: usize, vm: &VoiceManager| !spu.voices[i].active() || spu.voices[i].generation != vm.voices[i].generation || vm.voices[i].owner == VoiceUse::Free;
+        let free = |i: usize, vm: &VoiceManager| {
+            match vm.voices[i].owner {
+                VoiceUse::Free => true,
+                // A preseeked stream has no active envelope yet, but its voice is still reserved.
+                VoiceUse::Stream { .. } => false,
+                VoiceUse::Tone { .. } => !spu.voices[i].active() || spu.voices[i].generation != vm.voices[i].generation,
+            }
+        };
         if let Some(i) = (lo..=hi).find(|&i| free(i, self)) {
             self.voices[i] = VoiceSlot::default();
             return Some(i);
