@@ -125,6 +125,10 @@ stayed held through the credits. The countdown is now in `sound_update` (`music_
 Clank's second antenna in his mission scenes (§1.15): the red light left where Clank stood is his antenna glow moby
 0x140974; `FUN_002486c0` (the scene start's hide) hides it when Clank is the hero (0x1413f4 = 1) and `FUN_002487a8`
 shows it again. The port's scene start now hides it with the other scene-hidden mobys.
+The opaque wrench reticle (§1.27): the look stance's marker is `0xff917267` (alpha 0xff ≈ 2.0 on the GS), so the GS
+blend `(Cs − Cd)·As + Cd` gives `2·Cs − Cd`: bright and tinted by the frame under it. The HUD layer kept the alpha but its
+composite clamped it to 1 and drew the marker opaque. A second composite node takes the layer's pixels above 1 with a
+subtract blend (`HudCompositeOver`).
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
