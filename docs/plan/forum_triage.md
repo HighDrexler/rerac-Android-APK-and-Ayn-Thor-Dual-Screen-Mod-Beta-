@@ -130,6 +130,14 @@ blend `(Cs − Cd)·As + Cd` gives `2·Cs − Cd`: bright and tinted by the fram
 composite clamped it to 1 and drew the marker opaque. A second composite node takes the layer's pixels above 1 with a
 subtract blend (`HudCompositeOver`).
 
+**Looked at 2026-10-20, needs a PS2 reference:** the weapon sound during the ship landing (§1.24). The clip's sounds
+are the hand item's take-out (the Blaster's class sounds 2 / 3, its sequence 0's triggers): `HeroItemsCreate`
+0x22f3c0 creates the saved hand item at level start, and the landing's frame (0x2a4080 subs 0 / 8: `MobyUpdateLoop`,
+which runs Ratchet's update as his moby's) runs the item pass as the gameplay frame does, so the original creates it
+during the landing too. The port matches that code; whether the PS2 takes the sound out somewhere else needs a PCSX2
+capture of a landing with the Blaster in hand. Clank's footsteps through the Hydrodisplacer scene (§1.16) need a run of
+that scene as Clank (text-only report).
+
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
 view, FUN_002ac608); the autosave icon (8447e57: the main loop's card icon 0x755d while the card is in use).
