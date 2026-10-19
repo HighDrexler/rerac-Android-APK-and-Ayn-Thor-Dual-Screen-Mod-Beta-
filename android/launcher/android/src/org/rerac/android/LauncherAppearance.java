@@ -31,7 +31,7 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** A quiet monitor-panel launcher skin. No timers, imported assets or game calls. */
+/** Gadgetron-inspired launcher presentation; original controls and listeners stay intact. */
 public final class LauncherAppearance {
     static final String TAG = "org.rerac.android.launcher-appearance";
     static final String HELP_TAG = "org.rerac.android.launcher-help-toggle";
@@ -40,11 +40,11 @@ public final class LauncherAppearance {
     private static final String RESOLUTION_TAG = "org.rerac.android.rendering-resolution";
 
     // RC1 pause-menu packed colors decoded as RGB: navy, light blue, yellow.
-    static final int NAVY = 0xff080810;
+    static final int NAVY = 0xff080e1a;
     static final int BLUE = 0xff88a8ff;
     static final int YELLOW = 0xffffff20;
     static final int BODY = 0xffbdc9e8;
-    static final int MUTED = 0xff8796b8;
+    static final int MUTED = 0xff9aabc9;
     private static final int DISABLED = 0xff747788;
     private static final int PANEL = 0;
     private static final int ROW = 1;
@@ -116,12 +116,15 @@ public final class LauncherAppearance {
         LinearLayout column = new BoundedColumn(activity);
         original.addView(column, matchWrap());
 
+        TextView terminal = LauncherTheme.eyebrow(activity, "GADGETRON  //  LAUNCH TERMINAL");
+        terminal.setPadding(dp(activity,4),0,0,dp(activity,5));
+        column.addView(terminal, spaced(activity,0));
         LinearLayout header = new AdaptiveHeader(activity);
         header.setPadding(dp(activity, 4), 0, dp(activity, 4), dp(activity, 4));
         TextView context = label(activity, "RATCHET & CLANK", 13, BLUE);
         context.setLetterSpacing(0.09f);
         title.setText("ReRAC");
-        text(title, 28, YELLOW);
+        text(title, 32, YELLOW);
         title.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
         title.setLetterSpacing(0.03f);
         title.setPadding(0, dp(activity, 2), 0, 0);
@@ -133,7 +136,7 @@ public final class LauncherAppearance {
         LinearLayout right = vertical(activity);
         column.addView(new AdaptiveColumns(activity, left, right), spaced(activity, 16));
 
-        LinearLayout game = panel(activity, "GAME DATA");
+        LinearLayout game = panel(activity, "GAME DATA  /  STORAGE");
         game.setTag(STATUS_TAG);
         text(status, 16, BODY);
         status.setPadding(0, dp(activity, 6), 0, dp(activity, 2));
@@ -152,13 +155,17 @@ public final class LauncherAppearance {
         left.addView(game, spaced(activity, 0));
 
         styleButton(play, true);
-        play.setCompoundDrawablesRelativeWithIntrinsicBounds(new PointerDrawable(activity, false), null, null, null);
+        play.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
+        play.setTextSize(22);
+        play.setMinHeight(dp(activity,68));
+        LauncherTheme.icon(play,"play");
         play.setCompoundDrawablePadding(dp(activity, 12));
         left.addView(play, spaced(activity, 12));
         styleButton(load, false);
+        LauncherTheme.icon(load,"folder");
         left.addView(load, spaced(activity, 8));
 
-        LinearLayout display = panel(activity, "DISPLAY");
+        LinearLayout display = panel(activity, "DISPLAY  /  CONFIGURATION");
         display.setTag(DISPLAY_TAG);
         dual.setText("Dual screen");
         text(dual, 18, BLUE);
@@ -172,10 +179,11 @@ public final class LauncherAppearance {
         dual.setStateListAnimator(null);
         display.addView(dual, spaced(activity, 8));
         TextView explanation = label(activity,
-                "Dual-screen support is managed in Mods.", 14, MUTED);
+                "Choose a rendering resolution for your device.", 14, MUTED);
         explanation.setPadding(dp(activity, 4), dp(activity, 5), dp(activity, 4), dp(activity, 4));
         display.addView(explanation, matchWrap());
         styleButton(resolution, false);
+        LauncherTheme.icon(resolution,"display");
         display.addView(resolution, spaced(activity, 12));
         right.addView(display, spaced(activity, 0));
 
@@ -271,7 +279,9 @@ public final class LauncherAppearance {
 
     static void styleButton(Button button, boolean primary) {
         Context context = button.getContext();
-        text(button, 18, primary ? YELLOW : BLUE);
+        text(button, 17, primary ? YELLOW : BLUE);
+        button.setTypeface(Typeface.create("sans-serif-condensed",Typeface.BOLD));
+        button.setLetterSpacing(0.025f);
         button.setTextColor(colors(primary));
         button.setAllCaps(false);
         button.setMinHeight(dp(context, 56));
@@ -286,7 +296,7 @@ public final class LauncherAppearance {
         button.setFocusable(true);
     }
 
-    private static ColorStateList colors(boolean primary) {
+    static ColorStateList colors(boolean primary) {
         return new ColorStateList(new int[][] {
                 {-android.R.attr.state_enabled}, {android.R.attr.state_pressed},
                 {android.R.attr.state_focused}, {android.R.attr.state_checked},
@@ -294,7 +304,7 @@ public final class LauncherAppearance {
         }, new int[] {DISABLED, YELLOW, YELLOW, YELLOW, YELLOW, primary ? YELLOW : BLUE});
     }
 
-    private static void heading(TextView title) {
+    static void heading(TextView title) {
         if (Build.VERSION.SDK_INT >= 28) title.setAccessibilityHeading(true);
     }
 
@@ -336,7 +346,7 @@ public final class LauncherAppearance {
         return Math.round(value * context.getResources().getDisplayMetrics().density);
     }
 
-    private static final class BoundedColumn extends LinearLayout {
+    static final class BoundedColumn extends LinearLayout {
         private final int maximum;
         BoundedColumn(Context context) {
             super(context);
@@ -413,53 +423,17 @@ public final class LauncherAppearance {
         return grain;
     }
 
-    /** Cached still grain and a thin rectangular bevel, redrawn only with its View. */
+    /** Compatibility wrapper retained for every existing launcher call site. */
     static final class MonitorDrawable extends Drawable {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint noise = new Paint();
-        private final int role;
-        private final float line;
-        private int alpha = 255;
-        MonitorDrawable(Context context, int role) {
-            this.role = role;
-            line = Math.max(1, dp(context, 1));
-            noise.setShader(new BitmapShader(grain(), Shader.TileMode.REPEAT, Shader.TileMode.REPEAT));
-        }
-        @Override public boolean isStateful() { return role == ROW || role == PRIMARY; }
-        @Override protected boolean onStateChange(int[] states) { invalidateSelf(); return isStateful(); }
-        @Override public void draw(Canvas canvas) {
-            Rect r = getBounds();
-            boolean enabled = true, active = false;
-            for (int state : getState()) {
-                if (state == -android.R.attr.state_enabled) enabled = false;
-                if (state == android.R.attr.state_focused || state == android.R.attr.state_pressed) active = true;
-            }
-            if (isStateful()) {
-                enabled = false;
-                for (int state : getState()) if (state == android.R.attr.state_enabled) enabled = true;
-            }
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(role == BACKGROUND ? NAVY : active && enabled ? 0xff20212b : 0xff11121d);
-            paint.setAlpha(alpha);
-            canvas.drawRect(r, paint);
-            noise.setAlpha(role == BACKGROUND ? alpha / 2 : alpha);
-            canvas.drawRect(r, noise);
-            if (role != BACKGROUND) {
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(line);
-                paint.setColor(active && enabled ? YELLOW : role == PRIMARY && enabled ? 0xff8d903a : 0xff34394e);
-                paint.setAlpha(alpha);
-                float inset = line * 0.5f;
-                canvas.drawRect(r.left + inset, r.top + inset, r.right - inset, r.bottom - inset, paint);
-                paint.setColor(0xff05050b);
-                paint.setAlpha(alpha);
-                canvas.drawLine(r.left + line, r.bottom - line * 1.5f,
-                        r.right - line, r.bottom - line * 1.5f, paint);
-            }
-        }
-        @Override public void setAlpha(int alpha) { this.alpha = alpha; invalidateSelf(); }
-        @Override public void setColorFilter(ColorFilter filter) { paint.setColorFilter(filter); invalidateSelf(); }
-        @Override public int getOpacity() { return PixelFormat.TRANSLUCENT; }
+        private final LauncherTheme.Plate plate;
+        MonitorDrawable(Context context,int role){plate=new LauncherTheme.Plate(context,role);}
+        @Override public boolean isStateful(){return plate.isStateful();}
+        @Override protected boolean onStateChange(int[] state){plate.setState(state);invalidateSelf();return true;}
+        @Override protected void onBoundsChange(Rect r){plate.setBounds(r);}
+        @Override public void draw(Canvas c){plate.draw(c);}
+        @Override public void setAlpha(int a){plate.setAlpha(a);invalidateSelf();}
+        @Override public void setColorFilter(ColorFilter f){plate.setColorFilter(f);invalidateSelf();}
+        @Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
     }
 
     private static final class PointerDrawable extends Drawable {

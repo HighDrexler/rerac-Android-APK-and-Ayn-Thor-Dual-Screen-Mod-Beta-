@@ -26,9 +26,9 @@ final class LauncherExtras {
 
     static void attach(Activity a,ViewGroup root,ScrollView scroll,LinearLayout right,CheckBox dual) {
         dual.setVisibility(View.GONE); // Kept attached: original onResume/listeners continue to synchronize it.
-        Button mods=new Button(a);mods.setTag(MODS);mods.setText("Mods");LauncherAppearance.styleButton(mods,false);
+        Button mods=new Button(a);mods.setTag(MODS);mods.setText("Mods");LauncherAppearance.styleButton(mods,false);LauncherTheme.icon(mods,"mods");
         mods.setOnClickListener(v->open(a,"mods"));right.addView(mods,1,LauncherAppearance.spaced(a,8));
-        Button updates=new Button(a);updates.setTag(UPDATES);updates.setText("Updates");LauncherAppearance.styleButton(updates,false);
+        Button updates=new Button(a);updates.setTag(UPDATES);updates.setText("Updates");LauncherAppearance.styleButton(updates,false);LauncherTheme.icon(updates,"updates");
         updates.setOnClickListener(v->open(a,"updates"));right.addView(updates,2,LauncherAppearance.spaced(a,8));
         // Reserve real layout space for the footer; never draw it over Play or help.
         root.removeView(scroll);scroll.setOnApplyWindowInsetsListener(null);
@@ -41,7 +41,7 @@ final class LauncherExtras {
     }
     static TextView footer(Context c){
         TextView v=LauncherAppearance.label(c,LauncherBuild.read(c).footer(),11,LauncherAppearance.MUTED);
-        v.setTag(FOOTER);v.setGravity(Gravity.CENTER);v.setPadding(8,5,8,7);v.setTextIsSelectable(true);return v;
+        v.setTag(FOOTER);v.setGravity(Gravity.CENTER);v.setPadding(LauncherAppearance.dp(c,12),LauncherAppearance.dp(c,8),LauncherAppearance.dp(c,12),LauncherAppearance.dp(c,8));v.setBackground(new LauncherTheme.Plate(c,0));v.setTextIsSelectable(true);return v;
     }
     static void insets(View root){
         root.setOnApplyWindowInsetsListener((v,w)->{
