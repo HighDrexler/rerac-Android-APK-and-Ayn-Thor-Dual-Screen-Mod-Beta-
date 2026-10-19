@@ -885,7 +885,7 @@ type GameInputs<'w> = (Option<Res<'w, crate::gameplay::Persistent>>, Option<Res<
 #[allow(clippy::too_many_arguments)]
 fn tick_and_build(
     rt: Option<ResMut<HudRuntime>>,
-    ticks: Res<crate::determinism::GameTicks>,
+    (ticks, frame_no): (Res<crate::determinism::GameTicks>, Res<crate::determinism::FrameNumber>),
     hook: Res<Hud2dHook>,
     scene: Res<SceneLayer>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -1018,6 +1018,21 @@ fn tick_and_build(
     if !hook.replace_hud && !scene.hide_hud && !hud_off { crate::text_render::execute(&mut rt.hud2d, &mut st, &rt.glyphs, &rt.draws); }
     rt.hud2d.prims.extend(hook.prims.iter().copied());
     rt.hud2d.prims.extend(scene.prims.iter().copied());
+    // The main loop's card icon (`entry` 0x259c40) while the card is in use (an autosave, any save or load), drawn
+    // last in every mode [L: also on the frame the page menu opens, which the game skips (0x1ba2ac)].
+    if crate::saves::with_card(|c| c.in_use()).unwrap_or(false) {
+        let a = &rt.state.assets;
+        let (icon, spin) = (a.icon_frame(rc_game::menus::freeze::CARD_ICON, 0), a.icon_frame(rc_game::menus::freeze::CARD_ICON, 1));
+        for d in rc_game::menus::freeze::busy_icon(icon, spin, frame_no.0 as u32) {
+            match d {
+                rc_game::menus::MenuDraw::Hud(Draw::Sprite { frame, x, y, w, h, alpha, rot }) => rt.hud2d.sprite(frame, x, y, w, h, alpha, rot),
+                rc_game::menus::MenuDraw::Quad { tex: rc_game::menus::QuadTex::Frame(f), pos, uv, rgba, repeat, uv16 } => {
+                    rt.hud2d.prims.push(Prim { tex: Tex::Frame(f), pos, uv, rgba, scissor: [0, W - 1, 0, H - 1], repeat, nearest: false, boxed: false, uv16 });
+                }
+                _ => {}
+            }
+        }
+    }
     let dyns = dyn_images.as_deref().map_or([None; crate::hud_images::SLOTS], |d| d.rects());
     let e = rt.extra;
     // Only the meshes whose inputs changed ([`Built`]).
