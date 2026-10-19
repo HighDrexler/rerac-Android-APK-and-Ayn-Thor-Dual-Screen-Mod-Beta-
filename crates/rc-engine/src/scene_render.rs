@@ -757,6 +757,9 @@ fn leave_mode2(rt: &mut SceneRuntime, p: &mut Play) {
     p.svc.game_mode = if rt.pending.is_empty() { 0 } else { 2 };
     p.game.camera_paused = false;
     p.svc.cinematic.scene = None;
+    // FUN_002ac608: the gameplay view's tan(hfov/2) 0x16cf70 = 0.63. A class's FOV (the jets' boost) was kept
+    // through every later scene without it, until the next level.
+    p.svc.view_tan_x = rc_game::scene_player::GAMEPLAY_TAN_HALF_FOV.to_f32();
     p.svc.actor_records.glow.clear();
     // FUN_002ac608: the actors deleted (their class sequence slots freed with them).
     let counter = p.game.counter;
