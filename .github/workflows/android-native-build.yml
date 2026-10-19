@@ -33,12 +33,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 android/native/apply_engine_hooks.py
+          python3 android/native/apply_media_hooks.py
           git diff --check
-          git add crates/rc-engine/Cargo.toml crates/rc-engine/src/main.rs crates/rc-engine/src/input_map.rs crates/rc-engine/src/frame_pace.rs crates/rc-engine/src/menu_render.rs
+          git add crates/rc-engine/Cargo.toml crates/rc-engine/src/main.rs crates/rc-engine/src/input_map.rs crates/rc-engine/src/frame_pace.rs crates/rc-engine/src/menu_render.rs crates/rc-engine/src/audio_out.rs crates/rc-engine/src/movie_render.rs
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Wire source-built Android runtime into engine entry point and native schedules'
+            git commit -m 'Wire source-built Android runtime and media ownership into engine'
             git push origin HEAD:integration/native-core-035
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -88,12 +89,15 @@ jobs:
         with:
           key: android-native-r28-${{ matrix.abi }}
           cache-on-failure: true
-      - name: Test production input adapter
+          cache-workspace-crates: true
+      - name: Test production input and media adapters
         shell: bash
         run: |
           set -euo pipefail
-          rustc --edition=2021 --test crates/rc-engine/src/touch_input.rs -o /tmp/touch-tests
-          /tmp/touch-tests --nocapture | tee out/touch-tests.txt
+          for module in touch_input audio_queue movie_pipe; do
+            rustc --edition=2021 --test "crates/rc-engine/src/$module.rs" -o "/tmp/$module-tests"
+            "/tmp/$module-tests" --nocapture | tee "out/$module-tests.txt"
+          done
       - name: Install pinned Android Cargo adapter
         run: cargo install cargo-ndk --version 4.1.2 --locked
       - name: Compile native game engine from source
