@@ -106,7 +106,7 @@ fn outside(p: V) -> bool { !(1.0..=511.0).contains(&p[0]) || !(1.0..=511.0).cont
 /// A hit on a flying or resting rock: batted (→ 2) or burst (→ 3).
 fn hits(w: &mut World, id: MobyId) {
     if let Some(h) = w.get_hit(id, 0x83_0000, false) {
-        let other = h.attacker.is_some_and(|a| w.m(a).o_class != w.m(id).o_class);
+        let other = h.attacker_class(w).is_some_and(|c| c != w.m(id).o_class);
         if other {
             if h.b28 == 0 {
                 let (mut speed, mut up) = (DT * 10.0, DT * 10.0);

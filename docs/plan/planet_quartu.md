@@ -33,7 +33,8 @@ crates, bolts and checkpoints. The census of 2026-10-03 left these classes witho
 
 ## Notes
 
-- [L] 1430's fly-by camera (camera class 19) is not run (G-HERO-027); it is logged when armed.
+- 1430 waits for its fly-by with `0x2f78e0` (phase 1 with the fade up, or phase 3): waiting for the whole fly-by
+  put Ratchet in the hold 0x72 after the fly-by had released him (the forum's gold-bolt door softlock, 2026-10-19).
 - [L] A guard's shot whose timer runs out with no hit flies on (the game reads the last collision's moby there).
 - [L] 1428 does nothing on level 15 (its own test); the rest of its code has no caller here.
 - Headless screenshots in this session came out black on every level: a capture problem here, not a regression.

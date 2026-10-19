@@ -1,0 +1,16 @@
+[package]
+name = "rc-game2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Game logic of Ratchet & Clank: Going Commando (PS2), ported from the game's code (docs/plan/rac2_bringup.md)."
+
+# Like rc-game: no engine dependency; the engine draws what this crate lays out.
+[dependencies]
+rc-formats = { path = "../rc-formats" }
+# The systems both games share (rc-game: the pad record, the collision queries, Ratchet's animation player).
+rc-game = { path = "../rc-game" }
+
+[dev-dependencies]
+anyhow.workspace = true

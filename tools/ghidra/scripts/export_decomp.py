@@ -11,7 +11,7 @@ from ghidra_http import get, post
 
 program = sys.argv[1] if len(sys.argv) > 1 else "SCUS_971.99"
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))  # repo root (tools/ghidra/scripts/)
-out = os.path.join(ROOT, "work/decomp", re.sub(r"[^A-Za-z0-9_.-]", "_", program))
+out = os.path.join(ROOT, "work/decomp", sys.argv[2] if len(sys.argv) > 2 else re.sub(r"[^A-Za-z0-9_.-]", "_", program))
 os.makedirs(out, exist_ok=True)
 funcs = get("list_functions", program=program, limit=20000)["functions"]
 index = []

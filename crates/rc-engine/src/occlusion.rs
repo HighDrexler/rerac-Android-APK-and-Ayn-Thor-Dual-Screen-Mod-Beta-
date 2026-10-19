@@ -40,7 +40,10 @@ pub struct LevelOcclusionData {
 /// order of `FUN_00255958`. `tfrags` in header-table order, `ties` / `mobys` in gameplay order.
 pub fn load(core: &LevelCore, core_data: &[u8], gameplay: &[u8], tfrags: &[Tfrag], ties: &[TieInstance], mobys: &[MobyInstance]) -> anyhow::Result<LevelOcclusionData> {
     let grid = if core.blocks.iter().any(|b| b.name == "occlusion") { Some(occlusion::parse_occlusion(core, core_data)?) } else { None };
-    let maps = occlusion::parse_gameplay_occlusion_mappings(gameplay)?;
+    let maps = match core.game {
+        rc_formats::Game::Rac1 => occlusion::parse_gameplay_occlusion_mappings(gameplay)?,
+        rc_formats::Game::Rac2 => rc_formats::rac2::gameplay::section(gameplay, "occlusion_mappings")?.map(occlusion::parse_occlusion_mappings).transpose()?,
+    };
     let maps = maps.filter(|_| grid.is_some());
     let headers: Vec<_> = tfrags.iter().map(|t| t.header).collect();
     let tie_keys: Vec<i32> = ties.iter().map(|t| t.occlusion_index).collect();

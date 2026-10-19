@@ -453,6 +453,8 @@ impl UiMaterial for HudComposite {
         if let Some(f) = descriptor.fragment.as_mut() {
             f.entry_point = Some("composite".into());
             f.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
+            // Premultiplied: the additive draws (coverage 0) add (hud.wgsl `composite`).
+            for t in f.targets.iter_mut().flatten() { t.blend = Some(BlendState::PREMULTIPLIED_ALPHA_BLENDING); }
         }
         descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
     }
@@ -642,6 +644,90 @@ pub struct SceneLayer {
     pub prims: Vec<Prim>,
 }
 
+/// A 2D layer for a caller with its own textures and primitive list (Going Commando's front end, crate::rac2): this
+/// pass's atlas, material, mesh and composite without the Ratchet & Clank HUD. Its textures are [`Tex::Frame`] n; the
+/// composite sits on the frame's 4:3 box (crate::display::UiBoxed), drawn by `ui_camera`.
+pub struct Layer {
+    pub atlas: Handle<Image>,
+    pub mesh: Handle<Mesh>,
+    /// Atlas rectangle of each texture.
+    pub frames: Vec<[u32; 4]>,
+    /// The layer's camera, primitives and composite, for [`Layer::despawn`].
+    pub entities: [Entity; 3],
+}
+
+impl Layer {
+    #[allow(clippy::too_many_arguments)]
+    pub fn spawn(
+        commands: &mut Commands,
+        images: &mut Assets<Image>,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<HudMaterial>,
+        composites: &mut Assets<HudComposite>,
+        textures: &[Texture],
+        scaling: Vec4,
+        ui_camera: Entity,
+    ) -> Layer {
+        let atlas = build_atlas(textures, &[]);
+        let mut img = Image::new(
+            Extent3d { width: ATLAS_W, height: atlas.height, depth_or_array_layers: 1 },
+            TextureDimension::D2,
+            atlas.rgba,
+            TextureFormat::Rgba8Unorm,
+            RenderAssetUsages::all(),
+        );
+        img.sampler = bevy::image::ImageSampler::nearest();
+        let atlas_handle = images.add(img);
+        let target = images.add(Image::new_target_texture(W as u32, H as u32, TextureFormat::Rgba16Float, None));
+        let camera = commands.spawn((
+            Camera2d,
+            Camera { order: -10, clear_color: ClearColorConfig::Custom(Color::NONE), ..default() },
+            RenderTarget::Image(target.clone().into()),
+            Hdr,
+            Msaa::Off,
+            Tonemapping::None,
+            DebandDither::Disabled,
+            RenderLayers::layer(HUD_LAYER),
+            Name::new("2d layer camera (512x416 offscreen)"),
+        )).id();
+        let mesh = meshes.add(empty_mesh());
+        let prims = commands.spawn((
+            Mesh2d(mesh.clone()),
+            MeshMaterial2d(materials.add(HudMaterial { atlas: atlas_handle.clone(), additive: false })),
+            Transform::IDENTITY,
+            NoFrustumCulling,
+            RenderLayers::layer(HUD_LAYER),
+            Name::new("2d layer primitives"),
+        )).id();
+        let composite = commands.spawn((
+            Node { position_type: PositionType::Absolute, ..default() },
+            crate::display::UiBoxed,
+            MaterialNode(composites.add(HudComposite { image: target, scaling })),
+            UiTargetCamera(ui_camera),
+            Name::new("2d layer composite"),
+        )).id();
+        Layer { atlas: atlas_handle, mesh, frames: atlas.frames, entities: [camera, prims, composite] }
+    }
+
+    /// Removes the layer's entities (its images and mesh go with their last handles).
+    pub fn despawn(&self, commands: &mut Commands) { for e in self.entities { commands.entity(e).despawn(); } }
+
+    /// The mesh of a primitive list.
+    pub fn build(&self, d: &Hud2d) -> Mesh { build_mesh(&d.prims, &d.fine, &d.add, &self.frames, &[], &[], 0) }
+
+    /// Rewrites texture `i`'s texels (its own size, raw GS bytes): a movie's picture.
+    pub fn write(&self, images: &mut Assets<Image>, i: usize, rgba: &[u8]) {
+        let Some(&[x, y, w, h]) = self.frames.get(i) else { return };
+        let Some(mut img) = images.get_mut(&self.atlas) else { return };
+        let Some(data) = img.data.as_mut() else { return };
+        for row in 0..h.min(rgba.len() as u32 / (w * 4).max(1)) {
+            let src = &rgba[(row * w * 4) as usize..((row + 1) * w * 4) as usize];
+            let dst = (((y + row) * ATLAS_W + x) * 4) as usize;
+            data[dst..dst + src.len()].copy_from_slice(src);
+        }
+    }
+}
+
 /// The system set that ticks the HUD and builds the primitive mesh.
 #[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct HudBuild;
@@ -799,7 +885,7 @@ type GameInputs<'w> = (Option<Res<'w, crate::gameplay::Persistent>>, Option<Res<
 #[allow(clippy::too_many_arguments)]
 fn tick_and_build(
     rt: Option<ResMut<HudRuntime>>,
-    ticks: Res<crate::determinism::GameTicks>,
+    (ticks, frame_no): (Res<crate::determinism::GameTicks>, Res<crate::determinism::FrameNumber>),
     hook: Res<Hud2dHook>,
     scene: Res<SceneLayer>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -932,6 +1018,21 @@ fn tick_and_build(
     if !hook.replace_hud && !scene.hide_hud && !hud_off { crate::text_render::execute(&mut rt.hud2d, &mut st, &rt.glyphs, &rt.draws); }
     rt.hud2d.prims.extend(hook.prims.iter().copied());
     rt.hud2d.prims.extend(scene.prims.iter().copied());
+    // The main loop's card icon (`entry` 0x259c40) while the card is in use (an autosave, any save or load), drawn
+    // last in every mode [L: also on the frame the page menu opens, which the game skips (0x1ba2ac)].
+    if crate::saves::with_card(|c| c.in_use()).unwrap_or(false) {
+        let a = &rt.state.assets;
+        let (icon, spin) = (a.icon_frame(rc_game::menus::freeze::CARD_ICON, 0), a.icon_frame(rc_game::menus::freeze::CARD_ICON, 1));
+        for d in rc_game::menus::freeze::busy_icon(icon, spin, frame_no.0 as u32) {
+            match d {
+                rc_game::menus::MenuDraw::Hud(Draw::Sprite { frame, x, y, w, h, alpha, rot }) => rt.hud2d.sprite(frame, x, y, w, h, alpha, rot),
+                rc_game::menus::MenuDraw::Quad { tex: rc_game::menus::QuadTex::Frame(f), pos, uv, rgba, repeat, uv16 } => {
+                    rt.hud2d.prims.push(Prim { tex: Tex::Frame(f), pos, uv, rgba, scissor: [0, W - 1, 0, H - 1], repeat, nearest: false, boxed: false, uv16 });
+                }
+                _ => {}
+            }
+        }
+    }
     let dyns = dyn_images.as_deref().map_or([None; crate::hud_images::SLOTS], |d| d.rects());
     let e = rt.extra;
     // Only the meshes whose inputs changed ([`Built`]).

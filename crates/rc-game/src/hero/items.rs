@@ -259,7 +259,10 @@ pub struct ItemEnv<'a> {
     pub hero_moby: MobyId,
     /// The level collision (world mesh) for the items' own lines (the thrown wrench's ground height and bounce;
     /// None: they hit nothing).
-    pub coll: Option<&'a rc_formats::collision::Collision>,    /// The camera as the previous tick's update left it: position 0x167240 and forward 0x167450 (the Bomb Glove's
+    pub coll: Option<&'a rc_formats::collision::Collision>,
+    /// The mobys' collision for those lines (`CollLine` tests the moby grid after the world mesh: the doors stop the thrown
+    /// wrench). None: the world mesh only (the tick builds it while the wrench is thrown).
+    pub mobys: Option<&'a crate::collision_query::MobyScene<'a>>,    /// The camera as the previous tick's update left it: position 0x167240 and forward 0x167450 (the Bomb Glove's
     /// first-person aim). None: no camera.
     pub camera: Option<([f32; 3], [f32; 3])>,
     /// The camera's up row 0x167470 (the Pyrocitor's first-person flame starts one unit below the eye).

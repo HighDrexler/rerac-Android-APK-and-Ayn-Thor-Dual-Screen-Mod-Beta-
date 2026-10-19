@@ -680,6 +680,17 @@ impl Freeze {
     }
 }
 
+/// The main loop's card icon (`entry` 0x259c40, every frame the card is in use: [`MemCard::in_use`]): icon 0x755d frame 0
+/// (`icon`) 64 × 64 at (50, 300) through `fun_001ffc30(…, 0x80)`, and frame 1 (`spin`) centred on it, half size 17
+/// (the game's 1/16-pixel floats 1312, 5312, 272), turned −2π·(vsync mod 55)/55 (`fun_00200600`).
+pub fn busy_icon(icon: usize, spin: usize, vsync: u32) -> [MenuDraw; 2] {
+    let angle = ((vsync % 55) as f32 * -std::f32::consts::TAU) / 55.0;
+    [
+        MenuDraw::Hud(Draw::Sprite { frame: icon, x: 50, y: 300, w: 0x40, h: 0x40, alpha: 0x80, rot: Rot::None }),
+        super::pause::map_page::rotated(spin, 82.0, 332.0, 17.0, 17.0, angle, 0x40, 0x40),
+    ]
+}
+
 /// The frames' pulse: `FastTweenColor(sin((vsync % *0x15f4e0) / *0x15f4e0 · 6.28318 − 3.14159)·0.5 + 0.5, *0x15f4e4,
 /// *0x15f4e8)` (`fast_sin` as `f32::sin` [L]; the game's own constants 6.28318 / 3.14159).
 #[allow(clippy::approx_constant)]
@@ -739,4 +750,30 @@ pub fn save_notice_due(card: &MemCard, gs: &crate::game_state::GameState, g: &No
         && g.hp != 0
         && (scale_ticks(0x1e) as u64) < g.tick
         && gs.global.level != 0
+}
+
+#[cfg(test)]
+mod busy_icon_tests {
+    use rc_formats::{hud, wad};
+
+    /// Every level's HUD has the card icon 0x755d with its two frames (the main loop's busy icon reads both), and the
+    /// spinner is centred on the 64 × 64 card at (50, 300).
+    #[test]
+    fn the_card_icon_is_on_every_level_and_the_spinner_sits_on_it() {
+        for level in 0..19u32 {
+            let dir = rc_formats::test_data::level_dir(level);
+            let Ok(header) = std::fs::read(dir.join("hud_header.bin")) else { eprintln!("skipped: no extracted/"); return };
+            let h = hud::parse_header(&header).unwrap();
+            let banks: Vec<Vec<u8>> = (0..hud::BANKS)
+                .map(|b| if h.bank_size[b] == 0 { Vec::new() } else { wad::decompress(&std::fs::read(dir.join(format!("hud_bank_{b}.bin"))).unwrap()).unwrap() })
+                .collect();
+            let hd = hud::parse_hud(&header, std::array::from_fn(|b| banks[b].as_slice())).unwrap();
+            let e = &hd.icons[hd.icon_index(super::CARD_ICON)];
+            assert!(e.id == super::CARD_ICON && e.frame_count >= 2, "level {level}: icon {:#x} frames {}", e.id, e.frame_count);
+        }
+        let [_, spin] = super::busy_icon(1, 2, 0);
+        let crate::menus::MenuDraw::Quad { pos, .. } = spin else { panic!("a quad") };
+        let c = pos.iter().fold([0, 0], |a, p| [a[0] + p[0], a[1] + p[1]]);
+        assert_eq!([c[0] / 4, c[1] / 4], [82, 332]);
+    }
 }

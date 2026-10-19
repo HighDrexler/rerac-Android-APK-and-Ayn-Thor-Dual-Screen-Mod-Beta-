@@ -327,7 +327,7 @@ impl Game {
                 let (globals, mobys) = (&mut self.item_globals, &mut self.mobys);
                 let mut pass = |h: &mut crate::hero::Hero, a: &mut dyn AnimCtl, r: &mut crate::rng::Rng| {
                     let Some(data) = data else { return };
-                    let ienv = ItemEnv { data, pad, frame: counter as i32, hero_moby: ratchet, coll: Some(coll), camera: Some((cam.0, cam.1[0])), camera_up: Some(cam.1[2]), targets: &targets };
+                    let ienv = ItemEnv { data, pad, frame: counter as i32, hero_moby: ratchet, coll: Some(coll), mobys: None, camera: Some((cam.0, cam.1[0])), camera_up: Some(cam.1[2]), targets: &targets };
                     crate::hero::items::slot_pass(h, globals, mobys, &*a, r, &ienv, &mut *hits);
                 };
                 // The death reload's switch back into the checkpoint's body (`0x29adc8`, crate::hero::bodies).
@@ -354,7 +354,8 @@ impl Game {
         };
         let hm = self.hero.hero_moby(self.hero_moby);
         let hero_moby = Some(hm);
-        drop(scene);
+        // The walk's footprints query the scene as the moby loop left it (the hero update does not move other mobys).
+        let scene_view = scene.as_ref().map(OwnedScene::scene);
         // The hand request as the hero update left it (the disguise's update clears 0x141408: crate::hero::hologuise).
         if self.hero.gadgets.hand_request != self.item_globals.request { self.item_globals.request = self.hero.gadgets.hand_request; }
         // The mobys the hero update created (CreateMoby inside it: the water splash 775), before anything else can take a
@@ -404,7 +405,7 @@ impl Game {
         // environment, right after the body's update.
         if std::mem::take(&mut self.hero.gadgets.wrench_select) {
             if let Some(data) = self.item_data.as_ref() {
-                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &[] };
+                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), mobys: None, camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &[] };
                 crate::hero::items::update_hand_selected(&mut self.hero, &mut self.item_globals, &mut self.rng, &ienv);
             }
         }
@@ -412,7 +413,7 @@ impl Game {
         // 0x1413fc = 1, then the request 0x24 again (the pickup's last store).
         if std::mem::take(&mut self.hero.gadgets.board_select) {
             if let Some(data) = self.item_data.as_ref() {
-                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &[] };
+                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), mobys: None, camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &[] };
                 self.hero.items.f13fc = 0;
                 crate::hero::items::update_hand_selected(&mut self.hero, &mut self.item_globals, &mut self.rng, &ienv);
                 self.hero.items.f13fc = 1;
@@ -431,7 +432,10 @@ impl Game {
             if let Some(data) = self.item_data.as_ref() {
                 // 0x1abe80, the targetable mobys of the moby loop's run list (crate::targeting), for the items' aim searches.
                 let targets = if self.hero.items.slot.item.is_some() { self.target_list(hooks.world.as_deref()) } else { Vec::new() };
-                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &targets };
+                // The thrown wrench's lines test the mobys' collision too (the doors: crate::hero::comet).
+                let scene = if self.hero.items.slot.detached != 0 { hooks.world.as_deref_mut().and_then(|w| w.scene(&self.mobys)) } else { None };
+                let scene = scene.as_ref().map(OwnedScene::scene);
+                let ienv = ItemEnv { data, pad: &self.pad, frame: self.counter as i32, hero_moby: self.hero_moby, coll: Some(coll), mobys: scene.as_ref(), camera: Some((self.camera.out.pos_f32(), self.camera.out.rows_f32()[0])), camera_up: Some(self.camera.out.rows_f32()[2]), targets: &targets };
                 items_update(&mut self.hero, &mut self.item_globals, &mut self.mobys, &*anim, &mut self.rng, &ienv, hits);
                 // The item updates' writes into the pad's released mask 0x13cae8 (the Suck Cannon's put-away with L1 / L2
                 // held: hero::gadgets::Gadgets::released_or).
@@ -472,8 +476,8 @@ impl Game {
             // `0x229158` (after HeroItemsUpdate): the Hologuise's squash on Ratchet's moby and the hand item.
             crate::hero::hologuise::squash(&mut self.hero, &mut self.mobys.mobys[self.hero_moby]);
             crate::hero::hologuise::squash_hand(&mut self.hero);
-            // FUN_00227e90: the walk / run footsteps (after HeroItemsUpdate in 0x228870).
-            crate::hero::fx::walk_footsteps(&mut self.hero, &self.mobys.mobys[self.hero_moby], &anim.view(), hero_sounds, &mut self.rng);
+            // FUN_00227e90: the walk / run footsteps (after HeroItemsUpdate in 0x228870), and Hoven's footprints.
+            crate::hero::fx::walk_footsteps(&mut self.hero, &self.mobys.mobys[self.hero_moby], &*anim, coll, scene_view.as_ref(), hero_sounds, &mut self.rng);
             // FUN_002285a0: the cheat entry (the last moves against the patterns; crate::cheats).
             let h = &self.hero;
             let inp = crate::cheats::MoveInput { state_ticks: h.timer, group: h.group, state: h.state, flip_sector: h.jump.kind7a0, combo: h.melee.combo, mirror: self.options.cheats.on(crate::cheats::slot::MIRROR) };

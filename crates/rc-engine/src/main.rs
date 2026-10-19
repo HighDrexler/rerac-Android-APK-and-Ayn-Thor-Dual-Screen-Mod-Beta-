@@ -74,6 +74,9 @@ mod walloper_render;
 mod visibomb_view;
 mod gs_post;
 mod reactive_render;
+mod rac2;
+mod rac2_level;
+mod rac2_play;
 mod saves;
 mod scene_render;
 mod sea_render;
@@ -114,7 +117,7 @@ use level_load::LoadedLevel;
 use tfrag_render::{game_to_bevy, TfragMaterial};
 
 #[derive(Resource)]
-struct Level(LoadedLevel);
+pub(crate) struct Level(pub(crate) LoadedLevel);
 
 #[derive(Resource)]
 struct ScreenshotRequest {
@@ -128,12 +131,15 @@ fn main() -> anyhow::Result<()> {
     crash_log::install();
     // `--version-json` exits here; a missing or wrong data folder exits with a clear error (crate::disc_source).
     let root = disc_source::startup();
+    // Going Commando's data folder: its own front end (crate::rac2).
+    // Going Commando runs the same app on its level (crate::rac2_level), its front end over it (crate::rac2).
+    let rac2 = disc_source::game(&root) == disc_source::Game::Rac2;
     let index = level_load::level_index();
     // The one level load (the boot's and every runtime level change's, crate::level_switch): the level data, the loader's
     // ship and the load-time update pass (crate::moby_spawn; RC_SPAWN_RULES=0 skips it), the fog zones and the
     // underwater test (crate::fog_state).
     // The boot's game state first: the level's spawn test reads its save bits (crate::gameplay::level_spawn_save).
-    let boot = gameplay::boot_state(&root, index);
+    let boot = if rac2 { None } else { gameplay::boot_state(&root, index) };
     let save = gameplay::level_spawn_save(boot.as_ref().map(|(gs, _)| gs), index);
     let level_switch::LevelBundle { mut level, spawn, fog: fog_state, .. } = level_switch::load_bundle(&root, index, &save)?;
     let t = &level.timings;
@@ -236,6 +242,8 @@ fn main() -> anyhow::Result<()> {
     .add_systems(Startup, setup_camera)
     .add_systems(level_switch::LevelStartup, setup)
     .add_systems(Update, report_fps);
+    if rac2 && rac2::requested() { app.add_plugins(rac2::FrontEndPlugin::new(&root)?); }
+    if rac2 { app.add_plugins(rac2_play::Rac2PlayPlugin); }
     // RC_RENDER_DIAG=1: Bevy's per-pass render timings (CPU only on Metal) and the views rendered, logged every 5 s.
     if std::env::var("RC_RENDER_DIAG").is_ok_and(|v| v.trim() == "1") {
         app.add_plugins((
@@ -262,7 +270,7 @@ fn ms(d: Duration) -> f64 { d.as_secs_f64() * 1e3 }
 /// `../Resources/assets` inside a macOS `.app`; otherwise the repo's `crates/rc-engine/assets` (`cargo dev`,
 /// `target/*/rerac`). The executable path is resolved through symlinks first, so a symlinked binary finds the
 /// folder beside its real file.
-fn asset_dir() -> String {
+pub(crate) fn asset_dir() -> String {
     let exe = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let dir = exe.as_deref().and_then(std::path::Path::parent);
     [dir.map(|d| d.join("assets")), dir.map(|d| d.join("../Resources/assets"))]

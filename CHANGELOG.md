@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.3.5-alpha
+
+Fixes from playing v0.3.4, from the bug reports on Discord and from the community's pull requests.
+
+- The first start no longer shows a purple or black screen.
+- Save slots show the time played and the date in your own time zone, and saving over a slot highlights it.
+- The autosave icon shows while the game saves.
+- Cheats no longer switch on by themselves, and the Goodies descriptions show on every level.
+- The pause menu looks right after a movie or scene, and the escape and air timers and the underwater tint stay off the pause menu and map.
+- Port Options open from the main menu too.
+- The wrench aims at nearby crates and enemies again, knocks Orxon's bombs away and sets off placed mines.
+- Weapons fire along a grind rail and sweep with the stick, and the Morph-o-Ray fires while walking and running.
+- The Mine Glove shows the mine in Ratchet's hand and leaves its smoke cloud when a mine goes off.
+- The Persuader, Map-o-Matic and Bolt Grabber show on Ratchet once he has them.
+- A jump off ice keeps Ratchet's slide, and the thrown wrench no longer flies through closed doors.
+- Picking up a gold bolt hides the bomb and the Swingshot's hook, and the ammo counter comes back after dying.
+- Warp pads turn the camera behind Ratchet, and the view goes back to normal after the Pokitaru dogfight.
+- At the ship's take-offs and landings Clank's antenna glows and Ratchet wears his helmet; the planet title cards fade in without blue bars.
+- Clank's hover hum plays, and Veldin Orbit keeps its music after the fleet mission.
+- Trees sway in the wind, Ratchet leaves footprints in Hoven's snow, and the map's ship marker sits on the ship.
+- The Glove of Doom's canisters and the gold bolts lose the big yellow halo on some planets.
+- Quartu: the Codebot door no longer gets stuck.
+- Kalebo III: the race water sits at the right height, and the Magician skill point can be earned.
+- Gaspar: the cannons aim up and down the right way.
+- Giant Clank carries Ratchet along.
+
 ## v0.3.4-alpha
 
 Fixes from playing v0.3.3.

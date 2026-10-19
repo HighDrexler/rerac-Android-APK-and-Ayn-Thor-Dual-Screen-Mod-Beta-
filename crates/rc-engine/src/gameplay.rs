@@ -148,7 +148,8 @@ fn give_items() -> Option<Vec<usize>> {
 }
 
 /// `RC_PLAY` (default on; `0` = fly camera only).
-pub fn enabled() -> bool { !std::env::var("RC_PLAY").is_ok_and(|v| v.trim() == "0") }
+/// Going Commando has no game tick yet (its logic is rc-game2's, docs/plan/rac2_bringup.md §6.3 F).
+pub fn enabled() -> bool { !std::env::var("RC_PLAY").is_ok_and(|v| v.trim() == "0") && crate::disc_source::current() == crate::disc_source::Game::Rac1 }
 
 /// The boot's game state: a direct boot into level `index` (`load_game_state`) with the debug grants applied. Built
 /// once, before the boot's level load (its spawn bits, [`level_spawn_save`]), and handed to [`GameplayPlugin`].
@@ -376,6 +377,19 @@ fn item_data(lv: &crate::level_load::LoadedLevel) -> anyhow::Result<ItemTablesOu
         let targets = (0..16).map_while(|l| gadget::joint_list(&g.blob, &c.header, l).ok().map(|(_, b)| rc_formats::moby_anim::list_target(&b).unwrap_or(0xff))).collect();
         item_targets.push((g.moby.o_class as i16, targets));
         classes.push(ItemClass { o_class: g.moby.o_class as i16, anim: rc_formats::moby_anim::MobyAnimClass::new(c, seqs), scale: c.header.scale, chains });
+    }
+    // The Swingshot's hook (0xd1) is a class of the level, not of the gadget table (`0x2dcbf0`'s `CreateMoby`;
+    // crate::moby_attach draws it from there too): the claws' animation (rc_game::hero::swingshot's hook update) needs
+    // its sequences, or the hook stays on its first frame with the claws folded.
+    let hook = rc_game::hero::swingshot::HOOK_CLASS;
+    if !classes.iter().any(|c| c.o_class == hook) {
+        if let Some(ci) = lv.mobys.classes.iter().position(|c| c.o_class == hook as i32) {
+            let c = &lv.mobys.classes[ci].class;
+            let chains = crate::interact_render::class_blob(hook as i32)
+                .map(|b| (0..16).map_while(|l| gadget::joint_list(&b, &c.header, l).ok().map(|(a, _)| a)).collect())
+                .unwrap_or_default();
+            classes.push(ItemClass { o_class: hook, anim: lv.mobys.anim[ci].clone(), scale: c.header.scale, chains });
+        }
     }
     let ammo = tables.records.iter().map(|r| (r.has_ammo(), u16::from_le_bytes([r.0[0xe], r.0[0xf]]))).collect();
     Ok((ItemData { defs, hero_chains, classes }, ammo, weapon_defs, seconds, firsts, item_targets))
@@ -916,12 +930,21 @@ fn class_table(lv: &crate::level_load::LoadedLevel, ext: &dyn Fn(i16) -> Option<
     t
 }
 
+/// Whether the loader fills `o`'s joint lists into `Services::joint_lists`: a port whose update reads joint points
+/// (`rc_game::moby_update::classes::needs_joint_lists`), or a scene actor class `rc_game::scene_actors` reads
+/// ([`rc_game::scene_actors::ACTOR_CLASSES`]: Clank's antenna sprite at joint list 1 / 6, which the scene / space
+/// modes 2 / 6 draw, and Ratchet's head manipulator and helmet — the class's own lists, so without them the sprite
+/// sat at the actor's origin and the head scale / helmet were missing).
+fn wants_joint_lists(o: i16) -> bool {
+    rc_game::scene_actors::ACTOR_CLASSES.contains(&(o as i32)) || level_ports().needs_joint_lists(o)
+}
+
 /// The joint lists of the classes whose update reads joint points (`rc_game::moby_update::classes::needs_joint_lists`,
 /// `Services::joint_lists`), from their blobs in the level core (as `menu_render::load_frame_class`).
 /// With them, per class, each list's manipulator target joint (`Services::joint_targets`, `rc_game::moby_update::manip`).
 type JointLists = (HashMap<i16, Vec<Vec<u8>>>, HashMap<i16, Vec<u8>>);
 fn class_joint_lists(lv: &crate::level_load::LoadedLevel) -> anyhow::Result<JointLists> {
-    let both = class_joint_data_where(lv, |o| level_ports().needs_joint_lists(o))?;
+    let both = class_joint_data_where(lv, wants_joint_lists)?;
     let targets = both.iter().map(|(o, l)| (*o, l.iter().map(|(_, s)| rc_formats::moby_anim::list_target(s).unwrap_or(0xff)).collect())).collect();
     Ok((both.into_iter().map(|(o, l)| (o, l.into_iter().map(|(a, _)| a).collect())).collect(), targets))
 }
@@ -1350,6 +1373,20 @@ fn setup(
         }
         Err(e) => eprintln!("gameplay: no body joint lists ({e:#}): Clank / Giant Clank's joint points sit at the body's origin"),
     }
+    // The scene actors' classes (rc_game::scene_actors, game modes 2 / 6): Ratchet's (0) head manipulator target (list
+    // 0x18) and the Clank actors' (10, 0x1a3, 0x555) joint lists 1 / 6 for their antenna sprite and 1 / 2 for the noggin.
+    // Without them the sprite sat at the actor's origin, his feet.
+    match class_joint_data_where(lv, |o| matches!(o, 0 | 10 | 0x1a3 | 0x555)) {
+        Ok(m) => {
+            for (o, l) in m {
+                let targets: Vec<u8> = l.iter().map(|(_, s)| rc_formats::moby_anim::list_target(s).unwrap_or(0xff)).collect();
+                svc.joint_targets.entry(o).or_insert(targets);
+                // (Class 0 is the hero moby's too: only its manipulator targets, so no other joint query on Ratchet changes.)
+                if o != 0 { svc.joint_lists.entry(o).or_insert_with(|| l.into_iter().map(|(a, _)| a).collect()); }
+            }
+        }
+        Err(e) => eprintln!("gameplay: the scene actors' classes: no joint lists ({e:#})"),
+    }
     // A ship class the level itself carries (Gemlik's placed 533, which `rc_game::travel::ship::adopt` makes the ship): its
     // joint lists from the level's class, as for any class (the canopy glass sits on joint list 0).
     match class_joint_data_where(lv, |o| rc_game::travel::ship::CLASSES.contains(&o)) {
@@ -1373,6 +1410,9 @@ fn setup(
     svc.groups = statics.groups(&lv.gameplay);
     // The "use" system: talk tables, text, talk slots, save values (crate::interact_render; before the load pass).
     crate::interact_render::install(&mut svc, lv, &statics.instance_to_moby, state.as_ref().map(|s| &s.0));
+    // InitLevelRenderGlobals: the ship it creates is the hook slot 0 (`MobyUnknown74Hook(ship, 0)`: the map's ship
+    // marker); an adopted ship (level 13's 533, 0x13e030 set by `0x2a2360`) is not created, so not hooked.
+    if let Some(id) = ship_id.filter(|_| !crate::level_load::ship_adopted()) { svc.interact.register_talk_mobys([(id, 0)]); }
     if let Some(gs) = &state {
         svc.counters.bolts = gs.0.global.bolts;
         // 0x15ee20 (the challenge-gated pads 1135 and gold-weapon offers read it) and 0x13e520.
@@ -1870,6 +1910,7 @@ fn death_reload(p: &mut Play, lv: &crate::level_load::LoadedLevel, state: Option
     p.svc.hits = Default::default();
     // The "use" system's talk slots and save values by the new instance → moby map (before the load pass, as the load).
     crate::interact_render::install(&mut p.svc, lv, &statics.instance_to_moby, state);
+    if let Some(id) = ship_id.filter(|_| !crate::level_load::ship_adopted()) { p.svc.interact.register_talk_mobys([(id, 0)]); }
     p.svc.build_grid(&mut p.game.mobys);
     p.reload_shown = shown;
     println!(
@@ -2254,6 +2295,7 @@ fn tick(
         w.camera_yaw = cam.yaw().to_f32();
         w.camera_rows = cam.rows_f32();
         w.camera_class = cam.class;
+        w.camera_flyby_phase = cam.flyby_phase;
         w.coll = Some(coll);
         w.particles = parts.as_deref_mut().map(|p| &mut p.sys);
         w.view = view_cull.as_ref();
@@ -2767,4 +2809,24 @@ fn write_visible(play: Option<ResMut<Play>>, occl: Option<Res<MobyOcclusion>>, a
         if let Some(m) = t.mobys.get_mut(first + slot) { m.visible = v; }
     }
     if let Some((id, ii)) = p.ship { t.mobys[id].visible = drawn(ii); }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The loader fills the scene actor classes' joint data (`rc_game::scene_actors`): Clank's antenna sprite reads
+    /// joint list 1 / 6, Ratchet's head manipulator and helmet joint list 0x18 / 4. Level 01 carries Ratchet (0) and
+    /// Clank (10); skips without the extracted data.
+    #[test]
+    fn the_scene_actors_joint_data_is_loaded() {
+        for o in rc_game::scene_actors::ACTOR_CLASSES { assert!(wants_joint_lists(o as i16), "class {o}"); }
+        let root = crate::level_load::extracted_root();
+        let Ok(lv) = crate::level_load::load_level(&root, 1) else { eprintln!("skipped: no extracted level 01"); return };
+        let (lists, targets) = class_joint_lists(&lv).unwrap();
+        let has = |o: i16, l: usize| lists.get(&o).is_some_and(|ls| ls.get(l).is_some_and(|c| !c.is_empty()));
+        assert!(has(0, 0x18) && has(0, 4), "Ratchet's joint lists 0x18 (head) and 4 (helmet)");
+        assert!(has(10, 1), "Clank's joint list 1 (antenna)");
+        assert!(targets.get(&0).is_some_and(|t| t.get(0x18).is_some_and(|&j| j != 0xff)), "Ratchet's head target joint");
+    }
 }

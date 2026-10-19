@@ -395,6 +395,7 @@ fn pre(w: &mut World, id: MobyId) -> bool {
         let p = c::pos(w, id);
         let z0 = [p[0], p[1], p[2] + 0.5, p[3]];
         let src: c::V = match h.attacker {
+            None if h.wrench => w.hero.body_point.map(|x| f32::from_bits(x.0)),
             None => h.pos.map(|x| f32::from_bits(x.0)),
             Some(a) if w.m(a).o_class == 0x47 => w.hero.body_point.map(|x| f32::from_bits(x.0)),
             Some(a) if w.m(a).o_class == 0xba => z0,

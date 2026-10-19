@@ -19,9 +19,10 @@
 //!   neither Ratchet nor the camera is in +0x14 (or Ratchet has left +0x20); the hum (sound 0) while moving. Giant
 //!   Clank's stay open once planet 16 is unlocked.
 //! * **1430 the dispenser** (`0x2ec030`, U556, one placed): carried by its link (+0x0c); hides its 24 groups;
-//!   with flag 0x13d38a set and Ratchet on foot within 3: the fly-by camera +0x00 armed (camera class 19, not run:
-//!   G-HERO-027, logged), then a piece 1428 slides out of it beside Ratchet (put 3 away facing it, state 0x72), the
-//!   first group shown; the piece slides back over a full turn of `scale(360)` ticks; the level word 0x184aac = 1;
+//!   with flag 0x13d38a set (the Codebot) and Ratchet on foot within 3: the fly-by camera +0x00 armed (camera class
+//!   19); once the fly-by is back from its fade to black (`0x2f78e0`: phase 1 with the fade up, or phase 3, or no
+//!   fly-by) a piece 1428 (the Codebot) slides out of it and Ratchet is put 3 away facing it (state 0x72, which the
+//!   fly-by's end clears), the first group shown; the piece slides back over a full turn of `scale(360)` ticks; the level word 0x184aac = 1;
 //!   with ten of the group gone, flag 0x13d3f5 and 15000 bolts. **1428** (`0x2ebd78`) does nothing on level 15.
 //!
 //! * **67 the sliding doors** (`0x29aff0`, U530, 8 placed; read from the disassembly, no decomp): slide +0x24 to the
@@ -400,7 +401,12 @@ pub fn dispenser_update(w: &mut World, id: MobyId) {
             }
         }
         2 => {
-            if w.camera_class != 0x13 {
+            // `0x2f78e0`: past the fly-by's fade to black (phase 1 with the fade still up: Ratchet is put beside the
+            // slot under the black and the Codebot slides out on camera) or once it has ended (phase 3), or no
+            // fly-by. The fly-by's own end gives Ratchet back (`SetState(0, 1)`).
+            let phase = w.camera_flyby_phase;
+            let ready = w.camera_class != 0x13 || (phase == 1 && w.svc.cinematic.fade != 0.0) || phase == 3;
+            if ready {
                 let p = c::add(c::pos(w, id), off(2.0));
                 let pc = make_piece(w, p, [0.0, FRAC_PI_2, c::add_rot(yaw, FRAC_PI_2), 0.0]);
                 c::set_pi32(w, id, 4, pc.map_or(0, |m| m as i32 + 1));

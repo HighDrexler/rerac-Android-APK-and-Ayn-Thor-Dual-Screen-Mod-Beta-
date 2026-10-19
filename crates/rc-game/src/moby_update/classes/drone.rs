@@ -281,7 +281,7 @@ pub fn update(w: &mut World, id: MobyId) {
         let tilt = (((r * ((n + 1) / 5)) % m1) as f32 / div * TAU - PI) * 0.25;
         c::set_pf(w, id, pv::TILT_GOAL, tilt);
         if let Some(h) = w.get_hit(id, 1, false) {
-            let ty = h.attacker.map_or(0, |a| class_type(w, a));
+            let ty = h.attacker_class(w).and_then(|c| w.classes.info(c)).map_or(0, |i| i.ty);
             if (5..=8).contains(&ty) { w.mm(id).state = 4; }
         }
     }

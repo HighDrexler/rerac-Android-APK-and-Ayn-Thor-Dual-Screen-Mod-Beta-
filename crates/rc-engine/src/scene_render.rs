@@ -757,6 +757,9 @@ fn leave_mode2(rt: &mut SceneRuntime, p: &mut Play) {
     p.svc.game_mode = if rt.pending.is_empty() { 0 } else { 2 };
     p.game.camera_paused = false;
     p.svc.cinematic.scene = None;
+    // FUN_002ac608: the gameplay view's tan(hfov/2) 0x16cf70 = 0.63. A class's FOV (the jets' boost) was kept
+    // through every later scene without it, until the next level.
+    p.svc.view_tan_x = rc_game::scene_player::GAMEPLAY_TAN_HALF_FOV.to_f32();
     p.svc.actor_records.glow.clear();
     // FUN_002ac608: the actors deleted (their class sequence slots freed with them).
     let counter = p.game.counter;
@@ -1019,7 +1022,8 @@ fn fade_pass(mut commands: Commands, active: Res<ActiveScene>, hold: Res<FadeHol
 }
 
 /// HUD hidden and the subtitle box (module docs) into the 2D pass; in gameplay, the letterbox of `0x15f404`.
-fn subtitle_layer(mut rt: ResMut<SceneRuntime>, active: Res<ActiveScene>, hold: Res<FadeHold>, play: Option<Res<Play>>, mut layer: ResMut<SceneLayer>, level: Option<Res<crate::Level>>) {
+#[allow(clippy::too_many_arguments)]
+fn subtitle_layer(mut rt: ResMut<SceneRuntime>, active: Res<ActiveScene>, hold: Res<FadeHold>, play: Option<Res<Play>>, mut layer: ResMut<SceneLayer>, level: Option<Res<crate::Level>>, hook: Option<Res<crate::hud_render::Hud2dHook>>) {
     // The font of the level's HUD: the class draws below (the countdowns) need it without a scene having played first.
     if rt.glyphs.is_none() { rt.glyphs = level.as_ref().and_then(|l| l.0.hud.as_ref().map(|h| h.glyphs)); }
     // FadeToBlack blocks inside the tick: the last image (its bars, its HUD) stays under the fade.
@@ -1038,8 +1042,10 @@ fn subtitle_layer(mut rt: ResMut<SceneRuntime>, active: Res<ActiveScene>, hold: 
     layer.prims.clear();
     if !active.running && rt.letterbox > 0 { layer.prims = letterbox_prims(rt.letterbox); }
     // The census units' 2-D draw callbacks (Veldin's countdown 586, `0x2d8098`: `DrawUIFrame` and
-    // `font_print_center_large`, `rc_game::moby_update::classes::units::veldin_pads::countdown_draw`).
-    if !active.running {
+    // `font_print_center_large`, `rc_game::moby_update::classes::units::veldin_pads::countdown_draw`). The page menus
+    // (`PageMenuModeRender` 0x21ab50) draw none of them: the escape and air timers stayed over the pause menu and map.
+    let menu = hook.is_some_and(|h| h.replace_hud);
+    if !active.running && !menu {
         if let (Some(glyphs), Some(p)) = (rt.glyphs.as_ref(), play.as_ref()) {
             let texts = &p.svc.draw_callbacks.texts;
             if !texts.is_empty() {
@@ -1057,7 +1063,7 @@ fn subtitle_layer(mut rt: ResMut<SceneRuntime>, active: Res<ActiveScene>, hold: 
         }
     }
     // The Trespasser locks' minigame (`0x2d93e8`, the frame's draw callback: rc_game's units::trespasser_lock::frame).
-    if !active.running {
+    if !active.running && !menu {
         if let Some(p) = play.as_ref() { layer.prims.extend(p.svc.draw_callbacks.rings.iter().map(ring_prim)); }
     }
     let (Some(glyphs), Some(line)) = (rt.glyphs.as_ref(), active.last.as_ref().and_then(|t| t.subtitle.as_ref())) else { return };

@@ -153,7 +153,11 @@ pub fn quat_f32(q: [i16; 4]) -> [f32; 4] { q.map(|c| c as f32 / 32768.0) }
 
 /// Parses a sequence at `offset` in `base`; frame pointers are relative to `base` (the class blob for
 /// class sequences, the sequence blob itself for `ratchet_seq`).
-pub fn parse_sequence(base: &[u8], offset: usize) -> Result<MobySequence> {
+pub fn parse_sequence(base: &[u8], offset: usize) -> Result<MobySequence> { parse_sequence_joints(base, offset, None) }
+
+/// [`parse_sequence`] for a class of `joints` joints: Going Commando's compressed frames (a frame pointer with the top
+/// nibble 0xf) are decoded into the plain frame layout ([`decode_compressed_frame`]); `None` (R&C1) rejects them.
+pub fn parse_sequence_joints(base: &[u8], offset: usize, joints: Option<usize>) -> Result<MobySequence> {
     let b = Buf(base);
     let header: MobySequenceHeader = b.pod(offset, "moby sequence header")?;
     let fc = header.frame_count as usize;
@@ -161,10 +165,100 @@ pub fn parse_sequence(base: &[u8], offset: usize) -> Result<MobySequence> {
     let triggers: Vec<u32> = b.pod_slice(offset + 0x1c + 4 * fc, header.trigger_count as usize, "moby sequence triggers")?;
     let mut frames = Vec::with_capacity(fc);
     for &p in &ptrs {
-        if p >> 28 != 0 { return invalid(format!("moby sequence: frame pointer {p:#x} has a non-zero top nibble")); }
-        frames.push(parse_frame(b, p as usize)?);
+        match (p >> 28, joints) {
+            (0, _) => frames.push(parse_frame(b, p as usize)?),
+            (0xf, Some(j)) => {
+                // The base pose table after the pointers and the `+0x13` words (L00 `0x2a4db0`).
+                let table = offset + 0x1c + 4 * fc + 4 * header.pad as usize;
+                let raw = decode_compressed_frame(b, table, (p & 0x0fff_ffff) as usize, j)?;
+                frames.push(parse_frame(Buf(&raw), 0)?);
+            }
+            _ => return invalid(format!("moby sequence: frame pointer {p:#x} has a non-zero top nibble")),
+        }
     }
     Ok(MobySequence { header, frames, triggers })
+}
+
+/// Going Commando's compressed keyframe (L00 `0x313fa8`), decoded into the plain frame (header + payload) the
+/// evaluator reads. `table`: the sequence's base pose — `u32` packed offsets (bits 0..9: the raw u16 values, 10..20:
+/// the byte deltas, 21..31: the sign bits, each from the frame's +4), then `joints` × `u16 x, y, z`, then `u8` scale
+/// and translation record counts, then those records' bases (`s16 × 4`). `frame`: `u16` rate divisor, `u16` time,
+/// then the streams. Each quaternion component's low two bits pick its source — 0 the base, 1 + `s8·4`, 2 + a
+/// sign-extended 10-bit field · 4 (three per word, read at bit 22, 12, 2), 3 a raw u16 — and w = √(1 − x² − y² − z²)
+/// (1.15 fixed point, ≤ 0x7fff) negated by its sign bit. Scale / translation records: one control byte (2 bits per
+/// component: 0 base, 1 base + `s8·4`, 2 a raw s16), w = the base's.
+pub fn decode_compressed_frame(b: Buf, table: usize, frame: usize, joints: usize) -> Result<Vec<u8>> {
+    let packed = b.u32(table)?;
+    let (scales, trans) = (b.u8(table + 4 + joints * 6)? as usize, b.u8(table + 5 + joints * 6)? as usize);
+    let rate_div = b.u16(frame)?;
+    let mut out = Vec::with_capacity(0x10 + (joints + scales + trans) * 8 + 8);
+    let rate = if rate_div != 0 { 1.0 / rate_div as f32 } else { 0.0 };
+    out.extend(rate.to_le_bytes());
+    out.extend(b.u16(frame + 2)?.to_le_bytes());
+    out.extend((((joints + scales + trans + 1) >> 1) as u16).to_le_bytes());
+    out.extend(((joints * 8) as u16).to_le_bytes());
+    out.extend((scales as u16).to_le_bytes());
+    out.extend(((joints * 8 + scales * 8) as u16).to_le_bytes());
+    out.extend((trans as u16).to_le_bytes());
+    let streams = frame + 4;
+    let (mut bits_at, mut bit) = (streams, 0x16u32);
+    let mut raw_at = streams + (packed & 0x3ff) as usize;
+    let mut byte_at = streams + ((packed >> 10) & 0x7ff) as usize;
+    let mut q = Vec::with_capacity(joints);
+    for j in 0..joints {
+        let mut c = [0u16; 3];
+        for (k, v) in c.iter_mut().enumerate() {
+            let base = b.u16(table + 4 + j * 6 + 2 * k)?;
+            *v = match base & 3 {
+                1 => { let d = b.i8(byte_at)? as i16; byte_at += 1; base.wrapping_add((d as u16).wrapping_mul(4)) }
+                2 => {
+                    let w = b.i32(bits_at)?;
+                    let f = ((w << (bit & 0x1f)) >> 0x16) as i16;
+                    bit = bit.wrapping_sub(10);
+                    if (bit as i32) < 1 { bit = 0x16; bits_at += 4; }
+                    base.wrapping_add((f as u16).wrapping_mul(4))
+                }
+                3 => { let r = b.u16(raw_at)?; raw_at += 2; r }
+                _ => base,
+            };
+        }
+        q.push(c);
+    }
+    let mut sign_at = streams + (packed >> 21) as usize;
+    let mut signs = b.u8(sign_at)? as u32;
+    sign_at += 1;
+    let mut left = 8i32;
+    for c in &q {
+        let f = |v: u16| v as i16 as f32 / 32768.0;
+        let (x, y, z) = (f(c[0]), f(c[1]), f(c[2]));
+        let ww = (1.0 - x * x - y * y - z * z).max(0.0).sqrt();
+        let mut w = ((ww * 32768.0) as i32).min(0x7fff);
+        let low = left < 1;
+        left -= 1;
+        if low { signs = b.u8(sign_at)? as u32; sign_at += 1; left = 7; }
+        if signs & 1 != 0 { w = -w; }
+        signs >>= 1;
+        for v in [c[0], c[1], c[2], w as i16 as u16] { out.extend(v.to_le_bytes()); }
+    }
+    let mut ctl_at = sign_at;
+    let mut rec_at = table + 6 + joints * 6;
+    for _ in 0..scales + trans {
+        let ctl = b.u8(ctl_at)?;
+        ctl_at += 1;
+        for k in 0..3 {
+            let base = b.i16(rec_at + 2 * k)?;
+            let v = match (ctl >> (2 * k)) & 3 {
+                1 => { let d = b.i8(ctl_at)? as i16; ctl_at += 1; base.wrapping_add(d.wrapping_mul(4)) }
+                2 => { let r = b.i16(ctl_at)?; ctl_at += 2; r }
+                _ => base,
+            };
+            out.extend(v.to_le_bytes());
+        }
+        out.extend(b.i16(rec_at + 6)?.to_le_bytes());
+        rec_at += 8;
+    }
+    while out.len() < 0x10 + ((joints + scales + trans + 1) >> 1) * 16 { out.push(0); }
+    Ok(out)
 }
 
 fn parse_frame(b: Buf, at: usize) -> Result<MobyFrame> {

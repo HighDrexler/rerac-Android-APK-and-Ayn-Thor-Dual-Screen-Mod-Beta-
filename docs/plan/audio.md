@@ -324,8 +324,10 @@ RAND_PLAY, WAIT_FOR_ALL_VOICES, STOP, LFO: all ported; unported types (2, 3, 5�
 are counted (none occur). The IOP `rand()` is not reversed: a newlib-style LCG seeded 1 (M). SPU voice
 allocation (U, the proposal of §6): free voice in the group range (groups 1/2/4 → 0x18–0x2f, others 0–47),
 else the lowest-priority, oldest tone with priority ≤ the new one, else drop; streams are never taken.
-OpenGOAL has no voice limit. `SetSoundParams` mask: 1 vol, 2/4 pan, 8 pm, 0x10 pb (the EE's bits; the IOP's
-reading of 4 vs 2 is inferred).
+Implementation invariant (tested, not new IRX evidence): a preseeked stream's inactive SPU voice is reserved
+until `Continue`; `audio::music::tests::preseeked_stream_keeps_its_voice` covers the fleet-mission failure where
+a tone took it. OpenGOAL has no voice limit. `SetSoundParams` mask: 1 vol, 2/4 pan, 8 pm, 0x10 pb (the EE's
+bits; the IOP's reading of 4 vs 2 is inferred).
 
 **Music (H for the EE, M for the IOP).** `music_Update`, start / preseek / body / transition, the request
 `FUN_0027a248`, `music_UpdateStream`, and the seven callbacks, disassembled here: start 0x27af20 (`handle = h`;
@@ -516,6 +518,10 @@ shared engine code that had not been ported. Addresses level01 (boot equivalents
   carried troopers, `World::anim_blend`, `create_moby` and the load all go through it. `SoundSink::slot_owner` gives the
   refresh the slot's owner (+0x18, zeroed on free: callbacks 0x2a1bc8 / 0x2a1c10 disassembled) and class-sound index.
 * The hand item's advance (`hero::items::advance_item`): its triggers queue with the item's sounds.
+* The hero's own advance (`RatchetAnimAdvance` 0x247d48, `hero::anim`): its loop-sound tail (+0x7c set by `SetAnim`
+  from the target sequence header, +0x7d refreshed after the trigger with no phase gate) is `AnimCtl::refresh_loop_sound`.
+  The only sequence in the game with one is Clank's glide (class 0x57 sequence 0xe, class sound 0x10): his helicopter
+  hum while he holds ✕ in the air.
 * Footsteps (path 6), the wrench hit selection (path 5), sound instance classes 1 and 2 (path 8).
 
 **Conformance** (`crates/rc-game/tests/ui/sound_conformance.rs`, all 19 levels): every trigger and loop sound of every

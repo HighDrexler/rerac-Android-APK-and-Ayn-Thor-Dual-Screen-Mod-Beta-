@@ -210,6 +210,8 @@ pub struct FrontEndRt {
 /// default; `RC_LEVEL` (a development start straight into a level) skips it unless `RC_FRONTEND=1`, and `RC_FRONTEND=0`
 /// always skips it.
 pub fn front_end_requested() -> bool {
+    // Going Commando's front end is its own (crate::rac2).
+    if crate::disc_source::current() == crate::disc_source::Game::Rac2 { return false; }
     match std::env::var("RC_FRONTEND").map(|v| v.trim().to_owned()) {
         Ok(v) if v == "1" => true,
         Ok(v) if v == "0" => false,

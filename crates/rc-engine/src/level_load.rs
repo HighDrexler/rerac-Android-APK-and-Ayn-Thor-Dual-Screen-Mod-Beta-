@@ -76,6 +76,8 @@ pub fn extracted_root() -> PathBuf { crate::disc_source::data_root() }
 pub fn boot_level_index() -> u32 {
     match std::env::var("RC_LEVEL") {
         Ok(s) => s.trim().parse().unwrap_or_else(|_| panic!("RC_LEVEL must be a level index, got {s:?}")),
+        // Going Commando starts on Aranos (level 0).
+        Err(_) if crate::disc_source::current() == crate::disc_source::Game::Rac2 => 0,
         Err(_) => DEFAULT_LEVEL,
     }
 }
@@ -121,6 +123,8 @@ pub type PerLevel<T> = [std::sync::OnceLock<T>; 20];
 pub fn per_level<T>(cells: &'static PerLevel<T>) -> &'static std::sync::OnceLock<T> { &cells[(level_index() as usize).min(19)] }
 
 pub fn load_level(root: &Path, index: u32) -> Result<LoadedLevel> {
+    // Going Commando's level file (crate::rac2_level), read into the same structure.
+    if crate::disc_source::game(root) == crate::disc_source::Game::Rac2 { return crate::rac2_level::load(root, index); }
     // The game data folder (crate::disc_source).
     let read = |name: &str| crate::disc_source::level_file(root, index, name);
     let mut t = LoadTimings::default();

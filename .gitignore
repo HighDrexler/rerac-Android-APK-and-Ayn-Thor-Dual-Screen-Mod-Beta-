@@ -3,6 +3,7 @@
 /assets/
 /out/
 /extracted/
+/extracted-rac2/
 # Generated dev output (decompiler export, trace dumps, Ghidra import ELFs, VU listings, captures): tools write here only.
 /work/
 # Local config

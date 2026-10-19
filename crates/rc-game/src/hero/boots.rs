@@ -65,7 +65,7 @@
 //!
 //! **Not ported** (cosmetic or outside the hero): the look-at moby
 //! 0x13f928 and the moby-armed targeted grind jump (0x13f908 / 0x13f90c / 0x13f8a0, set by no ported class);
-//! level 16's class-0x101 bump; the aim lean's steering with a weapon in hand (0x13f920 only springs back to 0); the Hologuise / other bodies.
+//! level 16's class-0x101 bump; the Hologuise / other bodies.
 //!
 //! Standard `f32` for the new code (the hero block's PS2 floats converted at the boundary); the random draws are
 //! the game's, in its order.
@@ -667,8 +667,9 @@ fn phys_grind(h: &mut Hero, env: &Env, seq_b: u8, rng: &mut Rng) {
         let vz = rng.randf(DTF * 3.0, DTF * 5.0);
         spark(h, rng, f3(h.pos), [y.cos() * s, y.sin() * s, vz], -(DT2F * 30.0));
     }
-    // The aim lean needs a weapon in hand (0x1413fa and a weapon-type slot item): never on the boots' levels here.
-    let aim = false;
+    // The aim lean: a gun in hand (0x140408 ≠ 0xc, its definition's +0x18 ≠ 0) held out (0x1413fa).
+    let id = h.items.slot.id;
+    let aim = id != 0xc && h.weapons.defs.get(id.max(0) as usize).is_some_and(|w| w.w18 != 0) && h.f13fa != 0;
     if matches!(h.boots.lean, 2 | 3) { h.boots.lean = -1; }
     let paths = paths(env);
     let Some(pts) = path_pts(paths, h.boots.rail) else { return };
@@ -752,9 +753,16 @@ fn phys_grind(h: &mut Hero, env: &Env, seq_b: u8, rng: &mut Rng) {
                 h.boots.lean = if fast_diff_rots(s, hp).to_f32() < DEG45 { 2 } else { 3 };
             }
         }
+        // Aiming, the stick (past 0.2) leans the body toward its direction off the rail's, within ±45°: the gun's
+        // records follow the lean ([`grind_lean`]), sweeping the shots across the rail.
+        let mut lean_t = Pf::ZERO;
+        if Pf::b(0x3e4c_cccd) < h.stick_mag && aim {
+            h.stick_target(env, Pf::ONE);
+            lean_t = pf(fast_subtract_rotations(h.target_yaw, pf(h.boots.yaw)).to_f32().clamp(-DEG45, DEG45));
+        }
         let b = &mut h.boots;
         let (mut la, mut lv) = (pf(b.lean_angle), pf(b.lean_vel));
-        turn_spring(Pf::ZERO, pf(0.015), pf(0.3), Pf::ZERO, &mut la, &mut lv, 0);
+        turn_spring(lean_t, pf(0.015), pf(0.3), Pf::ZERO, &mut la, &mut lv, 0);
         (b.lean_angle, b.lean_vel) = (la.to_f32(), lv.to_f32());
         approach(base_t, DT2F * 15.0, &mut b.base);
         // The slope 0.3 ahead along the spline.

@@ -474,7 +474,9 @@ Help/tutorial boxes: hud_text.md §3.4 (`Help_Update` 0x225bd0). They run inside
   0x2b4c88), taken at the end of that frame's render graph from the main target's output attachment (the capture image, a screenshot's texture,
   or a window frame rendered offscreen on that frame and copied back), with the black 0x30 applied on the way by the GS formula on display bytes
   (`menu_snapshot.wgsl`, exact through a UNORM view); no CPU read-back, so it is on screen from the first menu frame on and frame-exact runs are
-  run-to-run identical (frames 62/65/73/90 of `RC_PLAY_SCRIPT="60:press Start"`, 3 runs each). Shown by a UI node under the 2D pass; menu draws go through `hud_render::Hud2dHook` (HUD off / frozen in mode 3).
+  run-to-run identical (frames 62/65/73/90 of `RC_PLAY_SCRIPT="60:press Start"`, 3 runs each). The return page reopening the menu is the same entering
+  frame: the frame it reopens on still renders as the gameplay frame (the menu's first tick is the next frame), so the snapshot is of the world and not
+  of the menu's own panels. Shown by a UI node under the 2D pass; menu draws go through `hud_render::Hud2dHook` (HUD off / frozen in mode 3).
 * **Frame mobys** (`rc-game/src/menus/pause/frame.rs`): spawn / `start` (transition) / `update` (advance, `MenuMobyUpdate`,
   corners via `rc_formats::moby_anim::{joint_translations, bone_points}`) / `free`, and `MenuProjection` (the camera constants
   derived with the PS2 float ops from the view-context defaults, NTSC) → `PageMenu::draw` writes pvar / widget rects and the navy
@@ -508,7 +510,7 @@ Help/tutorial boxes: hud_text.md §3.4 (`Help_Update` 0x225bd0). They run inside
 ## 9. Port-only settings ("Port Options")
 
 Not in the game. Settings the PS2 never had (anti-aliasing first) live on one extra page, **Port Options**, reached from
-pause → Options → "Port Options". It is built only from the game's own machinery, so it looks and behaves like the Options
+pause → Options → "Port Options" and from the main menu → Options → "Port Options". It is built only from the game's own machinery, so it looks and behaves like the Options
 sub-pages (`crates/rc-game/src/menus/pause/port.rs`, `PageMenu::install_port_page`):
 
 * **Entry**: one item `{label "Port Options", action 3 → page}` inserted into the Options list 0x1b4f78 **right before Quit
@@ -521,11 +523,17 @@ sub-pages (`crates/rc-game/src/menus/pause/port.rs`, `PageMenu::install_port_pag
   for 3+). Only an Options sub-page's frames work: a page's frame animations start from its parent's layout and △ plays
   them backwards to it (with Cheats' frames, tried 2026-10-10, △ left the Options page in the Goodies layout). W0 is a
   clone of the sub-page title label (flags 0xf: large, centred) with the port title; W3 is the port list, showing
-  `port::VISIBLE` (4) rows at a time and scrolling with the cursor. The port list is
+  `port::VISIBLE` (4) rows at a time and scrolling with the cursor; the game's arrow (icon 0xe99e frame 6, the Epilogue's
+  page arrow, turned to point up / down) marks rows hidden above and below (players missed that the list scrolls). The port
+  list is
   updated and drawn exactly like the camera list 0x294cc0 / 0x294e68 (rows `h/(n+1)`, first y `h/(n+1) − 8`, label regular at
   (12, y) 0x8020ffff selected / 0x80ffa888, value right-aligned at (w − 12, y) 0x80ffa888; Up/Down without wrap + sound 1; ✕
   cycles the value + sound 0; generic Start/Select/R3 close and △ → Options). Transitions (12 ticks, seqs forward / reversed),
   panels, fonts and colours are `PageMenu`'s.
+* **Main menu** (`port::PAGE_FRONT`): the front end's Options page 0x1b8d08 fills its list at entry (`0x28dbb8`, from
+  0x1b8dc0 NTSC: Language, Sound; 0x1b8d90 PAL: + Video); "Port Options" is appended to both lists and opens a second page
+  record with the same W0 / W3 widgets, its frames and fillers those of the front end's Sound page (seqs 0, 1, 202, 210,
+  215; title at slot 2), parent the front end's Options page, so its frames play from and △ returns to that page.
 * **Strings**: the port's own text, negative ids (−0x100..) resolved by `MenuAssets::msg` before the level's table (the
   disc's ids are 0..21500); "off" is the game's 20315. Records use addresses 0x7f00_xxxx, which no EE pointer can hold.
 * **Rows** (`port::ENTRIES`, one entry per option): the graphics rows (Preset, Anti-aliasing: Original / off / 2x / 4x / 8x,

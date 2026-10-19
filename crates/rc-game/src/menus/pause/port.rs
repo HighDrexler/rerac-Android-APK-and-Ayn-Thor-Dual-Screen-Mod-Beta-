@@ -17,6 +17,14 @@
 //! description at the same index ([`Label::table`]). [`PageMenu::install_port_page`] does all of it; without
 //! the call every record is exactly as read from the overlay.
 //!
+//! **The main menu** (the front end's Options page 0x1b8d08, its list filled by `0x28dbb8` from
+//! `saves::data::FRONT_OPTIONS_*`): a second page [`PAGE_FRONT`] with the same title and list widgets, its frames those
+//! of the front end's Sound page (so they play from, and △ goes back to, that Options page), and a "Port Options"
+//! entry appended to both of the front end's Options lists.
+//!
+//! **Scrolling** (port-only, beyond the camera list's look): the list shows [`VISIBLE`] rows; the game's arrow (icon
+//! 0xe99e frame 6, the Epilogue's page arrows) marks rows hidden above and below.
+//!
 //! Records live at addresses no EE pointer can hold (0x7f00_xxxx), and the text ids are negative (the disc's
 //! ids are 0..=21500), so nothing here can collide with or be mistaken for game data.
 //!
@@ -33,6 +41,8 @@ use rc_formats::font::Font;
 
 /// The page and its two own widgets (title label, settings list).
 pub const PAGE: u32 = 0x7f00_0000;
+/// The main menu's copy of the page (module docs).
+pub const PAGE_FRONT: u32 = 0x7f00_0010;
 pub const TITLE_W: u32 = 0x7f00_0100;
 pub const LIST_W: u32 = 0x7f00_0200;
 /// The list's callbacks (dispatched like the game's by address).
@@ -46,6 +56,9 @@ pub const OPTIONS: u32 = 0x1b4dd0;
 pub const OPTIONS_LIST: u32 = 0x1b4f78;
 pub const OPTIONS_LABEL: u32 = 0x1b4fe8;
 pub const QUIT_PAGE: u32 = 0x1b6060;
+/// The front end's Options page (kind 0x2f), and the label of its Sound entry, whose page is [`PAGE_FRONT`]'s model.
+pub const FRONT_OPTIONS: u32 = 0x1b8d08;
+const FRONT_SOUND_LABEL: i16 = 20258;
 /// Subtitles 0x1b5788 (seqs 73..77: the one/two-row sub-page frames) and Camera 0x1b5ee0 (118..122, three rows). Only an
 /// Options sub-page's frames will do: a page's frame animations start from its parent's layout, and △ plays them
 /// backwards to it (another page's, e.g. Cheats', end on their own parent's layout under the Options page).
@@ -240,10 +253,7 @@ impl PageMenu {
             raw: [0; 8],
             data: Data::Port(PortList { cursor: 0, top: 0, values: vec![0; ENTRIES.len()], choices: vec![u32::MAX; ENTRIES.len()] }),
         };
-        let mut widgets = model.widgets;
-        widgets[0] = TITLE_W;
-        widgets[3] = LIST_W;
-        let page = Page { addr: PAGE, seqs: model.seqs, parent: ad.port_options, kind: KIND, focus: LIST_W, widgets, pending: 0 };
+        let page = self.port_page(PAGE, &model, ad.port_options);
         // The Options description label: the disc table (one id per item, variant 0) with ours inserted.
         if let Some(Data::Label(l)) = self.widgets.get_mut(&ad.port_options_label).map(|w| &mut w.data) {
             let mut t: Vec<u32> = (0..n as u32).map(|k| ov.u32(l.id.wrapping_add(k.wrapping_mul(l.stride) & !3)).unwrap_or(0)).collect();
@@ -256,7 +266,29 @@ impl PageMenu {
         self.widgets.insert(TITLE_W, title);
         self.widgets.insert(LIST_W, settings);
         self.pages.insert(PAGE, page);
+        self.install_front_port_page(ad.port_front_options);
         true
+    }
+
+    /// A port page modelled on `model`: its frames and fillers, the model's title label replaced by [`TITLE_W`] and
+    /// its list (widget 3) by [`LIST_W`].
+    fn port_page(&self, addr: u32, model: &Page, parent: u32) -> Page {
+        let mut widgets = model.widgets;
+        if let Some(t) = widgets.iter_mut().find(|w| matches!(self.widgets.get(w).map(|x| &x.data), Some(Data::Label(_)))) { *t = TITLE_W; }
+        widgets[3] = LIST_W;
+        Page { addr, seqs: model.seqs, parent, kind: KIND, focus: LIST_W, widgets, pending: 0 }
+    }
+
+    /// [`PAGE_FRONT`] and its entry in the front end's Options lists (nothing when the front end's pages are missing).
+    fn install_front_port_page(&mut self, front_options: u32) {
+        if !self.pages.contains_key(&front_options) { return; }
+        let sound = self.saves.front_options.iter().flatten().find(|it| it.action == 3 && it.label == FRONT_SOUND_LABEL).map(|it| it.arg);
+        let Some(model) = sound.and_then(|a| self.pages.get(&a)).cloned() else { return };
+        let page = self.port_page(PAGE_FRONT, &model, front_options);
+        self.pages.insert(PAGE_FRONT, page);
+        for list in self.saves.front_options.iter_mut() {
+            if !list.iter().any(|it| it.arg == PAGE_FRONT) { list.push(Item { label: text::ENTRY as i16, action: 3, arg: PAGE_FRONT, sublabel: 0, hl: 0 }); }
+        }
     }
 
     /// The value index of a port setting (None without the page).
@@ -318,12 +350,35 @@ pub fn draw(m: &mut PageMenu, w: u32, a: &MenuAssets, out: &mut Vec<MenuDraw>) -
         right(out, a, ww - 0xc, y, LIGHT_BLUE, a.msg(e.values.get(v).copied().unwrap_or(0)));
         y += step;
     }
+    // Rows hidden above / below: the Epilogue's arrow (`media::epilogue_arrows`: icon 0xe99e frame 6, 0x20 × 0x10
+    // texels), half its size, centred between the panel's edge and the first / last row shown.
+    let (more_above, more_below) = scroll_marks(top, shown);
+    let frame = a.frame(0xe99e, 6);
+    let (cx, gap) = (ww as f32 / 2.0, (step - 8) as f32 / 2.0);
+    // At angle 0 the arrow points right (`rotated`: a quarter clockwise); ±π/2 turn it to point up / down.
+    let half = std::f32::consts::FRAC_PI_2;
+    if more_above { out.push(super::map_page::rotated(frame, cx, gap.max(ARROW_W), ARROW_W, ARROW_H, half, 0x20, 0x10)); }
+    if more_below { out.push(super::map_page::rotated(frame, cx, (wh as f32 - gap).min(wh as f32 - ARROW_W), ARROW_W, ARROW_H, -half, 0x20, 0x10)); }
     2
 }
 
+/// The scroll arrows' half sizes (pixels; [`super::map_page::rotated`]'s `w` and `h`).
+const ARROW_W: f32 = 6.0;
+const ARROW_H: f32 = 10.0;
+
+/// Whether rows are hidden above and below when `shown` rows from `top` are drawn.
+pub fn scroll_marks(top: usize, shown: usize) -> (bool, bool) { (top > 0, top + shown < ENTRIES.len()) }
+
 #[cfg(test)]
 mod tests {
-    use super::next_choice;
+    use super::{next_choice, scroll_marks, ENTRIES, VISIBLE};
+
+    #[test]
+    fn scroll_marks_show_hidden_rows() {
+        assert_eq!(scroll_marks(0, VISIBLE), (false, true));
+        assert_eq!(scroll_marks(1, VISIBLE), (true, true));
+        assert_eq!(scroll_marks(ENTRIES.len() - VISIBLE, VISIBLE), (true, false));
+    }
 
     #[test]
     fn cycle_skips_unsupported_values() {

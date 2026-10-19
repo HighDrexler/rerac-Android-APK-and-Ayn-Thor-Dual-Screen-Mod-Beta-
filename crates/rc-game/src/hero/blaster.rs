@@ -215,7 +215,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
             }
             (dir, muzzle)
         }
-        _ => (scale3(to_f32x3(hero.moby_rows[0]), SPEED * DT), guns::item_point(hero, env, 0)),
+        _ => (scale3(to_f32x3(hero.aim_rows[0]), SPEED * DT), guns::item_point(hero, env, 0)),
     };
     let (mut yaw0, mut pitch0) = guns::aim_angles(dir);
     // Outside 0x1e with the arm raised at a wall (0x141618 = 1): the gun's own yaw (its +0x48) and the raised arm's
@@ -248,7 +248,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
         if hero.weapons.use_ammo(id, 1) && hero.items.f13fc == 0 {
             hero.weapons.blaster.fire_timer = ticks(6);
             let ((sy, sp), (my, mp)) = shot_aim(muzzle, target_point, look, yaw0, pitch0, yaw, pitch, ground);
-            let facing = to_f32x3(hero.moby_rows[0]);
+            let facing = to_f32x3(hero.aim_rows[0]);
             let fy = atan(facing[0], facing[1]);
             let tmpl = template(env, fy);
             let c = guns::hero_point(hero, [0.7, -0.15, 0.5]);
@@ -303,7 +303,7 @@ fn light(hero: &mut Hero, _env: &ItemEnv, hits: &mut dyn HitSink) {
     if !put_away && 0 < b.light_timer {
         let k = b.light_timer.min(ticks(9)) as f32;
         let c = k * 0.7 / ticks(9) as f32;
-        let f = to_f32x3(hero.moby_rows[0]);
+        let f = to_f32x3(hero.aim_rows[0]);
         let yaw = atan(f[0], f[1]);
         let p = to_f32x3(hero.pos);
         let pos = [p[0] + yaw.cos() * 2.0, p[1] + yaw.sin() * 2.0, p[2] + 1.0];

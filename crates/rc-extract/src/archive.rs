@@ -1,10 +1,12 @@
 //! The Tier 0 archive plan: which files to write, from which bytes of the image, with which expected hash.
 //! The file list itself comes from `rc_formats::disc::Disc::archive_files` (the lump rules of the retired C++
-//! extractor's `unpack`, which the Tier 0 layout keeps).
+//! extractor's `unpack`, which the Tier 0 layout keeps). R&C2 keeps its assets in the ISO filesystem
+//! (`RC2.HDR` and `G/*.WAD`, docs/formats/disc_layout.md §2.10), so its plan is the filesystem's files as they are.
 
 use crate::build_db::TableEntry;
 use crate::{Code, Error};
 use rc_formats::disc::{Disc, DiscFile};
+use rc_formats::iso9660::IsoImage;
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 
@@ -41,6 +43,15 @@ pub fn is_pal_copy(path: &str) -> bool {
 pub fn disc_jobs<R: Read + Seek>(disc: &Disc<R>) -> Result<Vec<Job>, Error> {
     let files = disc.archive_files().map_err(|e| Error::new(Code::CannotRead, format!("cannot read the disc's table of contents: {e}")))?;
     Ok(files.into_iter().map(|DiscFile { path, offset, bytes }| Job { path, offset, bytes, sha1: None }).collect())
+}
+
+/// R&C2's files: every file of the ISO filesystem by its disc path (`G/LEVEL0.WAD`), except `G/DUMMY.`, the
+/// padding file at the end of the disc (a copy of `G/MISC.WAD`'s size that nothing opens).
+pub fn iso_jobs<R: Read + Seek>(iso: &IsoImage<R>) -> Vec<Job> {
+    iso.entries().iter()
+        .filter(|e| !e.is_directory && e.path != "/G/DUMMY.")
+        .map(|e| Job { path: e.path.trim_start_matches('/').to_string(), offset: e.lba as u64 * 2048, bytes: e.size as u64, sha1: None })
+        .collect()
 }
 
 /// Attaches the table's hashes to the disc plan. The plan comes from the disc's own ToC, so a disagreement in the
