@@ -1,0 +1,55 @@
+name: Android integration workbench
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/launcher-1.1-polish-core035]
+    paths: [.github/workflows/android-workbench.yml]
+permissions:
+  contents: read
+concurrency:
+  group: android-integration-workbench
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: android/launcher/pom.xml
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Export tracked source and public build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p workbench/tools workbench/reports
+          git archive --format=tar HEAD -o workbench/source.tar
+          git rev-parse HEAD > workbench/reports/source-commit.txt
+          git diff --stat 8b2c9a92c48661bdc04fecd87c7e199d376d0b6a HEAD -- crates Cargo.toml Cargo.lock > workbench/reports/native-source-diff.txt
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          cp -a "$sdk/build-tools/36.0.0" workbench/tools/build-tools
+          cp "$sdk/platforms/android-36/android.jar" workbench/tools/android.jar
+          curl --fail --location --retry 3 'https://github.com/iBotPeaches/Apktool/releases/download/v2.11.1/apktool_2.11.1.jar' -o workbench/tools/apktool.jar
+          find workbench/tools -type f -print0 | sort -z | xargs -0 sha256sum > workbench/reports/tool-checksums.txt
+      - name: Confirm current launcher tests before modifying presentation
+        run: mvn -B -f android/launcher/pom.xml test
+      - name: Keep source and tools for isolated build work
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rerac-integration-workbench
+          path: |
+            workbench
+            android/launcher/target/surefire-reports
+          retention-days: 7
