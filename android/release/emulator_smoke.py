@@ -10,6 +10,16 @@ def adb(*args, check=True, binary=False):
 def sh(cmd): return adb('shell',cmd)
 def require(ok, msg):
     if not ok: raise AssertionError(msg)
+def root_emulator():
+    # adbd restarts when switching to root. A closed transport is expected here,
+    # but the eventual uid must be verified; never skip private-data assertions.
+    for attempt in range(5):
+        adb('root',check=False)
+        adb('wait-for-device')
+        if adb('shell','id','-u',check=False).strip()=='0':
+            return
+        time.sleep(2)
+    raise RuntimeError('Disposable AOSP emulator did not reconnect as root')
 def screen(out, name):
     (out/(name+'.png')).write_bytes(adb('exec-out','screencap','-p',binary=True))
     for _ in range(6):
@@ -31,7 +41,7 @@ def check_canary():
 def main():
     p=argparse.ArgumentParser();p.add_argument('--baseline',type=Path,required=True);p.add_argument('--signed',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
     a.output.mkdir(parents=True,exist_ok=True);checks=[]
-    adb('root');adb('wait-for-device');sh('settings put system accelerometer_rotation 0');sh('settings put system user_rotation 1');sh('wm size 1280x720');sh('wm density 160')
+    root_emulator();sh('settings put system accelerometer_rotation 0');sh('settings put system user_rotation 1');sh('wm size 1280x720');sh('wm density 160')
     adb('logcat','-c');require('Success' in adb('install',a.baseline),'Baseline install failed');launch();screen(a.output,'01-baseline')
     sh("printf keep-existing-data > /data/user/0/"+PKG+"/files/launcher-upgrade-canary")
     sh("printf '\\000' > /data/user/0/"+PKG+"/files/dual-screen.setting")
