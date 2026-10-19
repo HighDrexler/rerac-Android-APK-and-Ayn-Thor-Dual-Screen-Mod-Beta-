@@ -143,8 +143,8 @@ pub(super) fn physics(h: &mut Hero, env: &Env, anim: &mut dyn AnimCtl) -> bool {
     let from_look = h.prev_state == 1 && ticks(20) < h.prev_timer;
     if !from_look {
         if h.melee.aimed == 0 && h.melee.target.is_none() {
-            // Aim while blending or before frame 6 (FUN_002351d0(14, 30°, 45°): no targets in the port).
-            if (blending || !(6.0 < frame)) && h.gravity_mode == 0 { h.melee_aim_pub(env); }
+            // Aim while blending or before frame 6 (FUN_002351d0(14, 30°, 45°)).
+            if (blending || !(6.0 < frame)) && h.gravity_mode == 0 { h.aim_assist(env, 14.0, super::melee::AIM_30, super::melee::AIM_45); }
         } else {
             let mut force = false;
             if h.f658 == 0 {

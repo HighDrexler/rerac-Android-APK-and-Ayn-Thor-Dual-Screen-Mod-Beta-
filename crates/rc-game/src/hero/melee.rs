@@ -8,8 +8,8 @@
 //! states 10 / 11 in [`super::comet`]; the glove throw 0x23 has the group-6 entry here and the rest in
 //! [`super::weapons`]; the gadget lunge 0x20 has the group-6 entry here and the rest in [`super::walloper`] (with the
 //! melee aim search `0x22e238`, [`aim_search`]); the rebound 0x21 off a target whose record has flag 2 ([`Hero::rebound_entry`],
-//! the physics and transitions of 0x7a: `super::packs`). Not ported: 0x51, the aim-assist target search `0x22e238` (targets need a
-//! mode-0x20 record no ported class has: always none), the wall-hit spark line and the jump-attack
+//! the physics and transitions of 0x7a: `super::packs`). The wrench states aim with the target search
+//! ([`Hero::aim_assist`]: the turn toward the best crate or enemy in range). Not ported: 0x51, the wall-hit spark line and the jump-attack
 //! ground sparks (cosmetic + sounds) and the trail counters of the wrench (pvar +0x70/+0x74/+0x7c). The stats
 //! records the entries bump (0x1416c0, 0x141848, 0x141850 + 0x1417a8) are counted in [`Melee::entered`] and
 //! applied to the game state by the caller ([`apply_melee_stats`], [`MeleeRecords`]).
@@ -58,6 +58,12 @@ const HALF_PI: Pf = Pf::b(0x3fc9_0fdb);
 const YAW_SENTINEL: Pf = Pf::b(0x47c3_4f80);
 /// 15.009831 rad/s: the aim turn rate.
 const AIM_TURN: Pf = Pf::b(0x4170_2845);
+/// The cones of the wrench states' `0x2351d0(range, cone, cone2)` (45°, 60°, 30°): the combo 0x13 (5, 45°, 45°), the
+/// jump attack 0x14 (entry 8, 60°, none; physics 8, 60°, 60°), the comet strike 0x15 (entry 14, 30°, none; physics
+/// 14, 30°, 45°: `super::comet`).
+pub(super) const AIM_45: f32 = f32::from_bits(0x3f49_0fdb);
+pub(super) const AIM_60: f32 = f32::from_bits(0x3f86_0a92);
+pub(super) const AIM_30: f32 = f32::from_bits(0x3f06_0a92);
 /// Wrench class (moby +0xa6).
 pub const WRENCH_CLASS: i16 = 0x47;
 /// The wrench's hit sound, `FUN_002bda88()`: class sound 1 when the moby hit (0x1742d8: the line's moby, or the
@@ -141,10 +147,8 @@ pub fn apply_melee_stats(melee: &mut Melee, gs: &mut crate::game_state::GameStat
 impl Hero {
     fn combo_row(&self) -> &'static [i32; 11] { &COMBO[(self.melee.combo.clamp(0, 6)) as usize] }
 
-    /// `FUN_002351d0(range, cone, cone2)`: unless already aimed, aim at the stick direction when the stick is
-    /// past 0.5, else the facing; then the target search `0x22e238(range, aim, cone, cone2)` over the
-    /// targetable list (none in the port, see the module doc).
-    /// [`Hero::melee_aim`] for the other weapon states (`super::comet`, `super::weapons`).
+    /// `FUN_002351d0`'s aim without its target search (unless already aimed, the stick's direction past 0.5, else the
+    /// facing), for the glove throw (`super::weapons`); the wrench states use [`Hero::aim_assist`].
     pub(super) fn melee_aim_pub(&mut self, env: &Env) { self.melee_aim(env) }
 
     fn melee_aim(&mut self, env: &Env) {
@@ -266,7 +270,7 @@ impl Hero {
                     step = (old[C_STEP] + 1) % 3;
                 }
                 self.melee.combo = step;
-                self.melee_aim(c.env);
+                self.aim_assist(c.env, 5.0, AIM_45, AIM_45);
                 if !play { return; }
                 let (b, f2) = match step { 0 => (5, 0), 1 => (7, 2), _ => (7, 4) };
                 let mut b = ticks(b);
@@ -280,7 +284,7 @@ impl Hero {
                 self.melee.combo = 4;
                 self.f15d4 = 0x50;
                 self.items.restore = 0;
-                self.melee_aim(c.env);
+                self.aim_assist(c.env, 8.0, AIM_60, -1.0);
                 self.melee.falling = Pf::ZERO;
                 self.items.slot.swap_timer = 10;
                 if !play { return; }
@@ -294,7 +298,7 @@ impl Hero {
             0x15 => {
                 self.melee.combo = 3;
                 self.items.restore = 0;
-                self.melee_aim(c.env);
+                self.aim_assist(c.env, 14.0, AIM_30, -1.0);
                 self.melee.comet_side = (self.melee.comet_side == 0) as u32;
                 if !play { return; }
                 let mut b = ticks(10);
@@ -348,7 +352,7 @@ impl Hero {
             self.target_yaw = self.melee.aim_yaw;
             self.turn_to(f * Pf::b(0x3d4c_cccd), f * Pf::b(0x3e4c_cccd), DT * AIM_TURN);
         } else if !(row[C_STEP] == 1 && !blending && Pf::b(0x40e0_0000) < frame) {
-            self.melee_aim(env);
+            self.aim_assist(env, 5.0, AIM_45, AIM_45);
         }
         self.speed_step(DT2 * Pf::b(0x4214_0000), DT2 * Pf::b(0x41e0_0000));
         let y = if self.melee.aimed != 0 { self.melee.aim_yaw } else { YAW_SENTINEL };
@@ -376,7 +380,7 @@ impl Hero {
             self.target_yaw = self.melee.aim_yaw;
             self.turn_to(SCALE64 * Pf::b(0x3d4c_cccd), SCALE64 * Pf::b(0x3e4c_cccd), DT * AIM_TURN);
         } else if frame < Pf::b(0x41c8_0000) {
-            self.melee_aim(env);
+            self.aim_assist(env, 8.0, AIM_60, AIM_60);
         }
         let t9 = ticks(9);
         let mut up = DT * Pf::b(0x40f6_6666);
@@ -788,8 +792,8 @@ impl Hero {
     /// `FUN_002351d0(range, cone, cone2)` with its target search: unless already aimed (0x13fda8), the facing, or the
     /// stick's direction when it is past 0.5 (then aimed, the target cleared); a target of [`aim_search`] from there
     /// turns the aim toward it and becomes 0x13fda4 (a target kept from before with the stick not taken keeps the
-    /// aim). Its callers in the port: the gadget lunge 0x20 (`super::walloper`, (11, 50°, −1)). The wrench states still
-    /// use [`Hero::melee_aim`] without the search (G-WPN-008).
+    /// aim). Its callers: the wrench states 0x13 / 0x14 / 0x15 ([`AIM_45`]) and the gadget lunge 0x20
+    /// (`super::walloper`, (11, 50°, −1)).
     pub(super) fn aim_assist(&mut self, env: &Env, range: f32, cone: f32, cone2: f32) {
         let mut a = self.melee.aim_yaw;
         if self.melee.aimed == 0 {
