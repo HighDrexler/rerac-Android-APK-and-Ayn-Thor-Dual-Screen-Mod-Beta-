@@ -107,6 +107,27 @@ Each has a description (and usually a video or screenshot) precise enough to fin
 
 ## 3. Already done (not in the lists above)
 
+**Fixed 2026-10-19 (from §1):** the Quartu Codebot door softlock (4968a3f: the slot waits for its fly-by like
+`0x2f78e0`); the Magician skill point (cf7ebda: Kalebo's race host reads the Hoverboard's score); the cheats switching
+on by themselves and the empty Cheats page (c80b9b3: the cheat tables were not relocated off level 01); weapons on the
+grind rail (accd9d3: Ratchet's aim frame 0x13f990, the rail's yaw plus the aim lean steered by the stick); the wrench
+auto-aim (23a24cf: the wrench states run the target search `0x22e238`); the escape / air timers over the pause menu
+(14c8b55).
+
+**Looked at 2026-10-19, not fixed (what the code says):**
+- §1.6 soldiers: the brawlers' and troopers' notice logic reads as the original's; telling why they stay put needs a
+  run with Ratchet in those rooms (their states, targets and area polygons live).
+- §1.7 Orxon's bombs: the grey bombs are not the lava rocks (938) nor the breakables 1855 / 1856 (both break in
+  place); the class still has to be matched to the model in the footage.
+- §1.13 warp pad: no pad class on Gemlik (Oltanis Orbit) or Oltanis found; needs the spot.
+- §1.14 autosave icon: no reader of the card status draws anything for the autosave (status 22) in the original's
+  code; needs a PS2 capture of the icon.
+- §1.18 the FOV after the dogfight: the original's jet also leaves its last FOV (65°, 85° with ✕ held) when the
+  mission ends; nothing on level 11 resets it there. Needs a PS2 check with the booster held at the cutaway.
+- §1.26 the reverb after the sewer teleport: the teleport re-reads the nearest env point and the reverb box keeps
+  the reverb when left through its +x face, both as the original; which boxes the original updates far from Ratchet
+  is still open.
+
 **Fixed on main, not yet released:** the Morph-o-Ray while moving (849f873); the Glove of Doom glow blue or yellow by
 planet (fc51251); Ratchet on the ground during Giant Clank (6126b01); Kalebo III's race water (f8b3016); Clank's antenna
 light at his feet in scenes (a9f976c); the ship star in the map's corner (c3ee600); the ammo counter after death
