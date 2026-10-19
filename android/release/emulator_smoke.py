@@ -31,7 +31,7 @@ def check_canary():
 def main():
     p=argparse.ArgumentParser();p.add_argument('--baseline',type=Path,required=True);p.add_argument('--signed',type=Path,required=True);p.add_argument('--output',type=Path,required=True);a=p.parse_args()
     a.output.mkdir(parents=True,exist_ok=True);checks=[]
-    adb('root');adb('wait-for-device');sh('settings put system accelerometer_rotation 0');sh('settings put system user_rotation 1')
+    adb('root');adb('wait-for-device');sh('settings put system accelerometer_rotation 0');sh('settings put system user_rotation 1');sh('wm size 1280x720');sh('wm density 160')
     adb('logcat','-c');require('Success' in adb('install',a.baseline),'Baseline install failed');launch();screen(a.output,'01-baseline')
     sh("printf keep-existing-data > /data/user/0/"+PKG+"/files/launcher-upgrade-canary")
     sh("printf '\\000' > /data/user/0/"+PKG+"/files/dual-screen.setting")
@@ -39,15 +39,15 @@ def main():
     require('Success' in adb('install','-r',apk1),'Same-signer v16 to beta.1 update failed');check_canary();checks.append('v16 to beta.1 in-place installation; existing private data retained')
     launch();root=screen(a.output,'02-launcher-beta1');texts=[n.get('text','') for n in root.iter('node')]
     require(any('Launcher 1.1.0-beta.1' in t and 'ReRAC 0.3.4' in t for t in texts),'Wrong or missing version footer');checks.append('Actual launcher opens with accurate separate versions')
-    tap_text(root,'Mods',True);root=screen(a.output,'03-mods-off');tap_text(root,'AYN Thor Dual-Screen Mod')
+    tap_text(root,'Mods',True);root=screen(a.output,'03-mods-off');tap_text(root,'AYN Thor Dual-Screen Mod',True)
     require(adb('exec-out','cat','/data/user/0/'+PKG+'/files/dual-screen.setting',binary=True)==b'\1','Mod switch did not update original native setting');screen(a.output,'04-mods-on');checks.append('Dual-screen switch writes original setting; sole bundled mod visible')
     sh('input keyevent 4');time.sleep(1);root=screen(a.output,'05-launcher-mod-on');tap_text(root,'Updates',True)
-    root=screen(a.output,'06-updates-stable');require(any(n.get('text')=='Stable — Recommended' and n.get('checked')=='true' for n in root.iter('node')),'Stable was not default')
-    tap_text(root,'Development — Early access');screen(a.output,'07-updates-development');checks.append('Updates page and opt-in Development channel usable')
+    root=screen(a.output,'06-updates-stable');require(any(n.get('text')=='Stable' and n.get('checked')=='true' for n in root.iter('node')),'Stable was not default')
+    tap_text(root,'Development');screen(a.output,'07-updates-development');checks.append('Updates page and opt-in Development channel usable')
     require('Success' in adb('install','-r',apk2),'beta.1 to beta.2 install failed');check_canary();launch();root=screen(a.output,'08-launcher-beta2')
     require(any('Launcher 1.1.0-beta.2' in n.get('text','') for n in root.iter('node')),'Beta.2 version not shown')
     require(adb('exec-out','cat','/data/user/0/'+PKG+'/files/dual-screen.setting',binary=True)==b'\1','Upgrade reset mod toggle')
-    tap_text(root,'Updates',True);root=screen(a.output,'09-updates-preserved');require(any(n.get('text')=='Development — Early access' and n.get('checked')=='true' for n in root.iter('node')),'Upgrade reset update channel');checks.append('Second in-place upgrade preserves mod and channel choices')
+    tap_text(root,'Updates',True);root=screen(a.output,'09-updates-preserved');require(any(n.get('text')=='Development' and n.get('checked')=='true' for n in root.iter('node')),'Upgrade reset update channel');checks.append('Second in-place upgrade preserves mod and channel choices')
     result=adb('install','-r',a.baseline,check=False);require('VERSION_DOWNGRADE' in result,'Unexpected downgrade acceptance');checks.append('Android rejects downgrade to v16')
     logs=adb('logcat','-d');(a.output/'logcat.txt').write_text(logs)
     require(not re.search(r'FATAL EXCEPTION[^\n]*\n(?:(?!FATAL EXCEPTION).){0,600}Process: '+re.escape(PKG),logs,re.S),'Launcher crashed during smoke test')
