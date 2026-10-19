@@ -1,0 +1,66 @@
+name: Live beta.3 updater validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/launcher-1.1-polish-core035]
+    paths: [.github/workflows/android-polish-network-test.yml, android/release/emulator_polish_update_test.py]
+permissions:
+  contents: read
+concurrency:
+  group: beta3-live-updater-test
+  cancel-in-progress: false
+jobs:
+  update-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch the original beta.2 and observe the real public update feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/reports
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta-test/ReRAC-Launcher-1.1.0-beta.2.apk' -o work/previous.apk
+          echo '474e2e3a75a334aff2691128e8520291ab59af3fcb2fc3e6532d9f5a6700444f  work/previous.apk' | sha256sum -c -
+          python - <<'PY'
+          import base64,json,time,urllib.request
+          from pathlib import Path
+          url='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channels/development.json'
+          for _ in range(40):
+              raw=urllib.request.urlopen(url,timeout=30).read(100000)
+              release=json.loads(base64.b64decode(json.loads(raw)['payload']))['release']
+              if release and release['version_code']==19:
+                  assert release['core_version']=='0.3.4' and release['sha256']=='06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3'
+                  Path('work/reports/observed-development.json').write_bytes(raw)
+                  break
+              time.sleep(5)
+          else:raise SystemExit('Public update feed has not propagated; no result is claimed.')
+          PY
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Enable disposable-emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Update through launcher download, signature checks and Android consent
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none -no-metrics
+          script: python android/release/emulator_polish_update_test.py --apk work/previous.apk --output work/reports --initial-code 18 --target-code 19 --target-version 1.1.0-beta.3 --target-sha256 06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3
+      - name: Preserve actual updater evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-beta3-live-update
+          path: work/reports
+          retention-days: 14
