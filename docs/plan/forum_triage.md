@@ -130,9 +130,12 @@ view, FUN_002ac608); the autosave icon (8447e57: the main loop's card icon 0x755
 - §1.26 the reverb after the sewer teleport: Pokitaru has no reverb boxes; its two reverb env points sit at the sewer
   pads, and the pad up top has no point within 8, while `HeroTeleport` is the only caller of `EnvNearestSamplePoint` on
   level 11 — the original keeps the sewer reverb too.
-- §1.7 Orxon's bombs are the lava rocks 938 (the PS2 clip: hit, red, flown, burst). They ignore the wrench because the
-  port's wrench hits name no attacker (the game's name the wrench moby, `FUN_0026e808`); the shared fix (a wrench
-  marker on hit records for the classes that test the attacker) is on hold.
+- §1.7 / §1.8 Orxon's bombs are the lava rocks 938 (the PS2 clip: hit, red, flown, burst). They ignored the wrench
+  because the port's wrench hits named no attacker (the game's name the wrench moby, class 0x47, `FUN_0026e808`); the
+  Mine Glove's mines test the same `attacker->class != own`. Fixed: the hit records the hero's swings write carry a
+  wrench marker (`HitRecord::wrench`, `attacker_class` / `attacker_pos`), read by every class that tests the attacker
+  (lava rocks, mines, Kerwan's layers and bystanders, the Qwark ship parts, the gunners and biters, the lights, the
+  tanks and turrets, the drones, the amoeboids).
 
 **Fixed on main, not yet released:** the Morph-o-Ray while moving (849f873); the Glove of Doom glow blue or yellow by
 planet (fc51251); Ratchet on the ground during Giant Clank (6126b01); Kalebo III's race water (f8b3016); Clank's antenna

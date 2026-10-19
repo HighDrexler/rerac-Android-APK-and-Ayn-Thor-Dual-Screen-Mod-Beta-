@@ -364,10 +364,10 @@ fn rider_hit(w: &mut World, id: MobyId) {
         let mut out5 = res.out5;
         let mut dmg = res.hit.map_or(0.0, |h| h.damage.to_f32());
         if let Some(h) = res.hit.filter(|h| h.flags & 0x80_0000 != 0) {
-            let front = match h.attacker {
+            let front = match h.attacker_pos(w) {
                 None => true,
-                Some(a) => {
-                    let (ap, p) = (w.m(a).position, c::pos(w, id));
+                Some(ap) => {
+                    let p = c::pos(w, id);
                     let hy = moby_ref(w, id, rv::TURRET).map_or(0.0, |t| c::pf(w, t, pv::HOME_YAW));
                     c::diff_rots(c::atan(ap[0] - p[0], ap[1] - p[1]), hy) < 1.658_062_8
                 }

@@ -423,7 +423,41 @@ pub struct HitRecord {
     /// +0x38: `CollLine_Fix`'s hit: the primitive index hit, −1 for a triangle; 0 from the sphere kernel
     /// and `deliver_hit`.
     pub prim: i32,
+    /// Port-only: the attacker +0x20 is Ratchet's wrench (class 0x47: its swings `0x2be1c0`, the thrown wrench), a
+    /// moby in the game that the port keeps out of the table, so `attacker` is None. [`HitRecord::attacker_class`]
+    /// gives the classes its class as the game's record does.
+    pub wrench: bool,
 }
+
+impl HitRecord {
+    /// The class of the record's attacker +0x20 (`*(attacker + 0xa6)`): the attacker moby's, 0x47 for Ratchet's wrench,
+    /// None when the record names none (or a moby past the table).
+    pub fn attacker_class(&self, w: &World) -> Option<i16> {
+        match self.attacker {
+            Some(a) => w.table.mobys.get(a).map(|m| m.o_class),
+            None => self.wrench.then_some(WRENCH_CLASS),
+        }
+    }
+
+    /// The record names an attacker (+0x20 ≠ 0): a moby, or Ratchet's wrench.
+    pub fn has_attacker(&self) -> bool { self.attacker.is_some() || self.wrench }
+
+    /// The attacker's position (`*(attacker + 0x10)`): the attacker moby's; for Ratchet's wrench his hand item's (the
+    /// wrench in hand or in flight), else his own; None when the record names none.
+    pub fn attacker_pos(&self, w: &World) -> Option<[f32; 4]> {
+        match self.attacker {
+            Some(a) => w.table.mobys.get(a).map(|m| m.position),
+            None if self.wrench => Some(match w.hero.items.slot.item.as_ref().filter(|i| i.o_class == WRENCH_CLASS) {
+                Some(i) => [i.position[0], i.position[1], i.position[2], 1.0],
+                None => w.hero.pos.map(|x| f32::from_bits(x.0)),
+            }),
+            None => None,
+        }
+    }
+}
+
+/// Ratchet's wrench (`0x47`).
+pub const WRENCH_CLASS: i16 = 0x47;
 
 /// The attack a sender fills in (the 0x24-byte template the hit functions copy into a record).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -476,6 +510,7 @@ impl HitLog {
             w30: t.w20,
             target,
             prim,
+            wrench: false,
         };
         table.mobys[target].hit_slot = slot;
         self.next = (slot + 1) & 0x3f;
@@ -2241,13 +2276,33 @@ pub struct ServiceHits<'a> {
     pub coll: Option<&'a Collision>,
 }
 
+impl ServiceHits<'_> {
+    /// The records just written from the hero's template `tmpl`: one naming no attacker is the wrench's (the only hero
+    /// hits the game sends from a moby the port keeps out of the table: the swings and the thrown wrench;
+    /// [`HitRecord::wrench`]).
+    fn mark_wrench(&mut self, start: u8, tmpl: &HitTemplate) {
+        if tmpl.attacker.is_some() { return; }
+        let mut s = start;
+        while s != self.svc.hits.next {
+            self.svc.hits.records[s as usize].wrench = true;
+            s = (s + 1) & 0x3f;
+        }
+    }
+}
+
 impl crate::hero::items::HitSink for ServiceHits<'_> {
     fn sphere(&mut self, table: &mut MobyTable, r: Pf, centre: V4, flags: u32, ignore: Option<MobyId>, tmpl: &HitTemplate) -> Option<MobyId> {
-        sphere_mobys_in(table, self.svc, self.classes, r, centre, flags, ignore, Some(tmpl)).first().copied()
+        let start = self.svc.hits.next;
+        let out = sphere_mobys_in(table, self.svc, self.classes, r, centre, flags, ignore, Some(tmpl)).first().copied();
+        self.mark_wrench(start, tmpl);
+        out
     }
 
     fn line(&mut self, table: &mut MobyTable, a: V4, b: V4, flags: u32, ignore: Option<MobyId>, tmpl: &HitTemplate) -> Option<Option<MobyId>> {
-        line_hit_in(table, self.svc, self.classes, self.coll, a, b, flags, ignore, tmpl).map(|h| h.moby)
+        let start = self.svc.hits.next;
+        let out = line_hit_in(table, self.svc, self.classes, self.coll, a, b, flags, ignore, tmpl).map(|h| h.moby);
+        self.mark_wrench(start, tmpl);
+        out
     }
 
     fn probe(&mut self, table: &mut MobyTable, a: V4, b: V4, flags: u32, ignore: Option<MobyId>) -> Option<Option<[f32; 3]>> {
@@ -2475,6 +2530,36 @@ mod tests {
 
     /// `World::part11` is `type11::spawn` (plus the spawn counters): same draws, same record, for each frame load,
     /// with and without a free record, and throttle-only without a particle system.
+    /// The hero's swings send their hit with no table attacker (the wrench is his hand item): the records they write are
+    /// the wrench's, so classes that test `attacker->class` (Orxon's lava rocks, the mines) see class 0x47 and Ratchet's
+    /// hand, as with the original's wrench moby; records from a template naming an attacker stay that attacker's.
+    #[test]
+    fn hero_hits_with_no_attacker_are_the_wrenchs() {
+        let mut hero = Hero::new();
+        hero.pos = crate::hero::physics::v4(1.0, 2.0, 3.0);
+        let classes = ClassTable::default();
+        let mut svc = Services::new();
+        svc.hits.next = 0x3e;
+        {
+            let mut sink = ServiceHits { svc: &mut svc, classes: &classes, coll: None };
+            sink.svc.hits.next = 0x01; // two records written, wrapping the ring
+            sink.mark_wrench(0x3e, &HitTemplate::default());
+            sink.svc.hits.next = 0x02;
+            sink.mark_wrench(0x01, &HitTemplate { attacker: Some(0), ..HitTemplate::default() });
+        }
+        let r = &svc.hits.records;
+        assert!(r[0x3e].wrench && r[0x3f].wrench && r[0x00].wrench);
+        assert!(!r[0x01].wrench && !r[0x3d].wrench);
+        let mut table = MobyTable::new(Vec::new(), 1);
+        let mut rng = Rng::new();
+        let w = World::new(&mut table, &hero, &mut rng, &classes, &mut svc, 0);
+        let (wrench, none) = (w.svc.hits.records[0x3e], HitRecord::default());
+        assert_eq!(wrench.attacker_class(&w), Some(WRENCH_CLASS));
+        assert!(wrench.has_attacker());
+        assert_eq!(wrench.attacker_pos(&w).map(|p| [p[0], p[1], p[2]]), Some([1.0, 2.0, 3.0]));
+        assert_eq!((none.attacker_class(&w), none.has_attacker(), none.attacker_pos(&w)), (None, false, None));
+    }
+
     #[test]
     fn part11_is_type11_spawn_draw_for_draw() {
         let hero = Hero::new();

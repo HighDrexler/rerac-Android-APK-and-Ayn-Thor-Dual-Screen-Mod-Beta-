@@ -244,7 +244,7 @@ fn pre(w: &mut World, id: MobyId) -> bool {
     if res.out5 != 1 && state(w, id) != st::DYING {
         let hp = c::pf(w, id, pv::D) - res.damage;
         c::set_pf(w, id, pv::D, hp);
-        let wrench = res.hit.and_then(|h| h.attacker).is_some_and(|a| w.m(a).o_class == 0x47);
+        let wrench = res.hit.is_some_and(|h| h.attacker_class(w) == Some(0x47));
         let mut reaction = if wrench { 3 } else { res.reaction };
         if hp <= 0.0 { reaction = 1; }
         let kr = pv::K;

@@ -41,6 +41,7 @@ stricter. None adds a class; most correct a shared seam, so §4 matters as much 
 | Warp-pad camera | `moby_update/services.rs::HeroFields::apply` (rows from the pose when a `HeroCall::Teleport` is queued); test `a_class_teleport_turns_the_moby_rows_before_the_camera_reset` | `HeroTeleport` 0x2368e0 |
 | FOV after a scene | `rc-engine/src/scene_render.rs::leave_mode2` (`view_tan_x = 0.63`) | `FUN_002ac608` |
 | Card icon | `memcard.rs::MemCard::in_use`, `menus/freeze.rs::busy_icon`, `rc-engine/src/hud_render.rs::tick_and_build`; test `busy_icon_tests` | `entry` 0x259c40 |
+| Wrench as attacker | `moby_update/services.rs` (`HitRecord::wrench`, `attacker_class`, `attacker_pos`, `ServiceHits::mark_wrench`); readers in `classes/` (`orxon_lava`, `mine`, `kerwan_layer`, `kerwan_bystander`, `qwark_ship_parts`, `hop_gunner`, `pokitaru_biter`, `light_fixture`, `amoeboid`, `rilgar_biter`, `rilgar_flame_tank`, `batalia_tank`, `fleet_turret`, `gemlik_tower`, `gemlik_turret`, `drone`); test `hero_hits_with_no_attacker_are_the_wrenchs` | `FUN_0026e808`, 0x2be1c0 |
 | Scout test | `tests/classes/orxon_gemlik_enemies.rs::scout_run` (O2 Mask owned) | — |
 
 ## 3. Behaviours to verify
@@ -183,6 +184,14 @@ stricter. None adds a class; most correct a shared seam, so §4 matters as much 
   #628 → #694 / #697.
 - **Suggested method:** extend `scout_run` to the seven scouts.
 
+### B17. The wrench knocks Orxon's bombs away and sets off placed mines
+- **Claim:** a wrench swing or throw that hits a resting lava rock 938 on Orxon bats it (state 2: red, flown, burst), and
+  one that hits a placed Mine Glove mine sets it off (`cmd = 1`), as the original's records name the wrench moby (class
+  0x47). Clank's punch already named Clank and is unchanged.
+- **Setup:** Orxon, the Clank area's rocks for the first; any level with the Mine Glove for the second.
+- **Expect:** each reacts to one hit; the Blaster still bats the rocks too.
+- **Suggested method:** harness test swinging at a rock and at a mine; QA against the PS2 clip of the forum post.
+
 ## 4. Shared code touched (regression risk)
 
 - **`Hero::aim_rows`** replaces `moby_rows` in the weapons listed in B10. Off a rail it is a copy of the moby rows taken in
@@ -196,6 +205,10 @@ stricter. None adds a class; most correct a shared seam, so §4 matters as much 
 - **Wrench auto-aim** changes every wrench swing's facing when a target is in the cone: the hero digest (NO_IDLE) and
   melee tests that place mobys near Ratchet may differ — intended.
 - **`DATA_LABELS`** gained the cheat tables: the media page and `cheat_patterns` now read relocated addresses off level 01.
+- **Wrench as attacker:** every class that tests the hit's attacker now sees class 0x47 (and Ratchet's hand item's
+  position) for the hero's swings, where it saw none: Kerwan's bystanders flee, the Gemlik turret / tower test the side
+  hit, the drones read the wrench's class type, the flame tank ignores the wrench, the fleet turret drops it. All are
+  the original's reads; re-run `test-job classes`.
 - **`leave_mode2`** writes `view_tan_x` — any class FOV set during a scene is reset at its end (faithful).
 - **The card icon** is drawn in the HUD pass whenever the card is busy, menus included; the freeze dialog keeps its own.
 - **Existing requests whose claims changed** (not edited, per the README):

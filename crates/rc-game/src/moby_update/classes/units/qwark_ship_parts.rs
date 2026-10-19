@@ -388,7 +388,7 @@ pub fn missile_update(w: &mut World, id: MobyId) {
     { let m = w.mm(id); m.scale += (cs - m.scale) * 0.1; }
     let old = w.m(id).position;
     let hit = w.get_hit(id, 0xa3_0000, false);
-    let shot = hit.is_some_and(|h| h.attacker.is_some_and(|a| w.m(a).o_class != MISSILE));
+    let shot = hit.is_some_and(|h| h.attacker_class(w).is_some_and(|c| c != MISSILE));
     if shot {
         let b = fx::Beam { damage_r: 0.0, damage: 0.0, flash: 0.0, flash2: 0.0, flash_dist: 0.0, scale: 1.0, light: 0.0, streaks: 5, sparks: 2, puffs: 7, debris: 0, sound: 1, shake: false };
         let pos = w.m(id).position;

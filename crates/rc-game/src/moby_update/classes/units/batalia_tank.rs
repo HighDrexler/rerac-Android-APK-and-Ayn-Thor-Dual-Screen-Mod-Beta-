@@ -288,7 +288,7 @@ fn prologue(w: &mut World, id: MobyId) -> bool {
     let h1 = tr[0].and_then(|t| w.get_hit(t, 0x21_0000, false));
     let h2 = tr[1].and_then(|t| w.get_hit(t, 0x21_0000, false));
     let mut hit = heaviest([own, h1, h2]);
-    let by = hit.as_ref().and_then(|h| h.attacker).map(|a| w.m(a).o_class);
+    let by = hit.as_ref().and_then(|h| h.attacker_class(w));
     if matches!(by, Some(SHELL) | Some(WRENCH)) { hit = None; }
     let res = damage::resolve(w, id, hit, pv::D, 0, 4);
     if res.out5 != 1 && w.m(id).state != 0 {

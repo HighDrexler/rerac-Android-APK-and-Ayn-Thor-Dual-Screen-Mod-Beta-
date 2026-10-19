@@ -157,7 +157,7 @@ fn hits(w: &mut World, id: MobyId) {
                 flash::update(w, id, o::F);
                 return;
             };
-            let above = h.attacker.is_some_and(|a| c::pos(w, id)[2] + 8.7 < w.m(a).position[2]);
+            let above = h.attacker_pos(w).is_some_and(|ap| c::pos(w, id)[2] + 8.7 < ap[2]);
             if above {
                 let dmg = h.damage.to_f32();
                 let hp = c::pf(w, id, o::D);

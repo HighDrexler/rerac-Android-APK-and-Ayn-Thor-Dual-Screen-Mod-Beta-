@@ -506,7 +506,7 @@ fn after_move(w: &mut World, id: MobyId, drift: V, normal: V) {
         c::set_pi32(w, id, pv::TARGET, 0);
     }
     if let Some(h) = w.get_hit(id, 0x83_0000, false) {
-        if let Some(a) = h.attacker { if w.m(a).o_class != CLASS { w.mm(id).cmd = 1; } }
+        if h.attacker_class(w).is_some_and(|c| c != CLASS) { w.mm(id).cmd = 1; }
     }
     w.mm(id).hit_slot = 0xff;
     let st = w.m(id).state;
