@@ -179,9 +179,10 @@ Status: **P** ported (the module), **—** not ported (gap). Code: `rc_game::mob
 jump (1324), 2 the path ships' third kill on Aridia (1212), 3 Kerwan's cuboid +0x74 (1342), 4 Kerwan's air traffic 795,
 8 the Morph-o-Ray on Rilgar's class 625, 0xb Batalia's director cuboid (1349), 0xc the fighters 438 from the turret,
 0xe Gaspar's tethered-platform word (1000 + 1182–1189), 0xf the path ships from the turret on Gaspar, 0x10 / 0x11
-Orxon's scouts / brawlers (1196 / 1202), 0x14 Hoven's group (422), 0x16 Gemlik's breakables (1805). Not wired (their
-classes are unported): Eudora's 466 family (6, 0x13d40e), Batalia's 253 (0x13d415), Kalebo's race 1455 (0x13d422), the
-cheat entry (media lane).
+Orxon's scouts / brawlers (1196 / 1202), 0x14 Hoven's group (422), 0x16 Gemlik's breakables (1805), 0x1a "Magician"
+Kalebo's race host 1455 (the Hoverboard's race score past 4499; it read an unwritten word until 2026-10-19). Not wired
+(their classes are unported): Eudora's 466 family (6, 0x13d40e), Batalia's 253 (0x13d415), the cheat entry (media
+lane).
 
 ### The planet chain (who unlocks what)
 

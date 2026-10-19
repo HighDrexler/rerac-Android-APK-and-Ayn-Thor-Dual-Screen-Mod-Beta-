@@ -30,7 +30,7 @@
 //! | state 1 | node 3: last = 3, node 2, since = tick, +0xbc = 0, `HeroTeleport(start, 0, 1)`, entry pose = the finish, → 3, the race on | [`update`], [`race_on`] |
 //! | state 1 | Ratchet's group 0x16 (racing): → 3, the race on | [`update`] |
 //! | state 2 | game mode ≠ 2: → 1; last node 4: the item movie 0 (`0x2923d0`), → 4 | [`update`] (`cinematic::item_movie`) |
-//! | state 3+ | the race score 0x13fbf8 > 4499: skill point 0x13d422 (`PlayLevelSoundAtMoby(1)`, banner 0x53d6); best 0x15ee6c < 4500 → the score | [`update`] (the score and the best are the race's words: read / written as unit words until G-LVL-007) |
+//! | state 3+ | the race score 0x13fbf8 > 4499: skill point 0x13d422 "Magician" (`PlayLevelSoundAtMoby(1)`, banner 0x53d6); best 0x15ee6c < 4500 → the score | [`update`] (the score is the Hoverboard's, `hero::hoverboard`; the best is the race records' `best_score[1]`) |
 //! | state 3+ | Ratchet's group 0 → 1, the race off | [`update`] |
 //! | state 3+ | +0xbc = 1: → 1, `HeroTeleport(finish)`, +0xbc = 0; the Hologuise not acquired (0x13d507): auto, last = node, node 4, since = tick; the race off | [`update`] |
 //! | state 3+ | +0xbc = 2: → 1, `HeroTeleport(finish)`, +0xbc = 0, the race off; +0xbc = 3: +0xbc = 0, `HeroTeleport(start)`, entry pose = the finish | [`update`] |
@@ -69,9 +69,6 @@ mod pvo {
 const START: ([f32; 3], [f32; 3]) = ([142.0, f32::from_bits(0x42b4_b333), 83.0], [0.0, 0.0, f32::from_bits(0x4016_6666)]);
 const FINISH: ([f32; 3], [f32; 3]) = ([f32::from_bits(0x42f0_e666), f32::from_bits(0x438f_799a), 119.5], [0.0, 0.0, f32::from_bits(0xc048_f5c3)]);
 
-/// The race's words (written by the race code, G-LVL-007): the score 0x13fbf8 and the best score 0x15ee6c.
-pub const SCORE_WORD: u32 = 0x13_fbf8;
-pub const BEST_WORD: u32 = 0x15_ee6c;
 /// gp−0x4f8c (0x161c74): the sea 1111's base height, set through `0x2de3b8` (`water::sea::set_ocean_base`).
 pub const SEA_RACE: f32 = 76.0;
 pub const SEA_REST: f32 = 100.0;
@@ -184,10 +181,12 @@ pub fn update(w: &mut World, id: MobyId) {
             }
         }
         _ => {
-            let score = w.svc.units.word(SCORE_WORD) as i32;
+            // 0x13fbf8 (the Hoverboard's race score) and 0x15ee6c (Kalebo III's best score, the race records' [1]).
+            let score = w.hero.board.score;
             if 0x1193 < score {
                 story::award_skill_point(w, story::skill_index(SKILL));
-                if (w.svc.units.word(BEST_WORD) as i32) < 0x1194 { w.svc.units.set_word(BEST_WORD, score as u32); }
+                let best = &mut w.svc.board.records.best_score[1];
+                if *best < 0x1194 { *best = score; }
             }
             if w.hero.group == 0 {
                 w.mm(id).state = 1;
