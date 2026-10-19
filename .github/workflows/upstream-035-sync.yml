@@ -14,7 +14,7 @@ permissions:
 jobs:
   merge-upstream:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +51,18 @@ jobs:
           echo '~~~' >> "$GITHUB_STEP_SUMMARY"
           cat /tmp/conflicts.txt >> "$GITHUB_STEP_SUMMARY"
           echo '~~~' >> "$GITHUB_STEP_SUMMARY"
+
+      # Match the Linux build prerequisites in upstream's release.yml.
+      # Bevy needs the native Wayland, audio, input, and keyboard headers at compile time.
+      - name: Install Linux build dependencies
+        if: steps.merge.outputs.clean == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+
+      - name: Cache Rust compilation
+        if: steps.merge.outputs.clean == 'true'
+        uses: Swatinem/rust-cache@v2
 
       - name: Validate Rust workspace
         if: steps.merge.outputs.clean == 'true'
