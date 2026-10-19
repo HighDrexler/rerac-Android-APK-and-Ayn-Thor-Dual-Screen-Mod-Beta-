@@ -118,6 +118,10 @@ auto-aim (23a24cf: the wrench states run the target search `0x22e238`); the esca
 `MusicRequestTrack(2, 4)` from the first tick's moby loop, before the port's sound step made the level start's
 `music_start_track(0)` (`entry` 0x259c40 makes it before its main loop): the idle player took track 2, then the start
 overwrote it with 0. The start now runs before a class's first request (`AudioSystem::level_music_start`).
+No music during the ending credits (§1.23): the last scene's end arms the music resume 30 ticks later
+(`FUN_0027a460`), and `music_UpdateStream` counts it down inside `sound_update`; the boss enters the slideshow (mode 7)
+at once, whose frames run only `sound_update`, while the port counted the delay in the gameplay frame only, so the music
+stayed held through the credits. The countdown is now in `sound_update` (`music_resume_countdown`).
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay

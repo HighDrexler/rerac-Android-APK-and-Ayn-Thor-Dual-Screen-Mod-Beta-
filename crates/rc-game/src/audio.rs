@@ -684,6 +684,7 @@ impl AudioSystem {
         let cmds = self.slots.update(&mut ctx);
         self.stats.plays += cmds.iter().filter(|c| matches!(c, SndCommand::Play { .. })).count() as u64;
         self.snd_cmds.extend(cmds);
+        self.music_resume_countdown();
         let more = self.music.tick(input.hero_pos, &mut self.boxes);
         self.stream_cmds.extend(more);
         self.stats.max_slots = self.stats.max_slots.max(self.slots.slots.iter().filter(|s| s.state != voices::state::FREE).count());
