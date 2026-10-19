@@ -737,7 +737,7 @@ types 79 / 80 `def[53]`, type 71 `def[60]`.
 | 1 | `type01` | 0x27dbc8 / 0x27daf0, `SpawnImpactSparks` 0x2780b0 | 1400 (U399 / U293), type 73 | rain splash |
 | 0, 73 | `type00`, `type73` | 0x27d928 / L08 0x272cb8; 0x28a5b8 / L08 0x27f5f0 | 1400 | rain streak (kind 3), flake |
 | 61 | `type61` | 0x2888f0 / L07 0x29b8d8 | U254 (1106) | joint glow pulled to the camera |
-| 70 | `type70` | 0x28a078 / L00 0x274cf8 (9 overlays) | unported classes | flat decal (kind 1) |
+| 70 | `type70` | 0x28a078 / L00 0x274cf8 (9 overlays) | **Hoven's hero footprints** (`hero::fx::footprint`, level12 `0x228e58`); unported classes | flat decal (kind 1) |
 | 14 | `type14` | 0x280ac8 / 0x280970 | class 156 (`0x2c7530`, code-made projectile) | muzzle flash |
 | 31 | `type31` | 0x283be8 / L15 0x25e2c0 | L15 / L18 classes | line closing on a moby (kind 2) |
 | 39 | `type39` | 0x284c98 / L08 0x279f00 | L08 class | glow held until the caller ends it |

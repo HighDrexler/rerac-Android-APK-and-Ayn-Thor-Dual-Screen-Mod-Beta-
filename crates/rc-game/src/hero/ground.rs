@@ -180,7 +180,12 @@ impl Hero {
             self.stick_target(c.env, Pf::ONE);
             if Pf::b(0x3f9c_61aa) < fast_diff_rots(self.target_yaw, c.env.cam_yaw) { return; }
         }
-        if Pf::b(0x3e61_47ae) < self.stick_mag { self.set_state(c, 2, true); }
+        if Pf::b(0x3e61_47ae) < self.stick_mag {
+            // Level 12's idle → walk pair (`SpawnFootstep(class, 0 / 1, 0)` in the transitions' case 0): both feet,
+            // silent, before the state's entry animation changes the pose.
+            if self.idle.level == 12 { super::fx::footprints(self, &*c.anim, c.env); }
+            self.set_state(c, 2, true);
+        }
     }
 
     pub(super) fn tr_stop(&mut self, c: &mut Ctx) {

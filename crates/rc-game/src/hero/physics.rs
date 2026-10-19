@@ -481,6 +481,14 @@ pub fn line_world(coll: &Collision, a: V4, b: V4, flags: u32) -> Option<crate::c
     coll_line_m(coll, None, to_f32x3(a), to_f32x3(b), QueryFlags(flags), None)
 }
 
+/// `GroundHeight(up, pos, fl)` 0x26e618: `CollLine_Fix((x, y, z + up), (x, y, 0.01), fl | 2, 0, 0)`, the hit z
+/// (0 on a miss). The hero effects' probes (the level-12 footprints) use it with the moby pass, as the game does.
+pub fn ground_height(coll: &Collision, mobys: Option<&MobyScene<'_>>, up: Pf, pos: V4, fl: u32) -> Pf {
+    let a = [pos[0], pos[1], pos[2] + up, pos[3]];
+    let b = [pos[0], pos[1], Pf::b(0x3c23_d70a), pos[3]];
+    coll_line_m(coll, mobys, to_f32x3(a), to_f32x3(b), QueryFlags(fl | 2), None).map_or(Pf::ZERO, |h| Pf::f(h.point[2]))
+}
+
 // ================================================================================================
 // Per-state physics 0x2370b8 (on-foot cases).
 

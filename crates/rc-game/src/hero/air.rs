@@ -51,8 +51,9 @@ impl Hero {
         }
         if self.air_ticks == 0 {
             // HeroFootstepSound(0x14063d, 0 / 1, 1): the landing's two steps (super::fx::footstep, played after the
-            // transitions).
+            // transitions), and the wrapper's level-12 footprints at the same two feet.
             self.fx.footsteps.extend([(self.footstep, 0), (self.footstep, 1)]);
+            super::fx::footprints(self, &*c.anim, c.env);
             let lim = DT * Pf::b(0xc110_0000);
             if self.disp[2] < lim { self.disp[2] = lim; }
             if self.vel[2] < lim { self.vel[2] = lim; }
