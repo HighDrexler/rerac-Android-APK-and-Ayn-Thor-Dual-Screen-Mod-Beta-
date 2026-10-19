@@ -141,7 +141,11 @@ that scene as Clank (text-only report). Giant Clank red during his △ attack (�
 the mobys and particles are drawn after it. The port's `screen_tint` pass runs after all the 3-D (its [L] note), so
 Clank and his shot are tinted too: needs the tint inside the world pass, before the mobys (a renderer change). The blurry aerial turret HUD (§1.30): the gauges are 2-D HUD
 art at the game's 512×416, scaled to the window and smoothed by the HUD option's Original setting (the TV's look);
-the Sharp setting shows the pixels. The fix the post wants is the planned HUD High resolution option, not a bug.
+the Sharp setting shows the pixels. The fix the post wants is the planned HUD High resolution option, not a bug. The
+Kalebo III grind-rail death (§1.11): level 16's grind transitions (0x2270c8's case 0x28: the grind hit at health < 2
+knocks Ratchet off backwards into the hurt 0x16) match the port; a headless run on rail 1 with a hit at 1 health goes
+0x16 → the fall 6 → below the death height → the death fall 0x77, as the report says the PS2 does. Not reproduced:
+needs the spot (a knock-off that lands back on a rail would end in the ground death 0x3d in both).
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
