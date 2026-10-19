@@ -135,7 +135,7 @@ fn aim(hero: &Hero, env: &ItemEnv) -> ([f32; 4], f32, f32) {
 
 /// The vortex's frame (`0x3067d0`): the view's rows in the look stance under the first-person camera (forward,
 /// `up × forward` [L], up), with the arm raised at a wall the gun's (−row 1, row 0, row 2), else Ratchet's aim rows
-/// 0x13f990 (his moby rows).
+/// 0x13f990 (`Hero::aim_rows`: his moby rows, the rail's on a rail).
 fn aim_rows(hero: &Hero, env: &ItemEnv) -> [[f32; 3]; 3] {
     if (hero.state == 1 || hero.state == 0x1e) && hero.f13f5 != 0 {
         if let (Some((_, f)), Some(u)) = (env.camera, env.camera_up) {
@@ -146,7 +146,7 @@ fn aim_rows(hero: &Hero, env: &ItemEnv) -> [[f32; 3]; 3] {
     if let (true, Some(r)) = (guns::arm_raised(hero), guns::item_rows(hero)) {
         return [[-r[1][0], -r[1][1], -r[1][2]], r[0], r[2]];
     }
-    hero.moby_rows.map(to_f32x3)[..3].try_into().unwrap()
+    hero.aim_rows.map(to_f32x3)
 }
 
 /// The cannon as the creatures read it (`react::Cannon`).
@@ -322,7 +322,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
                 let look = guns::first_person(hero);
                 let (vel, at) = match (look, env.camera) {
                     (true, Some((_, f))) => (scale3(f, SHOT), guns::camera_point(env, [0.15, 0.3, 1.0]).unwrap_or(guns::item_point(hero, env, 0))),
-                    _ => (scale3(to_f32x3(hero.moby_rows[0]), SHOT), guns::item_point(hero, env, 0)),
+                    _ => (scale3(to_f32x3(hero.aim_rows[0]), SHOT), guns::item_point(hero, env, 0)),
                 };
                 let vel = add3(vel, to_f32x3(hero.vel));
                 let mut target = hero.weapons.reactive.suck.target;

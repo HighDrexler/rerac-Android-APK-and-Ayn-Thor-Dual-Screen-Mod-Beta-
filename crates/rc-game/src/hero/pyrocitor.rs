@@ -294,7 +294,7 @@ fn ready(hero: &mut Hero, table: &mut MobyTable, env: &ItemEnv, hits: &mut dyn H
 #[allow(clippy::too_many_arguments)]
 fn firing(hero: &mut Hero, table: &mut MobyTable, env: &ItemEnv, hits: &mut dyn HitSink, rng: &mut Rng, nozzle: [f32; 3], held: bool, id: i32, gold: u8) {
     hero.fx.item_voices.push(SoundCmd::ItemLoop { n: 0, index: LOOP_SOUND, flags: 4 });
-    let rows: [[f32; 3]; 3] = [0, 1, 2].map(|i| to_f32x3(hero.moby_rows[i]));
+    let rows: [[f32; 3]; 3] = [0, 1, 2].map(|i| to_f32x3(hero.aim_rows[i]));
     let hpos = to_f32x3(hero.pos);
     // The light: 2 ahead, 2 up, flickering.
     let pl = hero.weapons.pyro.light;

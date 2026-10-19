@@ -960,7 +960,7 @@ fn pulled(w: &mut World, id: MobyId, r: usize) {
     }
     if sp <= d {
         // Drift sideways in Ratchet's aim frame (0x13f990) on the way in.
-        let rows = w.hero.moby_rows.map(|v| [v[0].to_f32(), v[1].to_f32(), v[2].to_f32()]);
+        let rows = w.hero.aim_rows.map(|v| [v[0].to_f32(), v[1].to_f32(), v[2].to_f32()]);
         let dv = super::sub(p, mouth);
         let l = [dv[0] * rows[0][0] + dv[1] * rows[0][1] + dv[2] * rows[0][2], dv[0] * rows[1][0] + dv[1] * rows[1][1] + dv[2] * rows[1][2]];
         let (ox, oy) = if l[0] < 0.0 {

@@ -291,7 +291,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
 
 /// Ratchet's facing row (0x13f9c0: `(1, 0, 0)` through his rows 0x13f990) and its yaw.
 fn facing(hero: &Hero) -> ([f32; 3], f32) {
-    let fwd = to_f32x3(hero.moby_rows[0]);
+    let fwd = to_f32x3(hero.aim_rows[0]);
     (fwd, fwd[1].atan2(fwd[0]))
 }
 

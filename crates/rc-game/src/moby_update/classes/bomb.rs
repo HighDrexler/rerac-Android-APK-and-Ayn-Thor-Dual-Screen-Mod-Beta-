@@ -200,7 +200,7 @@ fn aim_preview(w: &mut World, id: MobyId) -> bool {
     let vel = v4(p::v4f(&w.m(id).pvars, pv::VEL));
     let (from, vel, budget) = if held {
         let h = w.hero;
-        let from = crate::hero::weapons::launch_point(crate::hero::physics::to_f32x3(h.pos), crate::hero::physics::to_f32x3(h.moby_rows[0]));
+        let from = crate::hero::weapons::launch_point(crate::hero::physics::to_f32x3(h.pos), crate::hero::physics::to_f32x3(h.aim_rows[0]));
         let d = crate::hero::physics::to_f32x3(h.disp);
         let vel = if h.group == 0xf { [vel[0] + d[0], vel[1] + d[1], vel[2] + d[2]] } else { vel };
         (from, vel, 300)
