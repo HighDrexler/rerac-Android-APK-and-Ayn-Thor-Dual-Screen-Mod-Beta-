@@ -1,0 +1,109 @@
+name: Android signed theme test
+on:
+  push:
+    branches: [integration/launcher-1.1-polish-core035]
+    paths: [android/release/polish-approval.json, android/release/emulator_theme_test.py, .github/workflows/android-polish-test.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: android-signed-theme-test
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate successful candidate and exact public signing receipt
+        id: approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/reports work/candidates
+          python - <<'PY'
+          import base64,hashlib,json,lzma,os,re,subprocess
+          from pathlib import Path
+          doc=json.loads(Path('android/release/polish-approval.json').read_text())
+          assert doc['schema']==1 and type(doc['candidate_run']) is int
+          assert all(re.fullmatch('[0-9a-f]{40}',doc[k]) for k in ('candidate_sha','source_sha'))
+          run=json.loads(subprocess.check_output(['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{doc['candidate_run']}"]))
+          assert run['conclusion']=='success' and run['head_sha']==doc['candidate_sha']
+          assert run['repository']['id']==1424927008 and run['path']=='.github/workflows/android-theme-source.yml'
+          raw=lzma.decompress(base64.b64decode(doc['receipt_xz_base64'],validate=True))
+          assert len(raw)<65536 and hashlib.sha256(raw).hexdigest()==doc['receipt_sha256']
+          receipt=json.loads(raw)
+          assert all(receipt[k]==doc[k] for k in ('candidate_run','candidate_sha','source_sha'))
+          assert len(receipt['apks'])==1 and receipt['apks'][0]['build']['core_version']=='0.3.4'
+          Path('work/approval.json').write_bytes(raw)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('run='+str(doc['candidate_run'])+'\n')
+          PY
+      - name: Download candidate and require passing regression evidence
+        run: |
+          gh run download '${{ steps.approval.outputs.run }}' --repo "$GITHUB_REPOSITORY" --name launcher-polish-candidate --dir work/candidates
+          python - <<'PY'
+          import json,xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=Path('work/candidates'); approval=json.loads(Path('work/approval.json').read_text())
+          commits=list(root.rglob('source-commit.txt'));assert len(commits)==1 and commits[0].read_text().strip()==approval['source_sha']
+          reports=list(root.rglob('TEST-*.xml'));assert len(reports)>=5
+          total=0
+          for report in reports:
+              suite=ET.parse(report).getroot()
+              assert all(int(suite.get(k,'0'))==0 for k in ('errors','failures','skipped'))
+              total+=int(suite.get('tests','0'))
+          assert total>=55
+          print(total,'passing regression tests with no failures or skips')
+          PY
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Reconstruct and verify approved APK and original payload retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          python android/release/public_signature.py --approval work/approval.json --artifacts work/candidates --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta-test/ReRAC-Launcher-1.1.0-beta.2.apk' -o work/previous.apk
+          echo '474e2e3a75a334aff2691128e8520291ab59af3fcb2fc3e6532d9f5a6700444f  work/previous.apk' | sha256sum -c -
+          python - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('work/previous.apk') as old,zipfile.ZipFile(next(Path('work/signed').glob('*.apk'))) as new:
+              meta=json.loads(new.read('assets/rerac-build.json'))
+              assert meta['core_version']=='0.3.4' and meta['version_code']==19 and not meta['native_source_rebuild']
+              names=[n for n in old.namelist() if n.startswith('lib/') or n in ('classes.dex','classes2.dex','classes3.dex','classes4.dex','classes5.dex')]
+              for name in names:
+                  assert old.read(name)==new.read(name),name
+                  if name.startswith('lib/'):assert hashlib.sha256(new.read(name)).hexdigest()==meta['native_sha256'][name]
+              print('Original native engine, importer and gameplay DEX preserved:',len(names),'entries')
+          PY
+      - name: Enable disposable-emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actual Android theme and upgrade checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python android/release/emulator_theme_test.py --previous work/previous.apk --candidate work/signed/ReRAC-Launcher-1.1.0-beta.3.apk --output work/reports
+      - name: Retain signed APK and actual Android evidence, without publishing
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-polish-signed-test
+          path: |
+            work/signed
+            work/reports
+            work/approval.json
+          retention-days: 14
