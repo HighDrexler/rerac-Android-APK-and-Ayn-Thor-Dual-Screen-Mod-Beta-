@@ -5,7 +5,7 @@ on:
     branches: [dev]
     paths:
       - android/launcher/**
-      - android/recovery/launcher-source.b64
+      - android/recovery/source-chunks/**
       - .github/workflows/android-launcher.yml
 permissions:
   contents: read
@@ -26,11 +26,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f android/recovery/launcher-source.b64 ]; then
+          if [ -d android/recovery/source-chunks ]; then
             python - <<'PY'
           import base64, hashlib, json, lzma
           from pathlib import Path
-          blob = base64.b64decode(Path('android/recovery/launcher-source.b64').read_text(), validate=False)
+          parts = sorted(Path('android/recovery/source-chunks').glob('*.b64'))
+          assert len(parts) == 9
+          blob = base64.b64decode(''.join(p.read_text() for p in parts), validate=True)
           assert hashlib.sha256(blob).hexdigest() == '7721b6e54afe07216b10836e77ec09ec1a26e71c807d5829b5b101c26b663000'
           files = json.loads(lzma.decompress(blob))
           root = Path('android/launcher').resolve()
@@ -45,7 +47,7 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add android/launcher
-            git rm android/recovery/launcher-source.b64
+            git rm -r android/recovery/source-chunks
             git commit -m 'Restore editable Android launcher 1.1 sources, tests and pinned v16 build path'
             git push origin HEAD:dev
           fi
