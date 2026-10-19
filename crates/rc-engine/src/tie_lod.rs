@@ -3,13 +3,15 @@
 //! factor and the colour weights of programs 13507 / 224979). Spec: docs/formats/tie_rac1.md §3.5; the
 //! shader side is in `assets/shaders/tie.wgsl`, the meshes and material in `tie_render.rs`.
 //!
-//! Per instance and frame (`update_tie_lods`) one `vec4<u32>` goes into a storage buffer every tie
+//! Per instance and frame (`update_tie_lods`) two `vec4<u32>` go into a storage buffer every tie
 //! material binds (index = instance index = `MeshTag`). The occlusion test (tie +0x18/+0x19 against the
 //! frame mask, crate::occlusion) comes first; an occluded instance gets the culled record:
 //! x = LOD (0..2, [`LOD_CULLED`] = not drawn) | F << 8 (the GS fog value `TieProc` puts in qw 5.w),
-//! y = k (f32 bits), z = qw4.w = 256·k, w = qw4.z = 256 − 256·k (the VU colour weights, f32 bits).
-//! The vertex shader drops the vertices of the other LODs, draws fat vertices at `position + k·delta`
-//! and blends their colour with the VU's float arithmetic (`vu_fat_color`).
+//! y = k (f32 bits), z = qw4.w = 256·k, w = qw4.z = 256 − 256·k (the VU colour weights, f32 bits); the
+//! second word is the wind shear (x, y = sx, sy, f32 bits; 0 without sway). The vertex shader drops the
+//! vertices of the other LODs, draws fat vertices at `position + k·delta` and blends their colour with the
+//! VU's float arithmetic (`vu_fat_color`); a swaying instance also shears the morphed position by its
+//! `(sx, sy)` exactly like `ShrubProc` does for shrubs (`rc_formats::tie::wind_sway`).
 //!
 //! **CPU culling.** An instance `TieProc` does not draw (occluded or culled) also gets `Visibility::Hidden` on
 //! its part entities, written only when its state changes, so Bevy does not queue it and the GPU does not
@@ -160,6 +162,9 @@ pub struct TieLodInput {
     pub dist: f32,
     /// Class `near/mid/far_dist`.
     pub dists: [f32; 3],
+    /// Wind sway: `(mode, origin)` with `mode = (flags_24 & 6) >> 1` and the origin in game coordinates, for
+    /// instances of a class `TieProc` sways (`flags_24 & 9 == 0`, mode ≠ 0).
+    pub sway: Option<(u16, [f32; 3])>,
 }
 
 /// The buffer `update_tie_lods` writes and what it needs.
@@ -179,6 +184,8 @@ pub struct TieLodState {
     shown: Vec<bool>,
     /// `RC_TIE_CPU_CULL` (default on).
     cpu_cull: bool,
+    /// Wind sway on (`RC_SWAY`, the shrub switch; default on).
+    sway: bool,
     /// What follows the per-instance words in the buffer: one `vec4<u32>` per instance whose x is its point-light
     /// nibble list, then the point-light bank (16 `vec4`; crate::world_lights; tie.wgsl reads both).
     tail: Vec<u8>,
@@ -187,7 +194,7 @@ pub struct TieLodState {
 impl TieLodState {
     pub fn new(inputs: Vec<TieLodInput>, occl: Vec<OcclBits>, fog: LevelFog, buffers: &mut Assets<ShaderBuffer>) -> Self {
         assert_eq!(inputs.len(), occl.len(), "one occlusion word per tie instance");
-        let init: Vec<u32> = inputs.iter().flat_map(|_| [LOD_CULLED, 0, 0, 0]).collect();
+        let init: Vec<u32> = inputs.iter().flat_map(|_| [LOD_CULLED, 0, 0, 0, 0, 0, 0, 0]).collect();
         // After the instance words: every nibble list empty (0xffff), an empty bank (crate::world_lights).
         let mut tail = vec![0u8; inputs.len() * 16 + crate::world_lights::BANK_BYTES];
         for i in 0..inputs.len() { tail[i * 16..i * 16 + 4].copy_from_slice(&0xffffu32.to_le_bytes()); }
@@ -198,7 +205,7 @@ impl TieLodState {
         let force_lod0 = std::env::var("RC_TIE_LOD").is_ok_and(|v| v.trim() == "0");
         let cpu_cull = !std::env::var("RC_TIE_CPU_CULL").is_ok_and(|v| v.trim() == "0");
         let n = inputs.len();
-        TieLodState { buffer, inputs, occl, fog, force_lod0, last_hist: [usize::MAX; 6], entities: vec![Vec::new(); n], shown: vec![true; n], cpu_cull, tail }
+        TieLodState { buffer, inputs, occl, fog, force_lod0, last_hist: [usize::MAX; 6], entities: vec![Vec::new(); n], shown: vec![true; n], cpu_cull, sway: sway_enabled(), tail }
     }
 
     /// crate::world_lights: the ties' nibble lists and the bank bytes, into the buffer after the instance words.
@@ -241,12 +248,19 @@ fn record(inp: &TieLodInput, eye: Vec3, rows: [Vec3; 3], fog: &LevelFog, force_l
     ([pick.lod | fog_value(depth, fog) << 8, pick.k.to_bits(), pick.w.to_bits(), pick.z.to_bits()], bin)
 }
 
+/// `RC_SWAY` (default on; the shrub renderer reads the same switch).
+fn sway_enabled() -> bool { !std::env::var("RC_SWAY").is_ok_and(|v| v.trim() == "0") }
+
+/// Low bits of the EE address of a tie's 0x40-byte matrix block (`TieProc`: `(block >> 9) & 0x1ff`). Only
+/// bits 9..17 reach the sway phase; the heap base is run-time state, taken as 0 (as in `shrub_render`).
+const SWAY_BLOCK_BASE: u32 = 0;
+
 pub fn update_tie_lods(
     state: Option<ResMut<TieLodState>>,
     occl: Option<ResMut<crate::occlusion::OcclusionFrame>>,
     mut buffers: ResMut<Assets<ShaderBuffer>>,
     cams: Query<(&Transform, Option<&Projection>), With<Camera3d>>,
-    (time, gfx): (Res<Time>, Res<crate::graphics::GraphicsSettings>),
+    (time, fixed, gfx): (Res<Time>, Res<Time<Fixed>>, Res<crate::graphics::GraphicsSettings>),
     mut last_print: Local<f32>,
     mut vis: Query<&mut Visibility>,
 ) {
@@ -255,25 +269,41 @@ pub fn update_tie_lods(
     let tans = game_camera::projection_tans(proj);
     let (eye, [fwd, left, up]) = (game_camera::game_eye(cam), game_camera::game_rows(cam));
     let rows = [-left, -up, fwd];
+    // The game's frame counter: one per 60 Hz game frame (the same `Time<Fixed>` the shrub sway and moby
+    // animation use).
+    let tick = (fixed.elapsed().as_nanos() / fixed.timestep().as_nanos().max(1)) as u32;
     // hist: occluded, culled, LOD0, LOD0 morphing, LOD1, LOD2.
     let mut hist = [0usize; 6];
-    let mut words = Vec::with_capacity(state.inputs.len() * 4);
+    let mut words = Vec::with_capacity(state.inputs.len() * 8);
     let mask = occl.as_ref().map(|o| o.mask);
-    for (inp, bits) in state.inputs.iter().zip(&state.occl) {
+    for (ii, (inp, bits)) in state.inputs.iter().zip(&state.occl).enumerate() {
         // TieProc: `mask[+0x19] & +0x18 == 0 → next`, before the draw-distance and sphere tests.
         if mask.as_ref().is_some_and(|m| !bits.visible(m)) {
             hist[0] += 1;
-            words.extend_from_slice(&[LOD_CULLED, 0, 0, 0]);
+            words.extend_from_slice(&[LOD_CULLED, 0, 0, 0, 0, 0, 0, 0]);
             continue;
         }
         let (rec, bin) = record(inp, eye, rows, &state.fog, state.force_lod0, tans, scale);
         hist[bin + 1] += 1;
         words.extend_from_slice(&rec);
+        // `TieProc`'s sway block: the same shear as `ShrubProc`'s, phased by the matrix block's 512-byte page.
+        let sway = match inp.sway {
+            Some((mode, origin)) if state.sway => {
+                let block = SWAY_BLOCK_BASE.wrapping_add((ii as u32).wrapping_mul(0x40));
+                let rel = [origin[0] - eye.x, origin[1] - eye.y, origin[2] - eye.z];
+                match rc_formats::tie::wind_sway(mode, block, tick, rel) {
+                    Some([sx, sy]) => [sx.to_bits(), sy.to_bits(), 0, 0],
+                    None => [0; 4],
+                }
+            }
+            _ => [0; 4],
+        };
+        words.extend_from_slice(&sway);
     }
     // Show / hide the instances whose drawn state changed (x & 0xff is the LOD, LOD_CULLED = not drawn).
     if state.cpu_cull {
         let st = &mut *state;
-        for (ii, rec) in words.as_chunks::<4>().0.iter().enumerate() {
+        for (ii, rec) in words.as_chunks::<8>().0.iter().enumerate() {
             let drawn = rec[0] & 0xff != LOD_CULLED;
             if drawn == st.shown[ii] || st.entities[ii].is_empty() { continue; }
             st.shown[ii] = drawn;

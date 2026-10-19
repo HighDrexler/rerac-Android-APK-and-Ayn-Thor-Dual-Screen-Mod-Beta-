@@ -479,7 +479,7 @@ in game mode (2026-09-29: the earlier "uses the fly camera (no camera modes)" wa
 
 ## 7. Other per-frame world animation on Novalis
 
-- **Sky shell rotation** and **shrub sway**: done in the port. **No tie/shrub texture or UV animation and
+- **Sky shell rotation**, **shrub sway** and **tie sway**: done in the port. **No tie/shrub texture or UV animation and
   no tfrag colour cycling.**
 - **Moby glow** +0x90 (init = class header +0x40, `InitMobyInstance`). It is pulsed by updates: vendor 11
   `(sin(t)·48 + 96)·0x010101 | 0x80000000`, ship 531 `0x2a1c40`. It is consumed by the MobyProc mode-0x10
