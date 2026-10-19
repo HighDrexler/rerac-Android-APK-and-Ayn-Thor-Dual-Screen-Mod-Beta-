@@ -92,6 +92,10 @@ pub struct Glove {
     pub fire_timer: i32,
     /// +0x40: the hand point in the glove.
     pub hand: [f32; 3],
+    /// The glove's joint list 0 world matrix (`MobyAttachToJoint(glove, 0)`): rows 0..2 the rotation, row 3 the
+    /// joint point. Written by `gloves::update` step 2; the held mine's frame is this turned by π about x
+    /// (`0x2bfe40`'s held branch).
+    pub hand_mtx: [[f32; 4]; 4],
     /// The Mine Glove's +0x54: no new mine until it runs out (10 ticks after a throw).
     pub respawn: i32,
 }
@@ -596,6 +600,23 @@ pub fn arm_upkeep(h: &mut Hero, anim: &dyn AnimCtl) {
         }
         h.weapons.layers[i] = Some(l);
     }
+    aim_frame(h);
+}
+
+/// The tail of `0x22f068` (skipped by its early returns, as above): Ratchet's aim frame 0x13f990 and its facing row
+/// 0x13f9c0 (= the frame's x row). Grinding (group 0xf; the look-at moby 0x13f928 is set by no ported class): his
+/// Euler 0x13f3e0 with the pitch −0x13f8d0 and the yaw the rail's 0x13f8cc plus the aim lean 0x13f920
+/// (`super::boots`), so the weapons fire along the rail and sweep with the lean; otherwise his moby rows.
+pub fn aim_frame(h: &mut Hero) {
+    h.aim_rows = if h.group == 0xf {
+        let mut e = h.rot;
+        e[1] = Pf::f(-h.boots.pitch);
+        e[2] = fast_add_rotations(Pf::f(h.boots.yaw), Pf::f(h.boots.lean_angle));
+        let r = euler_rows(e);
+        [r[0], r[1], r[2]]
+    } else {
+        [h.moby_rows[0], h.moby_rows[1], h.moby_rows[2]]
+    };
 }
 
 /// `0x270728(target, step, &x)` on native floats.

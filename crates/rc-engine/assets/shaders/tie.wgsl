@@ -6,9 +6,11 @@
 // not used for positions), the bounding-sphere centre (Bevy world) with the draw distance in w, the radius,
 // and 64 packed RGBA8 colours (0x80 = 1.0).
 //
-// Per-frame TieProc decision (`lods[mesh tag]`, tie_lod.rs): x = LOD (3 = culled) | F << 8, y = k,
-// z = VU qw4.w = 256k, w = qw4.z = 256 - 256k (f32 bits). Vertices of the other LODs are dropped;
-// VU1 program 13507 writes the same F for every vertex of an instance (qw 5.w).
+// Per-frame TieProc decision (`lods[2 * mesh tag]`, tie_lod.rs): x = LOD (3 = culled) | F << 8, y = k,
+// z = VU qw4.w = 256k, w = qw4.z = 256 - 256k (f32 bits). The next word is the wind shear
+// (`lods[2 * mesh tag + 1].xy` = sx, sy, f32 bits; 0 without sway): TieProc shears the instance columns
+// `x += sx·z, y += sy·z` (world Z up, about the origin), applied here to the morphed position. Vertices of the
+// other LODs are dropped; VU1 program 13507 writes the same F for every vertex of an instance (qw 5.w).
 // Fat vertices (13507 L25..L39): position + k * delta (`mulx.xyz vf05, vf05, vf27`, `add.xyzw vf05, vf05,
 // vf28`); colour per lane = low byte of avg * w + c0 * z with avg = (c1 + c2) * 0.5, all in VU floats
 // (`mulay/maddy vf29, vf30, vf27`, `mulaw ACC, vf29, vf27`, `maddz vf11, vf11, vf27`), palette lanes
@@ -71,11 +73,11 @@ fn sample_world(uv: vec2<f32>, l: f32, mxl: f32, duv: vec4<f32>) -> vec4<f32> {
     return textureSampleLevel(tex, tex_sampler, uv, level);
 }
 
-// `lods` = n instance words, n (nibble list, -, -, -), then the bank.
-fn tie_count() -> u32 { return (arrayLength(&lods) - 16u) / 2u; }
+// `lods` = 2n instance words (decision, sway), n (nibble list, -, -, -), then the bank.
+fn tie_count() -> u32 { return (arrayLength(&lods) - 16u) / 3u; }
 
 fn bank() -> array<WorldLight, 8> {
-    let b = 2u * tie_count();
+    let b = 3u * tie_count();
     var ls: array<WorldLight, 8>;
     for (var k = 0u; k < 8u; k += 1u) {
         ls[k] = WorldLight(bitcast<vec4<f32>>(lods[b + 2u * k]), bitcast<vec4<f32>>(lods[b + 2u * k + 1u]));
@@ -172,7 +174,7 @@ fn vertex(v: TieVertex) -> TieVertexOutput {
     var out: TieVertexOutput;
     let tag = mesh_functions::get_tag(v.instance_index);
     let inst = &insts[tag];
-    let lod = lods[tag];
+    let lod = lods[2u * tag];
     let vlod = (v.morph >> 13u) & 3u;
     if ((lod.x & 3u) != vlod) {
         // Culled this frame (3), or a vertex of another LOD: the triangle is clipped away.
@@ -180,11 +182,21 @@ fn vertex(v: TieVertex) -> TieVertexOutput {
         return out;
     }
     let k = bitcast<f32>(lod.y);
-    let world = ((*inst).model * vec4<f32>(v.position + k * v.delta, 1.0)).xyz;
+    let pos = v.position + k * v.delta;
+    let sw = bitcast<vec2<f32>>(lods[2u * tag + 1u].xy);
+    var world: vec3<f32>;
+    if (sw.x != 0.0 || sw.y != 0.0) {
+        // ShrubProc's shear (shrub.wgsl): about the origin, x += sx·y, z -= sy·y in Bevy axes.
+        var off = ((*inst).model * vec4<f32>(pos, 0.0)).xyz;
+        off = vec3<f32>(off.x + sw.x * off.y, off.y, off.z - sw.y * off.y);
+        world = off + (*inst).model[3].xyz;
+    } else {
+        world = ((*inst).model * vec4<f32>(pos, 1.0)).xyz;
+    }
     out.position = position_world_to_clip(world);
     out.uv = v.uv;
     var c0 = (*inst).colors[v.info & 63u];
-    let list = lods[tie_count() + tag].x & 0xffffu;
+    let list = lods[2u * tie_count() + tag].x & 0xffffu;
     var il = InstanceLight(vec3<f32>(0.0), vec3<f32>(0.0), 0.0, false);
     if (list != NO_LIGHTS) {
         il = instance_light(list, bank(), (*inst).centre.xyz);

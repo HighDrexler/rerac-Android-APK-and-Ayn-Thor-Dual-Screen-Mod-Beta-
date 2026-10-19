@@ -116,7 +116,7 @@ pub fn probe(path: &Path, builds: &[Build], emit: Emit) -> Result<(Identified, I
     let build = builds.iter().position(|b| {
         build_db::normalize_serial(b.serial) == build_db::normalize_serial(&serial) && b.elf_sha1.eq_ignore_ascii_case(&hex(&elf_sha1))
     });
-    let supported = game == Game::Rac1 && build.is_some_and(|i| builds[i].supported);
+    let supported = matches!(game, Game::Rac1 | Game::Rac2) && build.is_some_and(|i| builds[i].supported);
     let id = Identified {
         version: build.map(|i| builds[i].version.to_string()).unwrap_or(version),
         region: build.map(|i| builds[i].region.to_string()).unwrap_or(region),
@@ -149,7 +149,7 @@ pub fn require_supported(id: &Identified, builds: &[Build], emit: Emit) -> Resul
         }
         return Ok(());
     }
-    let only = "ReRAC supports Ratchet & Clank NTSC-U SCUS_971.99 v1.00 only for now";
+    let only = "ReRAC supports Ratchet & Clank NTSC-U SCUS_971.99 v1.00 and Going Commando NTSC-U SCUS_972.68 v2.00 only for now";
     let msg = match (id.game, id.build) {
         (Game::Rac1, Some(_)) => format!("Ratchet & Clank {} v{} ({}, {}) is recognised but not supported yet; {only}", id.serial, id.version, id.region, id.edition),
         (Game::Rac1, None) => {

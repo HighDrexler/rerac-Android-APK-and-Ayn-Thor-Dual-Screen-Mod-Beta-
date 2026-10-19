@@ -75,6 +75,8 @@ pub struct CoreBlock { pub name: String, pub offset: usize, pub size: usize }
 
 #[derive(Debug)]
 pub struct LevelCore {
+    /// The game the level belongs to (the core index's layout is the same in both).
+    pub game: crate::Game,
     pub header: LevelCoreHeader,
     pub gs_ram: Vec<GsRamEntry>,
     pub moby_classes: Vec<ClassEntry>,
@@ -110,12 +112,18 @@ fn table<T: Pod>(idx: Buf, r: ArrayRange, what: &'static str) -> Result<Vec<T>> 
     idx.pod_slice(r.offset as usize, r.count as usize, what)
 }
 
-pub fn parse_level_core(index: &[u8], data_size: usize) -> Result<LevelCore> {
+pub fn parse_level_core(index: &[u8], data_size: usize) -> Result<LevelCore> { parse_level_core_for(crate::Game::Rac1, index, data_size) }
+
+/// [`parse_level_core`] for a level of `game`. Going Commando's core index has R&C1's header and tables (checked on
+/// every level of SCUS_972.68: the same counts, offsets and block boundaries).
+pub fn parse_level_core_for(game: crate::Game, index: &[u8], data_size: usize) -> Result<LevelCore> {
     let idx = Buf(index);
     let h: LevelCoreHeader = idx.pod(0, "core header")?;
-    let gadgets = if h.gadget_count > 0 && h.gadget_offset > 0 { idx.pod_slice(h.gadget_offset as usize, h.gadget_count as usize, "gadget table")? } else { Vec::new() };
+    // Going Commando keeps its gadgets in GADGET.WAD; its words 0x88 / 0x8c are not a gadget table (Aranos: 0xa7, 8).
+    let gadgets = if game == crate::Game::Rac2 { Vec::new() } else if h.gadget_count > 0 && h.gadget_offset > 0 { idx.pod_slice(h.gadget_offset as usize, h.gadget_count as usize, "gadget table")? } else { Vec::new() };
     let ratchet_seqs = if h.ratchet_seqs > 0 { idx.pod_slice::<i32>(h.ratchet_seqs as usize, 256, "ratchet seq table")? } else { Vec::new() };
     let mut core = LevelCore {
+        game,
         header: h,
         gs_ram: table(idx, h.gs_ram, "gs_ram table")?,
         moby_classes: table(idx, h.moby_classes, "moby class table")?,

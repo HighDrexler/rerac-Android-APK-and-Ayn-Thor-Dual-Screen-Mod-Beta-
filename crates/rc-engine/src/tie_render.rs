@@ -29,6 +29,10 @@
 //!   level loader; 0 = never drawn), the sphere is wholly in front of the near plane or outside a side plane;
 //! * LOD and morph factor k from the centre depth and the class `near/mid/far_dist` (tie_lod.rs);
 //! * fog: one F per instance (qw 5.w) from the **centre** depth (clamped at 0) with the level fog line;
+//! * wind sway: a class with `flags_24 & 9 == 0` and `(flags_24 & 6) >> 1` ≠ 0 is sheared by `TieProc` exactly
+//!   like a swaying shrub (`rc_formats::tie::wind_sway`, the same table and `vf8` / `vf9`, phased by
+//!   `(matrix block address >> 9) & 0x1ff`). `tie_lod` writes the per-frame shear next to the LOD word and the
+//!   vertex shader applies it about the instance origin; `RC_SWAY=0` disables it (the shrub switch);
 //! * before all of these, the occlusion word (+0x18/+0x19) against this frame's mask (crate::occlusion).
 //!
 //! GS state and MODULATE / alpha as for tfrags (`TfragMaterial::alpha_mode`): TEST_1 = 0x5360b is inherited
@@ -92,13 +96,22 @@ pub struct LevelTies {
 pub fn load_ties(core: &LevelCore, core_data: &[u8], gs_ram: &[u8], gameplay: &[u8], textures: &[LevelTexture]) -> Result<LevelTies> {
     let t0 = Instant::now();
     let classes = tie::parse_level_ties(core, core_data).context("parsing tie classes")?;
-    let instances = tie::parse_tie_instances(gameplay).context("parsing tie instances")?;
+    let instances = match core.game {
+        rc_formats::Game::Rac1 => tie::parse_tie_instances(gameplay),
+        rc_formats::Game::Rac2 => rc_formats::rac2::gameplay::tie_instances(gameplay),
+    }
+    .context("parsing tie instances")?;
     let by_class: HashMap<i32, usize> = classes.iter().enumerate().map(|(i, c)| (c.o_class, i)).collect();
     let class_of: Vec<Option<usize>> = instances.iter().map(|i| by_class.get(&i.o_class).copied()).collect();
     let parse_time = t0.elapsed();
 
     let t0 = Instant::now();
-    let colors = crate::tie_light::light_instances(gameplay, &classes, &instances, &class_of)?;
+    // Going Commando lights its ties another way (per-vertex colours in the gameplay file, not mapped yet): neutral
+    // colours (docs/plan/rac2_bringup.md §6.3 D).
+    let colors = match core.game {
+        rc_formats::Game::Rac1 => crate::tie_light::light_instances(gameplay, &classes, &instances, &class_of)?,
+        rc_formats::Game::Rac2 => vec![[[0x80; 4]; SLOTS]; instances.len()],
+    };
     let light_time = t0.elapsed();
 
     // Tie textures get the same load-time ad-gif conversion as tfrags (boot fun_00203730: TEX0 from the
@@ -247,6 +260,8 @@ struct Stats {
     untextured: usize,
     sheared: usize,
     mirrored: usize,
+    /// Instances of a wind-sway class.
+    sway: usize,
     images: usize,
     blended_materials: usize,
     clamped_slots: usize,
@@ -342,10 +357,10 @@ fn spawn_system(
     let s = spawn_ties(&mut commands, &level.0, &mut meshes, &mut images, &mut materials, &mut buffers);
     let t = &level.0.ties;
     println!(
-        "ties: {} instances ({} placed, {} without class, {} with draw distance 0; {} mirrored, {} sheared), {} classes ({} used); \
+        "ties: {} instances ({} placed, {} without class, {} with draw distance 0; {} mirrored, {} sheared, {} with wind sway), {} classes ({} used); \
          LOD 0/1/2 triangles over all placed instances {:?} ({} untextured skipped per class), {} meshes ({} vertices), {} entities, <= {} instanced draws, \
          {} images ({} mip fallbacks), {} blended materials; {} lit slots at the 243 clamp",
-        t.instances.len(), s.placed, s.no_class, s.zero_distance, s.mirrored, s.sheared, t.classes.len(), s.classes_used,
+        t.instances.len(), s.placed, s.no_class, s.zero_distance, s.mirrored, s.sheared, s.sway, t.classes.len(), s.classes_used,
         s.triangles, s.untextured, s.meshes, s.vertices, s.entities, s.draw_batches, s.images, t.mip_fallbacks, s.blended_materials, s.clamped_slots
     );
     println!(
@@ -422,7 +437,20 @@ fn spawn_ties_on(
         // Instance +0x04 is an s32 (720 on every Novalis tie); the loader converts it with cvt.s.w.
         let dist = (inst.draw_distance as f32).min(DRAW_DISTANCE_CAP);
         let lod_dist = if ties.class_of[ii].is_some() { dist } else { 0.0 };
-        lod_inputs.push(crate::tie_lod::TieLodInput { sphere, dist: lod_dist, dists });
+        // TieProc's wind sway: `(flags_24 & 6) >> 1` for a class it does not skip (`& 9`).
+        let sway = match ties.class_of[ii] {
+            Some(ci) => {
+                let h = &ties.classes[ci].class.header;
+                let mode = (h.flags_24 & 6) >> 1;
+                if h.flags_24 & 9 == 0 && mode != 0 {
+                    st.sway += 1;
+                    let t = inst.matrix[3];
+                    Some((mode, [t[0], t[1], t[2]]))
+                } else { None }
+            }
+            None => None,
+        };
+        lod_inputs.push(crate::tie_lod::TieLodInput { sphere, dist: lod_dist, dists, sway });
         let normals = ties.class_of[ii].map_or(&[][..], |ci| &ties.classes[ci].class.normals[..]);
         write_record(&mut bytes, &model, centre, dist, radius, &ties.colors[ii], normals);
         models.push(model);
@@ -483,6 +511,12 @@ fn spawn_ties_on(
         let exact = transform.to_matrix().abs_diff_eq(model, 1e-3 * model.x_axis.length().max(1.0));
         if model.determinant() < 0.0 { st.mirrored += 1; }
         if !exact { st.sheared += 1; }
+        // A swaying instance leans by up to ~10 % of its height outside the mesh AABB: no Bevy frustum test
+        // (the game's own sphere cull is tie_lod's).
+        let swayed = ties.class_of[ii].is_some_and(|ci| {
+            let h = &ties.classes[ci].class.header;
+            h.flags_24 & 9 == 0 && (h.flags_24 & 6) >> 1 != 0
+        });
         let colors = &ties.colors[ii];
         let mut spawned = Vec::new();
         for (pi, part) in parts[&ci].iter().enumerate() {
@@ -513,7 +547,7 @@ fn spawn_ties_on(
                     WorldDrawOrder([WorldDrawOrder::TIE, ci as u32, pi as u32, ii as u32, 0]),
                     Name::new(format!("tie {ii} class {} tex {} {pass:?}", inst.o_class, part.texture)),
                 ));
-                if !exact { e.insert(NoFrustumCulling); }
+                if !exact || swayed { e.insert(NoFrustumCulling); }
                 if let Some(l) = layer { e.insert(l.clone()); }
                 spawned.push(e.id());
                 st.entities += 1;

@@ -71,7 +71,7 @@ pub fn update(w: &mut World, id: MobyId) {
     }
     if done(w, id) && w.m(id).state != 3 { blown(w, id); }
     let hit = w.get_hit(id, u32::MAX, false);
-    if hit.is_some_and(|h| h.attacker.is_some() && h.b28 == 3) && !done(w, id) {
+    if hit.is_some_and(|h| h.has_attacker() && h.b28 == 3) && !done(w, id) {
         story::award_skill_point(w, SKILL);
         let mut at = c::pos(w, id);
         at[2] += 1.0;

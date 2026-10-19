@@ -163,6 +163,10 @@ struct PreviewRt {
     /// The joints of Ratchet's lists 0x16 / 0x17 (his feet): `LoadHandGadget`'s nodes 0x1ba390 / 0x1ba3d0 at scale
     /// 0.01 while a feet item is on (the boots replace them).
     feet: [Option<u8>; 2],
+    /// The joint of Ratchet's list 0x18 (his head) and the scale its node 0x17c7c0 took at the widget's enter
+    /// (`FUN_00297ad0` → `FUN_0024a1d0`: Ratchet's head scale 0x15ee14, as on a scene's Ratchet).
+    head: Option<u8>,
+    head_scale: f32,
     /// The drone slots: made (class 0x1df), and the fly-in height 0x1ba410 and its velocity 0x1ba428 (3 for a drone
     /// not yet out in the level, k ≥ 0x141346; springing to 0).
     drones: [bool; DRONE_SLOTS],
@@ -246,6 +250,7 @@ fn setup(
     let chains: Vec<(usize, Vec<u8>)> =
         HERO_LISTS.iter().enumerate().filter_map(|(i, &l)| gadget::joint_list(&ratchet_blob, &ratchet.class.header, l).ok().map(|(a, _)| (i, a))).collect();
     let feet = [0x16, 0x17].map(|l| gadget::joint_list(&ratchet_blob, &ratchet.class.header, l).ok().and_then(|(_, second)| moby_anim::list_target(&second)));
+    let head = gadget::joint_list(&ratchet_blob, &ratchet.class.header, 0x18).ok().and_then(|(_, second)| moby_anim::list_target(&second));
     // Every class the widgets can show: the level's (Ratchet, Clank, packs, head items, boots, the drone 0x1df) and
     // the gadget table's (the hand items).
     let mut classes: Vec<(LevelMobyClass, MobyAnimClass)> = Vec::new();
@@ -333,7 +338,7 @@ fn setup(
     let hud = global_sequences("hud_seqs", HUD_SEQS);
     commands.insert_resource(PreviewRt {
         parts, extra, chains, bank, menu_cam, canvases: ids, last_frame: 0, player: Player::enter(tables.clone()), tables, hud, base: base as i32,
-        model_open: false, made: [-1; 3], props: [None; 3], feet,
+        model_open: false, made: [-1; 3], props: [None; 3], feet, head, head_scale: 1.0,
         drones: [false; DRONE_SLOTS], drone_fly: [0.0; DRONE_SLOTS], drone_vel: [0.0; DRONE_SLOTS],
     });
 }
@@ -488,6 +493,9 @@ fn update(
         // loop advances him), the stream player reset.
         if !rt.model_open {
             rt.model_open = true;
+            // `FastMemSet(0x17c7c0)` then `FUN_0024a1d0(ratchet)`: the head node at Ratchet's head scale (game mode 3: no
+            // cap).
+            rt.head_scale = play.as_ref().map_or(1.0, |p| p.game.hero.idle.rec17_scale);
             rt.player = Player::enter(rt.tables.clone());
             rt.made = [-1; 3];
             rt.props = [None; 3];
@@ -539,10 +547,12 @@ fn update(
             Some((r, [w[3][0], w[3][1], w[3][2]]))
         };
         // `LoadHandGadget`'s feet nodes (`AttachManipulator(ratchet, 0x16 / 0x17)`, scale 0.01) while the feet moby is.
-        let feet_mods: Vec<moby_anim::JointModifier> = if rt.made[2] == -1 { Vec::new() } else {
+        let mut mods: Vec<moby_anim::JointModifier> = if rt.made[2] == -1 { Vec::new() } else {
             rt.feet.iter().flatten().map(|&t| moby_anim::JointModifier { scale: [0.01; 3], ..moby_anim::JointModifier::compose(t) }).collect()
         };
-        placed[ri] = Some(Placed { rows, pos, pose: moby_anim::evaluate_posed(&ranim, &rstate, rsnap.as_ref(), &[], &feet_mods) });
+        // The head node (attached first, at the enter: the front of the list).
+        if let Some(t) = rt.head { mods.insert(0, moby_anim::JointModifier { scale: [rt.head_scale; 3], ..moby_anim::JointModifier::compose(t) }); }
+        placed[ri] = Some(Placed { rows, pos, pose: moby_anim::evaluate_posed(&ranim, &rstate, rsnap.as_ref(), &[], &mods) });
         for k in rt.props.into_iter().flatten() {
             let p = &rt.parts[k];
             placed[k] = Some(Placed { rows, pos, pose: moby_anim::evaluate_with_snapshot(&p.anim, &p.state, p.snap.as_ref()) });

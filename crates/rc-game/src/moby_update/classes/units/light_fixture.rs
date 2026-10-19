@@ -85,7 +85,7 @@ pub fn update(w: &mut World, id: MobyId) {
     let top = head(w, id);
     let near = |q: c::V| c::dist3(top, q) <= 0.8;
     let hp = crate::moby_update::services::fv(h.pos);
-    let by = h.attacker.filter(|&k| w.m(k).o_class == 0x47).map(|k| c::pos(w, k));
+    let by = (h.attacker_class(w) == Some(0x47)).then(|| h.attacker_pos(w)).flatten();
     if !(h.flags & 0x80_0000 != 0 || near(hp) || by.is_some_and(near)) { return; }
     w.play_sound(0, 0, id);
     base(w, id);

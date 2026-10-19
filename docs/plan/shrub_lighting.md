@@ -210,6 +210,14 @@ matters (`A·67`, `A·123`, the `>> 1`), i.e. instances fall in 8 phase groups b
 base's low bits (heap state; **the port takes base ≡ 0 mod 512 [inferred]**), and T's value at level start is
 run-time state too. Retail: 64 classes mode 2 (`mode_bits` 4), 3 classes mode 1.
 
+**`TieProc` runs the same block** (level01 0x2aa53c..0x2aa6b0, between its LOD paths and its VU1 upload): the
+same table and `vf8` / `vf9`, the same `u = phase·67 + T` / `w = phase·123 + T·(2 if mode 2 else 1)` math and
+the same column shear. Only the phase differs: it takes `(A >> 9) & 0x1ff`, the matrix block's 512-byte page
+rather than the address, so eight consecutive instances (0x40 bytes each) share a phase. `flags_24` supplies
+the mode exactly as a shrub's `mode_bits` (`& 9` skips, `(& 6) >> 1` is the mode). The block base is heap
+state too; **the port takes it as 0 [inferred]**. The port: `rc_formats::tie::wind_sway`,
+`tie_lod` writes the shear into the per-frame LOD buffer and `tie.wgsl` applies it.
+
 ## 8. Shrub ad-gif conversion (boot `fun_00203b08`, called per shrub class by `transition_load_wad` 0x1ea830)
 
 The shrub class init (also: relocates the packet / normal / billboard pointers, registers the class in

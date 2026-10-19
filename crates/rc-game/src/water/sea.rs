@@ -1227,6 +1227,13 @@ pub mod ocean_pvar {
     pub const FADE: usize = 0x2c;
 }
 
+/// The ocean 1111's base height (`0x161e1c` on level 11, gp−0x4f8c = 0x161c74 on level 16), its state 0 copy of pvar 5
+/// and on level 16 the setter `0x2de3b8` the race calls (76 racing, 100 after: `kalebo_race`): the next update draws the
+/// sea at it (z = base + 0.25·bob).
+pub fn set_ocean_base(water: &mut WaterWorld, z: f32) {
+    if let Some(r) = PORTS.iter().position(|p| matches!(p.kind, SeaKind::Ocean)).and_then(|i| water.sea.run.get_mut(i)) { r.base_z = z; }
+}
+
 /// The ocean 1111's sea z (`0x161e18` on level 11) as its last update left it: the level's classes (the convoys'
 /// sludge 1524) read it through a pointer; 0 without the ocean (the data's initial word).
 pub fn ocean_z(water: &WaterWorld) -> f32 {

@@ -405,6 +405,9 @@ struct Stream {
     /// A preseeked stream waits for `Continue` before its key-on.
     pending: Option<StreamPart>,
     pitch: u16,
+    /// The voice registers and ungrouped volume chosen at `Play` (restored by `Continue`).
+    vol: [u16; 2],
+    basevol: (i16, i16),
 }
 
 /// Stream voices use a fast linear attack and release (989snd's stream ADSR is not reversed).
@@ -455,7 +458,7 @@ impl Streams {
                 let h = self.next;
                 let pitch = vag::rate_to_pitch(t.rate);
                 let (regs, base) = Self::volume(vm, vol, group);
-                let mut s = Stream { voice: i, generation: 0, group, pending: None, pitch };
+                let mut s = Stream { voice: i, generation: 0, group, pending: None, pitch, vol: regs, basevol: base };
                 if flags & 1 != 0 {
                     s.pending = Some(part);
                 } else {
@@ -470,11 +473,10 @@ impl Streams {
             StreamCommand::Continue { handle } => {
                 if let Some(s) = self.streams.get_mut(&handle) {
                     if let Some(part) = s.pending.take() {
-                        let regs = spu.voices[s.voice].vol;
                         spu.voices[s.voice].key_on(VoiceData::Stream { cur: part, queue: Default::default() }, 0, s.pitch, STREAM_ADSR1, STREAM_ADSR2);
-                        spu.voices[s.voice].vol = regs;
+                        spu.voices[s.voice].vol = s.vol;
                         s.generation = spu.voices[s.voice].generation;
-                        vm.voices[s.voice].generation = s.generation;
+                        vm.voices[s.voice] = VoiceSlot { owner: VoiceUse::Stream { handle: handle as u32 }, priority: 127, group: s.group, basevol: s.basevol, start_tick: 0, generation: s.generation };
                     }
                 }
                 None
@@ -482,14 +484,16 @@ impl Streams {
             StreamCommand::Stop { handle } => {
                 if let Some(s) = self.streams.remove(&handle) {
                     if spu.voices[s.voice].generation == s.generation { spu.voices[s.voice].key_off(); }
-                    vm.voices[s.voice].owner = VoiceUse::Free;
+                    if vm.voices[s.voice].owner == (VoiceUse::Stream { handle: handle as u32 }) { vm.voices[s.voice].owner = VoiceUse::Free; }
                 }
                 None
             }
             StreamCommand::SetVolume { player, handle, vol } => {
                 let alive = self.alive(spu, handle);
-                if let (true, Some(s)) = (alive, self.streams.get(&handle)) {
+                if let (true, Some(s)) = (alive, self.streams.get_mut(&handle)) {
                     let (regs, base) = Self::volume(vm, vol, s.group);
+                    s.vol = regs;
+                    s.basevol = base;
                     spu.voices[s.voice].vol = regs;
                     vm.voices[s.voice].basevol = base;
                 }
@@ -497,7 +501,13 @@ impl Streams {
             }
             StreamCommand::Query { player, handle, cb } => {
                 let alive = self.alive(spu, handle);
-                if !alive { self.streams.remove(&handle); }
+                if !alive {
+                    if let Some(s) = self.streams.remove(&handle) {
+                        if vm.voices[s.voice].owner == (VoiceUse::Stream { handle: handle as u32 }) && vm.voices[s.voice].generation == s.generation {
+                            vm.voices[s.voice].owner = VoiceUse::Free;
+                        }
+                    }
+                }
                 let value = match cb {
                     StreamCallback::Remaining => self.streams.get(&handle).map_or(0, |s| {
                         let src = if s.pending.is_some() { 0 } else { spu.voices[s.voice].stream_remaining() };
@@ -514,6 +524,7 @@ impl Streams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::SPU_VOICES;
 
     fn present() -> [bool; 15] { std::array::from_fn(|k| k < 9) }
 
@@ -569,6 +580,47 @@ mod tests {
         let mut idle = Music::new(present());
         idle.request(2, 6);
         assert_eq!((idle.main.track, idle.pending_track), (2, -1));
+    }
+
+    /// A preseeked stream has no envelope yet, but its voice is reserved: tones must not take it, and
+    /// `Continue` restores the stream's ownership and volume.
+    #[test]
+    fn preseeked_stream_keeps_its_voice() {
+        let mut body = vec![0u8; 32];
+        body[1] = 0;
+        body[16 + 1] = 1;
+        let track = Arc::new(MusicTrack { name: "t".into(), rate: 48000, body: Arc::from(body) });
+        let tracks: [Option<Arc<MusicTrack>>; 15] = std::array::from_fn(|k| (k == 0).then(|| track.clone()));
+        let mut vm = VoiceManager::default();
+        let mut spu = Spu::new(Arc::from(Vec::new()));
+        let mut st = Streams::default();
+        let play = StreamCommand::Play { player: PlayerId::Main, track: 0, vol: 0x400, group: 1, queue: 0, flags: 0x21, cb: StreamCallback::Preseek };
+        let r = st.execute(&play, &tracks, &mut vm, &mut spu).unwrap();
+        assert_eq!(r.value, 1);
+        let voice = st.streams[&r.value].voice;
+        assert!(!spu.voices[voice].active());
+        assert_eq!(vm.voices[voice].owner, VoiceUse::Stream { handle: 1 });
+        let (vol, basevol) = (spu.voices[voice].vol, vm.voices[voice].basevol);
+        // Fill every other voice with a tone; an allocator that treats the inactive preseek as free takes it.
+        let tone: Arc<[u8]> = Arc::from(&[0u8; 16][..]);
+        for i in 0..SPU_VOICES {
+            if i == voice { continue; }
+            spu.voices[i].key_on(VoiceData::Ram(Arc::clone(&tone)), 0, 0x1000, 0x00ff, 0x1fc0);
+            vm.voices[i] = VoiceSlot { owner: VoiceUse::Tone { handle: i as u32 + 100 }, priority: 0, group: 0, basevol: (0, 0), start_tick: 0, generation: spu.voices[i].generation };
+        }
+        let taken = vm.allocate(&mut spu, 0, 0, 0);
+        assert_ne!(taken, Some(voice));
+        assert_eq!(vm.voices[voice].owner, VoiceUse::Stream { handle: 1 });
+        st.execute(&StreamCommand::Continue { handle: r.value }, &tracks, &mut vm, &mut spu);
+        assert!(spu.voices[voice].active());
+        assert_eq!(spu.voices[voice].vol, vol);
+        assert_eq!(vm.voices[voice], VoiceSlot { owner: VoiceUse::Stream { handle: 1 }, priority: 127, group: 1, basevol, start_tick: 0, generation: spu.voices[voice].generation });
+        // Once the stream's natural end is observed, the voice can be used again.
+        for _ in 0..200 { spu.mix(); }
+        assert!(!spu.voices[voice].active());
+        let r = st.execute(&StreamCommand::Query { player: PlayerId::Main, handle: r.value, cb: StreamCallback::Alive }, &tracks, &mut vm, &mut spu).unwrap();
+        assert_eq!(r.value, 0);
+        assert_eq!(vm.voices[voice].owner, VoiceUse::Free);
     }
 
     /// Queueing the body behind a stream that already ended fails (0) instead of starting a second stream the

@@ -345,3 +345,22 @@ pub fn apply_code(e: CodeEffect, gs: &mut GameState) -> CodeOut {
         CodeEffect::None(_) => CodeOut::default(),
     }
 }
+
+#[cfg(test)]
+mod level_tables {
+    /// Every level's overlay reads the same cheat tables as level 01's (relocated through `menus::DATA_LABELS`):
+    /// unmapped, level 00 read a lone left side-flip as the mirror's pattern and a double jump as a cheat's.
+    #[test]
+    fn every_level_reads_level_01s_cheat_tables() {
+        let root = rc_formats::test_data::root();
+        let Ok(reference) = std::fs::read(root.join("levels/01/overlay.bin")) else { eprintln!("skipped: no level 01 overlay"); return };
+        let want = super::CheatTables::read(&crate::menus::Overlay::parse(&reference).unwrap());
+        assert_eq!(want.patterns[super::slot::MIRROR], vec![1, 1, 1, 1, 12, 13, 14, 6, 2, 2, 2, 2, 5, 7]);
+        assert_eq!(want.list.len(), 7);
+        for lv in 0..=18u32 {
+            let Ok(b) = std::fs::read(root.join(format!("levels/{lv:02}/overlay.bin"))) else { continue };
+            let t = super::CheatTables::read(&crate::menus::Overlay::relocated(&b, &reference).unwrap());
+            assert_eq!((&t.patterns, &t.list, &t.codes), (&want.patterns, &want.list, &want.codes), "level {lv}");
+        }
+    }
+}

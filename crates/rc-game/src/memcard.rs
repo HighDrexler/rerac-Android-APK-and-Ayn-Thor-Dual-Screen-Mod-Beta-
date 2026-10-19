@@ -420,6 +420,10 @@ pub struct MemCard {
 }
 
 impl MemCard {
+    /// The card is in use (`entry` 0x259c40: 0x13d364 > 2 or a requested state 0x13d36c ≥ 0): the main loop draws the
+    /// card icon ([`crate::menus::freeze::busy_icon`]) — the autosave's and every save's or load's.
+    pub fn in_use(&self) -> bool { 2 < self.state || 0 <= self.req_state }
+
     /// A card in `fs`, directory `dir` (`memcard_Init` + `memcard_GetName`); the state machine at rest (state 0).
     pub fn new(fs: CardFs, dir: String, lump: Option<SaveGameLump>) -> MemCard {
         MemCard {

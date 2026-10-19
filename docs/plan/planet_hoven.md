@@ -30,6 +30,13 @@ checkpoints. The census of 2026-10-03 left these classes without a port; this pa
 
 ## Notes
 
+- **Snow footprints** (2026-10-19): level 12's footstep wrapper `0x228e58` spawns the type-70 flat decal at the
+  foot joints (the walk / run steps, the landing, and the idle → walk transition's two feet), 0.15 ahead along the
+  yaw and 0.04 above the ground, with the left / right frames 52 / 53. Ported as `hero::fx::footprint`
+  (`PartSpawn::Footprint`); the class-0 / level-ground gates are the wrapper's. The idle → walk pair
+  (`SpawnFootstep(..., 0)`, level 12's transitions case 0) is `hero::fx::footprints`, called before the state's
+  entry animation.
+
 - [L] Ratchet's anim speed write in the burrowers' bite goes to his table moby, which the hero code drives.
 - [L] The burrowers' awake counter points at address 0 in the game (a pointer never set): a shared word here.
 - [L] The gunners' `MobyAnimBlendEx(…, 5)` blends are plain blends; the arc posts' two frames are the post's yaw.

@@ -431,7 +431,7 @@ fn walk_gs_packet(pk: &mut TiePacket) -> Result<()> {
     Ok(())
 }
 
-fn read_packet(blob: Buf, lod_table: usize, ph: TiePacketHeader) -> Result<TiePacket> {
+fn read_packet(game: crate::Game, blob: Buf, lod_table: usize, ph: TiePacketHeader) -> Result<TiePacket> {
     let base = lod_table + ph.data as usize;
     let mut pk = TiePacket {
         header: ph,
@@ -455,6 +455,13 @@ fn read_packet(blob: Buf, lod_table: usize, ph: TiePacketHeader) -> Result<TiePa
     pk.colors = blob.sub(color_start, color_bytes, "tie colour indices")?.bytes().to_vec();
     pk.colors_b = blob.sub(color_start + color_qw * 0x10, color_bytes, "tie colour indices B")?.bytes().to_vec();
     pk.slot_table = blob.sub(base + ph.slot_table_ofs as usize * 0x10, ph.slot_table_size as usize * 0x10, "tie slot table")?.bytes().to_vec();
+    if game == crate::Game::Rac2 {
+        // Going Commando's packets carry no colour indices (`color_count` 0): its tie colours are per instance in the
+        // gameplay file (`rac2::gameplay`, section `tie_colors`). Index 0 stands in until they are mapped.
+        let need = d.div_ceil(4) * 4 + 4 * f;
+        pk.colors.resize(need.max(pk.colors.len()), 0);
+        pk.colors_b.resize(need.max(pk.colors_b.len()), 0);
+    }
 
     resolve_vertices(&mut pk)?;
     walk_gs_packet(&mut pk)?;
@@ -462,15 +469,58 @@ fn read_packet(blob: Buf, lod_table: usize, ph: TiePacketHeader) -> Result<TiePa
 }
 
 /// Parses one tie class blob (as split out of the core data by the block boundary rule).
-pub fn parse_tie_class(blob: &[u8]) -> Result<TieClass> {
+pub fn parse_tie_class(blob: &[u8]) -> Result<TieClass> { parse_tie_class_for(crate::Game::Rac1, blob) }
+
+/// Going Commando's tie class header (0x80 bytes) carries R&C1's fields in another order; this reads it into
+/// [`TieClassHeader`]. The packets, ad-gifs and normals behind it are R&C1's (checked on Aranos, level 0: every
+/// packet header, strip and GS packet walks as in R&C1). Offsets (`SCUS_972.68` levels; names are ours):
+///
+/// | RC2 | Field | RC1 |
+/// | --- | --- | --- |
+/// | 0x00 | packet tables per LOD | 0x00 |
+/// | 0x0c | packets per LOD (3 × u8), ad-gif count (u8) | 0x20 |
+/// | 0x10 | near, mid, far LOD distances | 0x10 |
+/// | 0x1c | ad-gif table (`texture_count` × 0x50: TEX0, TEX1, MIPTBP1, CLAMP, ALPHA) | 0x2c |
+/// | 0x20 | 0 on the disc (taken as the render-mode bits) | 0x24 |
+/// | 0x34 | the 64 light-slot normals | 0x0c |
+/// | 0x40 | scale, class number, distance | 0x40 |
+/// | 0x50 | bounding sphere | 0x30 |
+///
+/// Not mapped (kept in `header_ext`'s place, raw, in the blob): 0x24..0x30, 0x38..0x3c, 0x4c (0x80787878 on most
+/// classes), 0x60..0x80, and the region between the normals and the ad-gifs.
+fn rac2_tie_header(b: Buf) -> Result<TieClassHeader> {
+    let f = |o: usize| b.f32(o);
+    Ok(TieClassHeader {
+        packets: [b.i32(0)?, b.i32(4)?, b.i32(8)?],
+        normals: b.u32(0x34)?,
+        near_dist: f(0x10)?,
+        mid_dist: f(0x14)?,
+        far_dist: f(0x18)?,
+        unknown_1c: f(0x48)?,
+        packet_count: [b.u8(0x0c)?, b.u8(0x0d)?, b.u8(0x0e)?],
+        texture_count: b.u8(0x0f)?,
+        flags_24: b.u16(0x20)?,
+        ad_gif_ofs: b.u32(0x1c)?,
+        bsphere: [f(0x50)?, f(0x54)?, f(0x58)?, f(0x5c)?],
+        scale: f(0x40)?,
+        o_class: b.i32(0x44)?,
+        unknown_48: f(0x48)?,
+        ..Default::default()
+    })
+}
+
+/// [`parse_tie_class`] for a class of `game`.
+pub fn parse_tie_class_for(game: crate::Game, blob: &[u8]) -> Result<TieClass> {
     let b = Buf(blob);
-    let h: TieClassHeader = b.pod(0, "tie class header")?;
+    let h: TieClassHeader = match game { crate::Game::Rac1 => b.pod(0, "tie class header")?, crate::Game::Rac2 => rac2_tie_header(b)? };
     let first = (0..3).filter(|&l| h.packet_count[l] != 0 && h.packets[l] > 0).map(|l| h.packets[l] as usize).min().unwrap_or(blob.len());
     if first < 0x80 { return invalid("tie packet table overlaps the class header"); }
     let mut tc = TieClass {
         header: h,
         header_ext: b.sub(0x80, first - 0x80, "tie header extension")?.bytes().to_vec(),
-        normals: b.pod_slice(h.normals as usize, 64, "tie normals")?,
+        // R&C2's +0x34 region is not R&C1's 64-normal table (its size varies by class); not read until R&C2's tie
+        // lighting is mapped.
+        normals: if game == crate::Game::Rac1 { b.pod_slice(h.normals as usize, 64, "tie normals")? } else { Vec::new() },
         ..Default::default()
     };
     for lod in 0..3 {
@@ -478,7 +528,7 @@ pub fn parse_tie_class(blob: &[u8]) -> Result<TieClass> {
         if h.packets[lod] <= 0 { return invalid("tie LOD with packets but no packet table"); }
         let table = h.packets[lod] as usize;
         let phs: Vec<TiePacketHeader> = b.pod_slice(table, h.packet_count[lod] as usize, "tie packet headers")?;
-        for ph in phs { tc.lods[lod].push(read_packet(b, table, ph)?); }
+        for ph in phs { tc.lods[lod].push(read_packet(game, b, table, ph)?); }
     }
     if h.texture_count != 0 { tc.ad_gifs = b.pod_slice(h.ad_gif_ofs as usize, h.texture_count as usize, "tie ad-gifs")?; }
     Ok(tc)
@@ -522,7 +572,7 @@ pub fn parse_level_ties(core: &LevelCore, core_data: &[u8]) -> Result<Vec<LevelT
             return invalid(format!("tie class {}: no core block", e.o_class));
         };
         let blob = Buf(core_data).sub(blk.offset, blk.size, "tie class blob")?;
-        let class = parse_tie_class(blob.bytes()).map_err(|err| crate::FormatError::Invalid(format!("tie class {}: {err}", e.o_class)))?;
+        let class = parse_tie_class_for(core.game, blob.bytes()).map_err(|err| crate::FormatError::Invalid(format!("tie class {}: {err}", e.o_class)))?;
         out.push(LevelTieClass { o_class: e.o_class, entry: *e, class });
     }
     Ok(out)
@@ -580,6 +630,16 @@ impl TieInstance {
 /// PEXT5 expansion of one RGBA5551 halfword.
 pub fn rgba5551(c: u16) -> [u8; 4] {
     [((c & 0x1f) << 3) as u8, (((c >> 5) & 0x1f) << 3) as u8, (((c >> 10) & 0x1f) << 3) as u8, if c & 0x8000 != 0 { 0x80 } else { 0 }]
+}
+
+/// The wind shear of one tie instance this frame, `(sx, sy)` (`TieProc` boot 0x235be8, level01 0x2a9a90,
+/// the block at `0x2aa53c..0x2aa6b0`). It is the same shear as [`crate::shrub::wind_sway`] (the same 256-byte
+/// table and `vf8` / `vf9` constants, shearing the instance columns `x += sx·z`, `y += sy·z`), except that the
+/// phase input is `(block >> 9) & 0x1ff`: the EE address's 512-byte page rather than the address itself.
+/// `mode` = `(flags_24 & 6) >> 1` (0 = none), `block` = EE address of the instance's 0x40-byte matrix block,
+/// `tick` = the frame counter, `rel` = origin − camera position (world units).
+pub fn wind_sway(mode: u16, block: u32, tick: u32, rel: [f32; 3]) -> Option<[f32; 2]> {
+    crate::shrub::wind_sway_phase(mode, (block >> 9) & 0x1ff, tick, rel)
 }
 
 /// Parses a tie instance section (`s32 count`, 12 bytes pad, `count` x 0xe0 records).
@@ -684,6 +744,24 @@ mod tests {
             TieTriangle { a: 5, b: 5, c: 0, ad_gif: 0 },
             TieTriangle { a: 2, b: 0, c: 5, ad_gif: 0 },
         ]);
+    }
+
+    #[test]
+    fn wind_sway_uses_the_address_page_as_its_phase() {
+        // `(block >> 9) & 0x1ff`: the page, not the address (TieProc's extra shift).
+        assert_eq!(wind_sway(0, 0x100000, 5, [1.0, 1.0, 0.0]), None);
+        assert_eq!(wind_sway(2, 0x100000, 5, [70.0, 40.0, 0.0]), None); // 4900 + 1600 > 6000
+        for tick in [0u32, 1, 7, 255, 256, 4097] {
+            for block in [0u32, 0x40, 0x1c0, 0x200, 0x240, 0x1040] {
+                assert_eq!(
+                    wind_sway(2, block, tick, [0.0, 0.0, 10.0]),
+                    crate::shrub::wind_sway_phase(2, (block >> 9) & 0x1ff, tick, [0.0, 0.0, 10.0])
+                );
+            }
+        }
+        // Eight consecutive 0x40-byte blocks share a page (and so a phase).
+        assert_eq!(wind_sway(2, 0x1c000, 3, [0.0; 3]), wind_sway(2, 0x1c1c0, 3, [0.0; 3]));
+        assert_ne!(wind_sway(2, 0x1c000, 3, [0.0; 3]), wind_sway(2, 0x1c200, 3, [0.0; 3]));
     }
 
     #[test]

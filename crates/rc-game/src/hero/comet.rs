@@ -37,11 +37,12 @@
 //! boundary. The after-images of 0x140b00 (`0x277400` / `0x277428` at the throw,
 //! `0x277508` each flight tick, `0x277740` at the catch) are `crate::afterimage`'s. The bounce going out makes the hit burst `0x2bdd20` (`super::fx::wrench_burst`) at the
 //! line's hit point. The look stance's reticle (`0x20fb60`, R1 / R2 held) is `super::melee::wrench_update`'s. A moby hit makes five pairs of sparkles between the wrench and it (`0x2bdb18`, `super::fx::wrench_sparkles`).
-//! **Not ported**: the hit-record checks of the hit sound (`FUN_002711f8` records of the
-//! same throw, target type 0x14), and the world line's moby part (the port's line is the world mesh: a non-crate
-//! moby does not bounce the wrench; it is still hit by the sphere).
+//! The lines (the ground height and the bounce) test the mobys' collision meshes after the world mesh, as `CollLine` does:
+//! a closed door bounces the wrench (`ItemEnv::mobys`, built while the wrench is thrown).
+//! **Not ported**: the hit-record checks of the hit sound (`FUN_002711f8` records of the same throw, target type 0x14).
 
 use super::anim::{AnimCtl, AnimView};
+use crate::collision_query::{coll_line_m, QueryFlags};
 use super::items::{HitSink, ItemEnv};
 use super::melee::COMBO;
 use super::packs::SoundCmd;
@@ -142,8 +143,8 @@ pub(super) fn physics(h: &mut Hero, env: &Env, anim: &mut dyn AnimCtl) -> bool {
     let from_look = h.prev_state == 1 && ticks(20) < h.prev_timer;
     if !from_look {
         if h.melee.aimed == 0 && h.melee.target.is_none() {
-            // Aim while blending or before frame 6 (FUN_002351d0(14, 30°, 45°): no targets in the port).
-            if (blending || !(6.0 < frame)) && h.gravity_mode == 0 { h.melee_aim_pub(env); }
+            // Aim while blending or before frame 6 (FUN_002351d0(14, 30°, 45°)).
+            if (blending || !(6.0 < frame)) && h.gravity_mode == 0 { h.aim_assist(env, 14.0, super::melee::AIM_30, super::melee::AIM_45); }
         } else {
             let mut force = false;
             if h.f658 == 0 {
@@ -302,7 +303,7 @@ pub fn thrown_update(hero: &mut Hero, table: &mut MobyTable, anim: &dyn AnimCtl,
             // GroundHeight(0.5, pos): a line from 0.5 above down to z 0.01, flags 2.
             let a = [pos[0], pos[1], pos[2] + 0.5];
             let b = [pos[0], pos[1], 0.01];
-            let g = line_world(coll, from_f32x3(a), from_f32x3(b), 2).map_or(0.0, |o| o.point[2]);
+            let g = coll_line_m(coll, env.mobys, a, b, QueryFlags(2), Some(env.hero_moby)).map_or(0.0, |o| o.point[2]);
             if pos[2] - g < 0.8 {
                 let t = g + 0.55;
                 let step = if pos[2] < t { DT * 4.0 } else { DT };
@@ -354,8 +355,9 @@ pub fn thrown_update(hero: &mut Hero, table: &mut MobyTable, anim: &dyn AnimCtl,
         if let Some(it) = hero.items.slot.item.as_mut() { it.mstate = IN_HAND; }
         hero.fx.trails.wrench.kill();
     }
-    // The bounce: the world line old → new (flags 2) on a non-water face, or the wall-close flag once.
-    let line = env.coll.and_then(|c| line_world(c, from_f32x3(old), from_f32x3(pos), 2));
+    // The bounce: the line old → new (flags 2: the world mesh, then the mobys' meshes — the doors) on a non-water face,
+    // or the wall-close flag once.
+    let line = env.coll.and_then(|c| coll_line_m(c, env.mobys, old, pos, QueryFlags(2), Some(env.hero_moby)));
     let hit_world = line.as_ref().is_some_and(|o| o.surface_id() != 0);
     let it = hero.items.slot.item.as_mut().unwrap();
     let forced = std::mem::take(&mut it.flight.wall_close);
@@ -592,7 +594,7 @@ mod tests {
         let pad = crate::pad::PadState::default();
         let mut table = crate::moby_runtime::MobyTable::new(vec![crate::moby_runtime::Moby::zeroed()], 4);
         let mut anim = KeyAnim { looped: Some((6, 0x15)), ..Default::default() };
-        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, camera: None, camera_up: None, targets: &[] };
+        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
         let mut far = 0.0f32;
         let mut back_at = None;
         let mut home_at = None;
@@ -635,7 +637,7 @@ mod tests {
         let pad = crate::pad::PadState::default();
         let mut table = crate::moby_runtime::MobyTable::new(vec![crate::moby_runtime::Moby::zeroed()], 4);
         let anim = KeyAnim { looped: Some((6, 0x15)), ..Default::default() };
-        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, camera: Some(([400.0, 410.0, 103.0], [1.0, 0.0, 0.0])), camera_up: None, targets: &[] };
+        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, mobys: None, camera: Some(([400.0, 410.0, 103.0], [1.0, 0.0, 0.0])), camera_up: None, targets: &[] };
         thrown_update(&mut h, &mut table, &anim, &env, &mut NoHits, &mut Rng::new());
         let streaks = h.fx.parts.iter().filter(|p| matches!(p, PartSpawn::Streak19 { .. })).count();
         let sparks = h.fx.parts.iter().filter(|p| matches!(p, PartSpawn::Spark21 { .. })).count();
@@ -739,7 +741,7 @@ mod tests {
         target.position = [413.0, 410.0, 101.0, 1.0];
         let mut table = crate::moby_runtime::MobyTable::new(vec![crate::moby_runtime::Moby::zeroed(), target], 4);
         let anim = KeyAnim { looped: Some((6, 0x15)), ..Default::default() };
-        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, camera: None, camera_up: None, targets: &[] };
+        let env = ItemEnv { data: &d, pad: &pad, frame: 0, hero_moby: 0, coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
         thrown_update(&mut h, &mut table, &anim, &env, &mut OneHit, &mut Rng::new());
         let sparkles: Vec<_> = h.fx.parts.iter().filter_map(|p| match p { PartSpawn::Sparkle { b8, pos, .. } => Some((*b8, *pos)), _ => None }).collect();
         assert_eq!(sparkles.len(), 10, "five pairs");
@@ -760,7 +762,7 @@ mod tests {
             pad.update(Some(&PadInput::neutral().press(held).bytes()), false);
             let mut table = crate::moby_runtime::MobyTable::new(vec![crate::moby_runtime::Moby::zeroed()], 4);
             let anim = KeyAnim::default();
-            let env = ItemEnv { data: &d, pad: &pad, frame: 7, hero_moby: 0, coll: None, camera: None, camera_up: None, targets: &[] };
+            let env = ItemEnv { data: &d, pad: &pad, frame: 7, hero_moby: 0, coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
             super::super::melee::wrench_update(&mut h, &mut table, &anim, &env, &mut NoHits, &mut Rng::new());
             h.weapons.markers.of_tick(7).to_vec()
         };

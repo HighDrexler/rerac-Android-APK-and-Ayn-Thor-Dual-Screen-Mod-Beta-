@@ -177,7 +177,10 @@ fn w3_units_resolve_on_their_levels() {
 /// Level `level` after its load pass with Ratchet at `at`.
 fn level_at(level: u32, at: [f32; 3]) -> Option<(Lv, Hero)> {
     let mut lv = load(level)?;
-    let hero = hero_at(at);
+    let mut hero = hero_at(at);
+    // Orxon with the O2 Mask owned: without it Clank is the hero at the load and the Ratchet-only brawlers (+0x1dc,
+    // the packs) delete themselves at their start (the Clank section 22 deletes itself once the mask is owned).
+    if level == 10 { hero.owned.set(6, true); }
     lv.load_pass(&hero);
     Some((lv, hero))
 }
@@ -210,10 +213,14 @@ fn parts(lv: &Lv, ty: u8) -> u64 { lv.svc.fx.part_spawns.get(&ty).copied().unwra
 type ScoutRun = (Lv, Hero, Vec<Vec<u8>>, Vec<(u8, [u8; 3])>);
 
 fn scout_run(ticks: usize) -> Option<ScoutRun> {
-    let (mut lv, _) = level_at(10, [0.0, 0.0, -100.0])?;
+    // With the O2 Mask owned: without it Clank is the hero on Orxon and the Ratchet-only brawlers the scout calls
+    // (#651..#653) delete themselves at their start.
+    let o2 = |mut h: Hero| { h.owned.set(6, true); h };
+    let mut lv = load(10)?;
+    lv.load_pass(&o2(hero_at([0.0, 0.0, -100.0])));
     let near = lv.table.mobys[622].position;
     let at = inside(&mut lv, 111, near)?;
-    let hero = hero_at([at[0], at[1], 35.0]);
+    let hero = o2(hero_at([at[0], at[1], 35.0]));
     let mut seen = vec![Vec::new()];
     let mut wakes = Vec::new();
     for _ in 0..ticks {
@@ -237,7 +244,7 @@ fn scout_wakes_flies_its_path_and_wakes_the_brawlers() {
     let s = &seen[0];
     for x in [of::scout::WAKE, of::scout::RISE, of::scout::PATH, of::scout::CALL, of::scout::HOVER, of::scout::PICK] { assert!(s.contains(&x), "{x} in {s:?}"); }
     assert!(!wakes.is_empty(), "a call");
-    assert!(wakes.iter().any(|(_, st)| st.iter().any(|&x| x != 1)), "a brawler of the called groups woke");
+    assert!(wakes.iter().any(|(_, st)| st.iter().any(|&x| (2..=9).contains(&x))), "a brawler of the called groups woke (not asleep, not deleted)");
     assert!(hits_from(&lv, lv.hero_idx, 1196).is_empty(), "no attack");
     let m = &lv.table.mobys[622];
     let home = p::v4f(&m.pvars, of::pv::HOME);

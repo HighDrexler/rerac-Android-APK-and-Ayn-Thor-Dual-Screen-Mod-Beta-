@@ -290,10 +290,7 @@ fn hits(w: &mut World, id: MobyId) {
             if best.is_none_or(|b| f32::from_bits(b.damage.0) <= f32::from_bits(n.damage.0)) { best = Some(n); }
         }
     }
-    let best = best.filter(|b| b.attacker != Some(id)).filter(|b| b.attacker.is_none_or(|a| {
-        let k = w.m(a).o_class;
-        k != 0x47 && k != 0
-    }));
+    let best = best.filter(|b| b.attacker != Some(id)).filter(|b| b.attacker_class(w).is_none_or(|k| k != 0x47 && k != 0));
     let res = damage::resolve(w, id, best, pv::D, 0, 4);
     if res.out5 != 1 && w.m(id).state != 3 {
         let hp = c::pf(w, id, pv::D) - res.damage;

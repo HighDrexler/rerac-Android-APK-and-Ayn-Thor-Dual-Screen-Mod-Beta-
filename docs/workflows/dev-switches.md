@@ -72,6 +72,7 @@ module that reads it: `grep -rn '"RC_' crates/` lists them all.
 | `RC_SEA` | `0`: do not draw the seas and liquid surfaces of the draw callbacks (crate::sea_render) |
 | `RC_NO_TIES` | `1`: do not draw ties |
 | `RC_NO_SHRUBS` | `1`: do not draw shrubs |
+| `RC_SWAY` | `0`: no wind sway on shrubs or ties (their per-frame shear stays zero) |
 | `RC_SKY_ROT` | Sky rotation speed in ticks per 60 Hz tick (`0` freezes; default 1) |
 | `RC_ANIM` | `0`: disable moby animation (bind pose) |
 | `RC_MOBY_CPU_LIGHT` | `1`: use the bit-exact CPU moby lighting (bind pose) instead of the GPU path |

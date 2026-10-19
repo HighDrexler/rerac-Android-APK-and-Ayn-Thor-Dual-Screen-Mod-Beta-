@@ -45,7 +45,7 @@ RAC1 uses a 0x70-byte header; GC/UYA/DL use a different, larger (0x80-byte) head
 | 0x21 | 1 | u8 | `packet_count[1]` | Number of packets in LOD 1 |
 | 0x22 | 1 | u8 | `packet_count[2]` | Number of packets in LOD 2 |
 | 0x23 | 1 | u8 | `texture_count` | Number of AD-GIF (material) records at `ad_gif_ofs` |
-| 0x24 | 2 | u16 | `flags_24` | Render mode bits: `TieProc` skips the class when `& 9`, and `(& 6) >> 1` selects its path (verified from the EE code; values 0/2/4 on disc) |
+| 0x24 | 2 | u16 | `flags_24` | Render mode bits: `TieProc` skips the class when `& 9`, and `(& 6) >> 1` selects wind sway (the same shear block as `ShrubProc`, phased by `(matrix block address >> 9) & 0x1ff`; verified from the EE code; values 0/2/4 on disc) |
 | 0x26 | 2 | u16 | — | 0 on disc; run-time instance count read by `TieProc` |
 | 0x28 | 4 | u32 | `unknown_28` | 0 on disc; run-time instance list pointer |
 | 0x2c | 4 | u32 | `ad_gif_ofs` | Offset to the AD-GIF table (`texture_count` × 0x50 bytes, §3) |

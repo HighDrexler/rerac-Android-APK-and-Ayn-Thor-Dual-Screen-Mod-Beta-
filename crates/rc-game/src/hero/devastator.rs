@@ -206,7 +206,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
         }
         let dir = match (look, env.camera) {
             (true, Some((_, f))) => scale3(f, DT * 10.0),
-            _ => scale3(to_f32x3(hero.moby_rows[0]), DT * 10.0),
+            _ => scale3(to_f32x3(hero.aim_rows[0]), DT * 10.0),
         };
         if !hero.weapons.use_ammo(id, 1) {
             hero.fx.item_sounds.push(EMPTY_SOUND);
@@ -343,7 +343,7 @@ fn muzzle_burst(hero: &mut Hero, rng: &mut Rng) {
     let Some((r, p)) = item_frame(hero) else { return };
     let pos = add3(p, in_frame(&r, [f32::from_bits(0x3e99_999a), f32::from_bits(0xbf99_999a), 0.0]));
     let pos4 = [pos[0], pos[1], pos[2], 0.0];
-    let rows = hero.moby_rows.map(to_f32x3);
+    let rows = hero.aim_rows.map(to_f32x3);
     let disp = to_f32x3(hero.disp);
     for i in 0..24 {
         let a = rng.randf_sym(0.0, f32::from_bits(0x3e06_0a92));
@@ -383,7 +383,7 @@ fn light(hero: &mut Hero, env: &ItemEnv, hits: &mut dyn HitSink) {
             let k = t as f32;
             (k / t10 as f32, k * 0.8 / t10 as f32, k * 0.5 / t10 as f32)
         };
-        let f = to_f32x3(hero.moby_rows[0]);
+        let f = to_f32x3(hero.aim_rows[0]);
         let yaw = atan(f[0], f[1]);
         let m = guns::item_point(hero, env, 0);
         let pos = [m[0] + yaw.cos(), m[1] + yaw.sin(), m[2] + 0.3];

@@ -239,7 +239,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
             t.start = muzzle;
             t.end = match raised {
                 Some(r) => add3(muzzle, scale3(r[1], -t.length)),
-                None => add3(muzzle, with_len(to_f32x3(hero.moby_rows[0]), t.length)),
+                None => add3(muzzle, with_len(to_f32x3(hero.aim_rows[0]), t.length)),
             };
         }
         reset(&mut hero.weapons.tesla);
@@ -312,7 +312,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
     // The light.
     let t = &mut hero.weapons.tesla;
     if t.light != -1 {
-        let r = hero.moby_rows.map(to_f32x3);
+        let r = hero.aim_rows.map(to_f32x3);
         let p = to_f32x3(hero.pos);
         let pos = add3(p, add3(scale3(r[0], 2.0), scale3(r[2], 2.0)));
         let k = t.level as f32 / ticks(10) as f32;

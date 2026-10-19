@@ -372,7 +372,7 @@ pub fn update_627(w: &mut World, id: MobyId) {
     if w.m(id).pvars.len() < bp::SIZE { w.mm(id).pvars.resize(bp::SIZE, 0); }
     // 0x2cc828: a hit from another class bursts it.
     if let Some(h) = w.get_hit(id, 0x13_0000, false) {
-        if h.attacker.is_some_and(|a| w.m(a).o_class != w.m(id).o_class) { set_state(w, id, 4); }
+        if h.attacker_class(w).is_some_and(|c| c != w.m(id).o_class) { set_state(w, id, 4); }
     }
     w.mm(id).hit_slot = 0xff;
     c::set_pi32(w, id, bp::ZERO, 0);

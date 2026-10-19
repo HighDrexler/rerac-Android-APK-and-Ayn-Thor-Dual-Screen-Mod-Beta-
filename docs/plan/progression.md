@@ -179,9 +179,10 @@ Status: **P** ported (the module), **—** not ported (gap). Code: `rc_game::mob
 jump (1324), 2 the path ships' third kill on Aridia (1212), 3 Kerwan's cuboid +0x74 (1342), 4 Kerwan's air traffic 795,
 8 the Morph-o-Ray on Rilgar's class 625, 0xb Batalia's director cuboid (1349), 0xc the fighters 438 from the turret,
 0xe Gaspar's tethered-platform word (1000 + 1182–1189), 0xf the path ships from the turret on Gaspar, 0x10 / 0x11
-Orxon's scouts / brawlers (1196 / 1202), 0x14 Hoven's group (422), 0x16 Gemlik's breakables (1805). Not wired (their
-classes are unported): Eudora's 466 family (6, 0x13d40e), Batalia's 253 (0x13d415), Kalebo's race 1455 (0x13d422), the
-cheat entry (media lane).
+Orxon's scouts / brawlers (1196 / 1202), 0x14 Hoven's group (422), 0x16 Gemlik's breakables (1805), 0x1a "Magician"
+Kalebo's race host 1455 (the Hoverboard's race score past 4499; it read an unwritten word until 2026-10-19). Not wired
+(their classes are unported): Eudora's 466 family (6, 0x13d40e), Batalia's 253 (0x13d415), the cheat entry (media
+lane).
 
 ### The planet chain (who unlocks what)
 
@@ -351,7 +352,10 @@ Goodies is in the root page (and wired below Weapons / above Options) once the g
 (page: 29 replays, actions 7 / 8), In-Level Movies (this level's scenes, action 6), Sketchbook (≥ 15 skill points; 30
 pictures, ✕ / ○ page), Epilogue (all 30 skill points; 12 pictures per language, → / ✕ next, ← / ○ previous), Making Of
 (all 10 gold weapons: `PlayMovieC(3)`), Commercials (all 10 gold weapons; page of three `PlayMovieC(0..2)`). A locked
-entry is action 2 ("????", the denied sound) and its description says what unlocks it (0x4fd9, 0x4fda, 0x4fdb).
+entry is action 2 ("????", the denied sound) and its description says what unlocks it (0x4fd9, 0x4fda, 0x4fdb). The
+description table is the level's own (0x1b6df8 on level 01, `pause::media::label::GOODIES_TEXTS`), so the rewrite has
+to find it through `menus::Overlay::at` (a `DATA_LABELS` entry); reading the level-01 address
+directly left items 5..8 on the disc's `0xffffffff` placeholders ("Paradox!") on every other level.
 
 ### Cheats (`rc_game::cheats`)
 

@@ -214,7 +214,7 @@ fn glint(w: &mut World, at: [f32; 4]) {
 fn hits(w: &mut World, id: MobyId) {
     if w.m(id).state == 0 { return; }
     let hit = w.get_hit(id, 0x33_0000, false);
-    let kept = hit.filter(|h| h.attacker.is_none_or(|a| a >= w.table.mobys.len() || HURT_BY.contains(&w.m(a).o_class)));
+    let kept = hit.filter(|h| h.attacker_class(w).is_none_or(|c| HURT_BY.contains(&c)));
     let r = c::damage::resolve(w, id, kept, pvo::RECORD, 0, 4);
     if r.out5 != 1 && w.m(id).state != 4 {
         let hp = c::pf(w, id, pvo::RECORD) - r.damage;

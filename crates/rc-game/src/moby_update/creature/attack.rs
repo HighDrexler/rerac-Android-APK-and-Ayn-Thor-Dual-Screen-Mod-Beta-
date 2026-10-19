@@ -35,6 +35,7 @@ pub fn hit_moby(w: &mut World, target: MobyId, attacker: MobyId, damage: f32, fl
         w30: (super::len3(dir) > 0.0001) as u32,
         target,
         prim: 0,
+        wrench: false,
     };
     w.mm(target).hit_slot = next;
     w.svc.hits.next = (next + 1) & 0x3f;

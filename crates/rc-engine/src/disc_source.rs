@@ -10,7 +10,8 @@
 //! 2. `RC_DATA_DIR`, equivalent;
 //! 3. the development default: `RC_EXTRACTED`, else `<workspace>/extracted`.
 //!
-//! The folder must exist and hold `toc.bin`. `<data>/extract-info.json` (written last by the extractor) must be
+//! The folder must exist and hold `toc.bin` (Ratchet & Clank) or `RC2.HDR` (Going Commando: [`game`], which the
+//! engine starts instead, crate::rac2). `<data>/extract-info.json` (written last by the extractor) must be
 //! present for 1 and 2, and its `data_format` must equal [`DATA_FORMAT`]; the development tree may lack it (one
 //! warning). A failure prints one `error:` line naming the folder and the fix (re-extract via the launcher) and
 //! exits with [`EXIT_NO_DATA`] or [`EXIT_DATA_FORMAT`], before any window opens.
@@ -110,7 +111,7 @@ fn check(root: &Path, origin: Origin) -> std::result::Result<String, DataError> 
     if !root.is_dir() {
         return Err(no_data(format!("the game data folder {} ({}) does not exist.", root.display(), origin.describe())));
     }
-    if !root.join("toc.bin").is_file() {
+    if !root.join("toc.bin").is_file() && !root.join(RAC2_TOC).is_file() {
         return Err(no_data(format!("{} ({}) is not a ReRAC game data folder (no toc.bin).", root.display(), origin.describe())));
     }
     let info_path = root.join("extract-info.json");
@@ -141,6 +142,23 @@ fn check(root: &Path, origin: Origin) -> std::result::Result<String, DataError> 
             ),
         }),
     }
+}
+
+/// Going Commando's table of contents: a data folder holding it is that game's (the extractor copies its disc files
+/// as they are).
+const RAC2_TOC: &str = "RC2.HDR";
+
+/// Which game a data folder holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Game { Rac1, Rac2 }
+
+/// The game of the data folder [`startup`] checked.
+pub fn game(root: &Path) -> Game { if root.join(RAC2_TOC).is_file() && !root.join("toc.bin").is_file() { Game::Rac2 } else { Game::Rac1 } }
+
+/// The game of the process's data folder ([`data_root`]), once.
+pub fn current() -> Game {
+    static GAME: OnceLock<Game> = OnceLock::new();
+    *GAME.get_or_init(|| game(&data_root()))
 }
 
 static ROOT: OnceLock<PathBuf> = OnceLock::new();
@@ -235,6 +253,17 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_going_commando_folder() {
+        let d = temp("rac2");
+        std::fs::write(d.join("RC2.HDR"), [0u8; 4]).unwrap();
+        assert_eq!(game(&d), Game::Rac2);
+        assert!(check(&d, Origin::Dev).is_ok());
+        std::fs::write(d.join("toc.bin"), [0u8; 4]).unwrap();
+        assert_eq!(game(&d), Game::Rac1);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

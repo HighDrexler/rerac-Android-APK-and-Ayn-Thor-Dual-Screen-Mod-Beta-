@@ -296,7 +296,7 @@ pub fn after_tick(
                         vr.remote_moby = id.is_some();
                         let pos = play.game.camera.out.pos;
                         let one = |k: usize| std::array::from_fn::<Pf, 4, _>(|i| if i == k { Pf::f(1.0) } else { Pf::ZERO });
-                        vr.remote_cam = Some(CameraView { pos, euler: [Pf::ZERO; 4], rows: [one(0), one(1), one(2)], class: 0 });
+                        vr.remote_cam = Some(CameraView { pos, euler: [Pf::ZERO; 4], rows: [one(0), one(1), one(2)], class: 0, flyby_phase: 0 });
                         id
                     }
                 };
@@ -391,7 +391,7 @@ fn camera_view(m: &rc_game::moby_runtime::Moby, offset: [f32; 3]) -> CameraView 
     let (eye, rows) = vendor_camera_at(offset, [m.position[0], m.position[1], m.position[2]], m.rows, m.rotation[2]);
     let v = |a: [f32; 3]| [Pf::f(a[0]), Pf::f(a[1]), Pf::f(a[2]), Pf::ZERO];
     let yaw = rows[0][1].atan2(rows[0][0]);
-    CameraView { pos: v(eye), euler: [Pf::ZERO, Pf::ZERO, Pf::f(yaw), Pf::ZERO], rows: [v(rows[0]), v(rows[1]), v(rows[2])], class: 0 }
+    CameraView { pos: v(eye), euler: [Pf::ZERO, Pf::ZERO, Pf::f(yaw), Pf::ZERO], rows: [v(rows[0]), v(rows[1]), v(rows[2])], class: 0, flyby_phase: 0 }
 }
 
 fn rows_bits(r: &[[f32; 4]; 4]) -> [V4; 3] { [0, 1, 2].map(|i| r[i].map(f32::to_bits)) }
