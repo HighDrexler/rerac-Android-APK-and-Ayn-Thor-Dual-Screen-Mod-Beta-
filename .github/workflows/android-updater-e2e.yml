@@ -1,0 +1,52 @@
+name: Android live updater test
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - android/release/emulator_update_test.py
+      - .github/workflows/android-updater-e2e.yml
+permissions:
+  contents: read
+concurrency:
+  group: android-live-updater-test
+  cancel-in-progress: false
+jobs:
+  live-update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Download and verify the actual published beta.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/reports
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta-test/ReRAC-Launcher-1.1.0-beta.1.apk' -o work/beta1.apk
+          echo '09154d2abfc5d079e2b8d32418b2a91216f78e9be372ba708a8baaa0cd3eda0d  work/beta1.apk' | sha256sum -c -
+      - name: Enable KVM for disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Use the real signed feed, APK download and Android confirmation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/emulator_update_test.py --apk work/beta1.apk --output work/reports
+      - name: Retain real updater evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-live-updater-test
+          path: work/reports
+          retention-days: 14
