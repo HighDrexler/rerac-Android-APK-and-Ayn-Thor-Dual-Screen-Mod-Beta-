@@ -16,7 +16,7 @@
 //!   freed (sound 2). Else it sinks toward rest − 1 (·0.11), turns toward him (+0x60 = 0.9·(+0x60 + 0.01·(bearing −
 //!   yaw + π/2))) and the seat light (radius 0.4, colour 4) sits at rows·(0, −0.3, −0.1) + the seat (sound 1 when
 //!   lit), blinking for its first 40 ticks.
-//! * 5 (manned): it rises back by dt; the stick (y flipped with the camera setting; at most 1 long) speeds the yaw
+//! * 5 (manned): it rises back by dt; the stick (y negated with the normal camera setting 0x15eddc = 1, kept with the reversed one; at most 1 long) speeds the yaw
 //!   (π·dt² ·−x) and the pitch (π/4·dt² ·−y, held within ±30°), both slowing 3% a tick, the barrel joint turned by
 //!   −pitch (`0x21fc08`); ○ held: pressed → anim 4 (3 after the left barrel), else in anim 3 / 4 at its key 1 (±0.25):
 //!   a shell from joint 1 / 2 (`polar(60·dt, yaw + π/2, pitch)`, life `ticks(90)`), sound 0, the camera shakes 0.03
@@ -257,7 +257,8 @@ fn idle(w: &mut World, id: MobyId, seat: V) {
 fn manned(w: &mut World, id: MobyId) {
     rise(w, id);
     let [sx, sy] = w.hero.stick.map(|x| f32::from_bits(x.0));
-    let sy = if w.svc.help.cam_pitch_word == 0 { -sy } else { sy };
+    // 0x15eddc normal (1): −y; reversed (0): +y (the opposite of Hoven's and Batalia's turrets, which take +y normal).
+    let sy = if w.svc.help.cam_pitch_word == 0 { sy } else { -sy };
     let mut s = [sx, sy];
     let l = (s[0] * s[0] + s[1] * s[1]).sqrt();
     if 1.0 < l { s = [s[0] / l, s[1] / l]; }

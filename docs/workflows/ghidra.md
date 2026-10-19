@@ -92,6 +92,47 @@ Step 2 reads the level ELFs from `work/ghidra-import/levelNN.elf`. **Follow-up:*
 `work/ghidra-import/` are copies of the retired C++ extractor's `overlay.elf` files, made on 2026-09-27; keep them
 (they are in the backup below).
 
+## Ratchet 2 (Going Commando): the `ratchet2` project
+
+Same shape, second project: `~/Ghidra/ratchet2.gpr`, with `/SCUS_972.68` (the NTSC v2.00 boot ELF) and
+`/levels/levelNN.elf` for the 27 levels (00–26). The two games' overlays overlap the same address window, and
+their boot ELFs differ, so nothing is shared between the projects except by Version Tracking (below).
+
+| Step | Command / action |
+|---|---|
+| 1. Level ELFs and the boot ELF from the extracted disc folder | `python3 tools/ghidra/scripts/overlay_to_elf.py --rc2-dir "<folder with G/LEVELn.WAD>" --out-dir work/ghidra-import/rc2` |
+| 2. Open `ratchet2` in the Ghidra GUI (File → Open Project) | the plugin only sees the open project |
+| 3. Import and analyse the boot ELF and the 27 levels | `python3 tools/ghidra/scripts/import_rc2.py` (background; refuses unless `ratchet2` is open) |
+| 4. Names from Ratchet 1 | in the `ratchet1` GUI export `SCUS_971.99` and `levels/level01.elf` as *Ghidra Zip File*; import both into `ratchet2` under `/rc1`; run a Version Tracking session rc1 → rc2 (exact bytes, then function hash, then reference correlators) and accept the matches; the names travel with them |
+
+`overlay_to_elf.py` is the ELF writer the retired C++ extractor used, reimplemented: on Ratchet 1's
+`extracted/levels/NN/overlay.bin` it reproduces `work/ghidra-import/levelNN.elf` byte for byte (checked on levels
+00 and 01). The Ratchet 2 overlays are uncompressed, have the same seven sections in the same order (`.lit` at
+0x1a7c80, `.bss`, `.data`, `lvl.vtbl`, `lvl.camvtbl`, `lvl.sndvtbl`, `.text` at ~0x2a4000, 1.6–2.0 MB of code),
+and sit at offset 0x80 of each level's data WAD (`G/LEVELn.WAD` header 0x60 bytes, `data` range at 0x10, in
+sectors relative to the file; the level data header's first ByteRange is the overlay).
+
+### Cross-game compare (`crossgame_diff.py`)
+
+`python3 tools/ghidra/scripts/crossgame_diff.py --cite crates/rc-game/src/hero` compares Ratchet 1's level01
+overlay with Ratchet 2's function by function (the level-to-level relocation mask, plus a stack-frame
+normalisation because Ratchet 2 is built with 64-bit `sd`/`ld` callee saves and tighter frames where Ratchet 1
+uses `sq`/`lq`, plus nop/branch-offset normalisation because its compiler pads branches) and writes
+`work/crossgame/level01.tsv` (`=` identical, `k` other constants, `s` same shape, `?` changed or gone).
+`--similar NAME...` scores a changed function against its closest Ratchet 2 counterpart. Result 2026-10-16:
+16% of Ratchet 1's level functions are identical or differ only in constants, 8% keep their shape, 75% changed.
+The engine services survive (collision, moby/shrub/tie processing, skin lighting, vector maths, GS packets at
+0.8–0.99 similarity); the hero (`HeroStatePhysics`, `HeroStateTransitions`, `SetState`, `HeroInit`,
+`HeroUpdateAlt`), game state, level loading and the path enemies were rewritten (0.1–0.4). So the port's
+engine layer carries over and the hero does not.
+
+Where the code is: the boot ELF holds only the always-resident core (loader, memory, IOP RPC, the renderer's
+fixed part). Everything else, the hero included, is compiled into every level overlay. So "find the movement
+code in Ratchet 2" is: find it in `ratchet1`'s `level01.elf` (named), version-track that program against
+`ratchet2`'s `level01.elf`, and read the functions that did *not* match exactly: those are the ones Insomniac
+changed. The per-level clustering (`overlay_diff.py`, `rc-trace overlay-diff`) is Ratchet 1 only until its
+section indices and `$gp` are parameterised for this game.
+
 ## Backups
 
 | Task | Command |

@@ -20,7 +20,8 @@
 //!    and ALPHA_1 = 0x8000000044 (`Cd + (Cs − Cd)·A >> 7`: A 0x40 = 50 %, 0x30 = 37.5 %), untextured, no Z,
 //!    **after the HUD** (its `0x15f3f4 & 0x40` pass follows the `& 0x80` HUD pass). Here: the
 //!    [`UnderwaterTint`] full-screen pass on the main camera, after `bevy::ui_render::ui_pass`, blending in
-//!    display-encoded bytes like the GS (`assets/shaders/underwater_tint.wgsl`).
+//!    display-encoded bytes like the GS (`assets/shaders/underwater_tint.wgsl`). The page menu's frames (mode 3: the pause
+//!    and map pages) draw no tint (`PageMenuModeRender` 0x21ab50 runs `PageMenuDraw` only); their snapshot has it.
 //!
 //! Environment: `RC_FOG_ZONES=0` disables the zones (the level settings stay); `RC_UNDERWATER=1` / `=0` forces
 //! the underwater flag on / off; `RC_CAM_PATH=ex,ey,ez,tx,ty,tz;ex,ey,ez,tx,ty,tz` moves the camera linearly from
@@ -204,6 +205,7 @@ fn update_fog_state(
     mut play: Option<ResMut<crate::gameplay::Play>>,
     travel: Option<Res<crate::travel_render::Travel>>,
     cams: MainCamera,
+    hook: Option<Res<crate::hud_render::Hud2dHook>>,
 ) {
     let Some(mut state) = state else { return };
     let state = &mut *state;
@@ -296,8 +298,11 @@ fn update_fog_state(
         if p.svc.water.fog != Some(state.level) { p.svc.water.fog = Some(state.level); }
     }
 
-    // 3. The tint reads the flag as this frame's camera update left it.
-    let want = state.underwater.flag.then(|| UnderwaterTint { rgba: UVec4::from_array(state.look.tint.map(u32::from)) });
+    // 3. The tint reads the flag as this frame's camera update left it. A frame that draws the page menu instead of the
+    // world (mode 3 `PageMenuModeRender` 0x21ab50: `PageMenuDraw` alone; the card dialog over a page) draws no tint: the
+    // pause and map pages show the copied last frame, which already has it, under panels the tint does not reach.
+    let menu = hook.is_some_and(|h| h.replace_hud);
+    let want = (state.underwater.flag && !menu).then(|| UnderwaterTint { rgba: UVec4::from_array(state.look.tint.map(u32::from)) });
     match (want, tint) {
         (Some(w), Some(have)) if *have == w => {}
         (Some(w), _) => { commands.entity(entity).insert(w); }

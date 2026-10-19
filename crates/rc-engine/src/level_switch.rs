@@ -69,6 +69,13 @@ pub struct LevelBundle {
 /// every change.
 pub fn load_bundle(root: &std::path::Path, index: u32, save: &rc_formats::moby_spawn::SpawnSave) -> anyhow::Result<LevelBundle> {
     let mut level = crate::level_load::load_level(root, index)?;
+    if crate::disc_source::game(root) == crate::disc_source::Game::Rac2 {
+        // Going Commando: no load-pass spawn rules (no mobys yet) and no fog zones (its section is not mapped yet).
+        let spawn = crate::moby_spawn::MobySpawn { enabled: false, states: Vec::new(), ship: None };
+        let data = crate::fog_state::FogLevelData { zones: Default::default(), mesh: level.collision.clone(), lights: Default::default() };
+        let fog = crate::fog_state::FogState::new(data, &level.fog);
+        return Ok(LevelBundle { index, level, spawn, fog });
+    }
     let spawn = crate::moby_spawn::apply_load_pass(root, index, &mut level, save)?;
     let fog = crate::fog_state::FogState::new(crate::fog_state::load(root, index)?, &level.fog);
     Ok(LevelBundle { index, level, spawn, fog })

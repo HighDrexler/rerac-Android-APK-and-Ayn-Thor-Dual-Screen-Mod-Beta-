@@ -46,7 +46,18 @@ pub mod transition;
 pub mod volumes;
 pub mod cameras;
 pub mod pss;
+pub mod rac2;
 pub mod sha1;
 pub mod test_data;
 
 pub use buf::{Buf, FormatError};
+
+/// Which game a level's data comes from. The shared readers take R&C1's layout unless told otherwise; a
+/// Going Commando level ([`rac2::level`]) carries [`Game::Rac2`] in its [`level::LevelCore`], and the readers whose
+/// layout differs between the games branch on it (docs/plan/rac2_bringup.md §6).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Game {
+    #[default]
+    Rac1,
+    Rac2,
+}

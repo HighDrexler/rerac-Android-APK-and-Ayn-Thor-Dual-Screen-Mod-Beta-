@@ -572,7 +572,8 @@ pub fn beam_end(h: &mut Hero) { h.bodies.spawns.push(Spawn::BeamEnd); }
 // HeroUpdateAlt mode 2: the pilot and the effect mobys.
 
 /// HeroUpdateAlt's body-2 part after the write-back: `0x2061f0` (Ratchet in the cockpit: his +0x7f = 0; shown when the
-/// body is, then his sequence 0x81 over 10 ticks and his generic advance; hidden otherwise) and the effect mobys Giant
+/// body is, placed at its joint list 5 and turned with it, then his sequence 0x81 over 10 ticks and his generic advance;
+/// hidden otherwise) and the effect mobys Giant
 /// Clank's states fired this tick ([`Spawn`], in the order the hero code called them: the missiles
 /// `classes::units::giant_missile`, the shockwave `giant_shockwave`, the beam's point and end `giant_beam`).
 #[allow(clippy::too_many_arguments)]
@@ -586,7 +587,22 @@ pub(crate) fn after_update(h: &mut Hero, table: &mut MobyTable, ratchet: MobyId,
             r.mode |= crate::moby_runtime::mode::HIDDEN | crate::moby_runtime::mode::NO_ANIM;
         }
     }
-    if shown { anim.ratchet_generic(0x81, ticks(10)); }
+    if shown {
+        // Ratchet in the cockpit: `fun_0020cca8(giant, 5, M)` (joint list 5's world matrix), its point to his position,
+        // its rows to him (+0xc0) and their Euler angles to his rotation (`0x25d330`); then the matrix (`fun_0020def8`).
+        let hero = h.clone();
+        hits.world(table, &hero, rng, counter, &mut |w| {
+            if ratchet >= w.table.mobys.len() { return; }
+            let m = w.joint_matrix(body, 5);
+            let rows = [0, 1, 2, 3].map(|i| m[i].map(crate::ps2v::Pf::f));
+            let e = crate::moby_update::services::rows_euler(&rows);
+            let r = w.mm(ratchet);
+            r.position = [m[3][0], m[3][1], m[3][2], r.position[3]];
+            r.rotation = [e[0].to_f32(), e[1].to_f32(), e[2].to_f32(), r.rotation[3]];
+            w.build_matrix(ratchet);
+        });
+        anim.ratchet_generic(0x81, ticks(10));
+    }
     // The effect mobys, in the hero code's call order.
     let spawns = std::mem::take(&mut h.bodies.spawns);
     if spawns.is_empty() { return; }

@@ -175,9 +175,15 @@ pub fn load_mobys_with_gs(root: &Path, core: &LevelCore, core_data: &[u8], gamep
     let t0 = Instant::now();
     let classes = moby::parse_level_mobys(core, core_data).context("parsing moby classes")?;
     let anim = moby_anim::load_anim_classes(core, core_data, &classes);
-    let mut instances = gameplay::parse_moby_instances(gameplay_file).context("parsing moby instances")?;
+    let rac2 = core.game == rc_formats::Game::Rac2;
+    let mut instances = match core.game {
+        rc_formats::Game::Rac1 => gameplay::parse_moby_instances(gameplay_file),
+        rc_formats::Game::Rac2 => rc_formats::rac2::gameplay::moby_instances(gameplay_file).map(|v| v.into_iter().map(|m| m.base).collect()),
+    }
+    .context("parsing moby instances")?;
     // The loader's ground snap of the rooted records (`InitLevelRenderGlobals`), before anything reads a position.
-    if let Some(mesh) = mesh {
+    // Not for Going Commando until its loader's snap is read (docs/plan/rac2_bringup.md §6.3 C).
+    if let Some(mesh) = mesh.filter(|_| !rac2) {
         let n = rc_game::moby_update::scheduler::root_instances(&mut instances, mesh);
         if n != 0 { println!("mobys: {n} rooted instances put on the ground"); }
     }
@@ -185,7 +191,8 @@ pub fn load_mobys_with_gs(root: &Path, core: &LevelCore, core_data: &[u8], gamep
     let parse_time = t0.elapsed();
 
     let t0 = Instant::now();
-    let lighting: Option<MobyLighting> = moby_light::load(root, gameplay_file)?;
+    // Going Commando's moby lighting is milestone D (docs/plan/rac2_bringup.md §6.3): none yet.
+    let lighting: Option<MobyLighting> = if rac2 { None } else { moby_light::load(root, gameplay_file)? };
     let cpu_light = env_on("RC_MOBY_CPU_LIGHT");
     let check = env_on("RC_MOBY_LIGHT_CHECK");
     let by_class: HashMap<i32, usize> = classes.iter().enumerate().map(|(i, c)| (c.o_class, i)).collect();

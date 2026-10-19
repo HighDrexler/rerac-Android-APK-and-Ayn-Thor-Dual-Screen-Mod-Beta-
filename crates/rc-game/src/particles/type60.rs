@@ -23,7 +23,8 @@ fn outside(p: [f32; 3]) -> bool { p.iter().any(|&x| !(2.0..=1021.0).contains(&x)
 pub fn spawn(sys: &mut Particles, size: f32, pos: [f32; 4], vel: [f32; 4], rgba: u32, life: u16, rot: u8, attach: i32) -> Option<usize> {
     if outside([pos[0], pos[1], pos[2]]) { return None; }
     let i = sys.create_part(TYPE)?;
-    let def = sys.def_first(TYPE);
+    // `*0x1b25d4`: the first frame of def[53], not def[60].
+    let def = sys.def_first(53);
     let hero = sys.hero;
     let r = &mut sys.pool.recs[i];
     for k in 0..4 { set(r, 0x10 + 4 * k, pos[k]); }

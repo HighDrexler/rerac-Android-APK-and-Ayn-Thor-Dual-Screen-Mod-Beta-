@@ -92,13 +92,22 @@ pub struct LevelTies {
 pub fn load_ties(core: &LevelCore, core_data: &[u8], gs_ram: &[u8], gameplay: &[u8], textures: &[LevelTexture]) -> Result<LevelTies> {
     let t0 = Instant::now();
     let classes = tie::parse_level_ties(core, core_data).context("parsing tie classes")?;
-    let instances = tie::parse_tie_instances(gameplay).context("parsing tie instances")?;
+    let instances = match core.game {
+        rc_formats::Game::Rac1 => tie::parse_tie_instances(gameplay),
+        rc_formats::Game::Rac2 => rc_formats::rac2::gameplay::tie_instances(gameplay),
+    }
+    .context("parsing tie instances")?;
     let by_class: HashMap<i32, usize> = classes.iter().enumerate().map(|(i, c)| (c.o_class, i)).collect();
     let class_of: Vec<Option<usize>> = instances.iter().map(|i| by_class.get(&i.o_class).copied()).collect();
     let parse_time = t0.elapsed();
 
     let t0 = Instant::now();
-    let colors = crate::tie_light::light_instances(gameplay, &classes, &instances, &class_of)?;
+    // Going Commando lights its ties another way (per-vertex colours in the gameplay file, not mapped yet): neutral
+    // colours (docs/plan/rac2_bringup.md §6.3 D).
+    let colors = match core.game {
+        rc_formats::Game::Rac1 => crate::tie_light::light_instances(gameplay, &classes, &instances, &class_of)?,
+        rc_formats::Game::Rac2 => vec![[[0x80; 4]; SLOTS]; instances.len()],
+    };
     let light_time = t0.elapsed();
 
     // Tie textures get the same load-time ad-gif conversion as tfrags (boot fun_00203730: TEX0 from the

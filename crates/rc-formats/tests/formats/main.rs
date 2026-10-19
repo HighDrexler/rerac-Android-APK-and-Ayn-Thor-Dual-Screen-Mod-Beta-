@@ -7,6 +7,7 @@ mod moby_anim_golden;
 mod moby_collision_disc;
 mod moby_shadow_disc;
 mod occlusion_frames;
+mod rac2_disc;
 mod scene_coverage;
 mod tfrag_light_golden;
 

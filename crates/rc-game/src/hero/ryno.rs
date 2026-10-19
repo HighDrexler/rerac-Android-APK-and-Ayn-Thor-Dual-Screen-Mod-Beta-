@@ -233,7 +233,7 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
             }
             let fwd = match (hero.state == 0x1e, env.camera) {
                 (true, Some((_, f))) => f,
-                _ => to_f32x3(hero.moby_rows[0]),
+                _ => to_f32x3(hero.aim_rows[0]),
             };
             let motion = scale3(add3(to_f32x3(hero.disp), to_f32x3(hero.plat_applied)), 3.0);
             let dir = add3(fwd, motion);

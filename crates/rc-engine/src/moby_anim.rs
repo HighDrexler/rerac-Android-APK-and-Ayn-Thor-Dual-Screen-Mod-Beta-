@@ -48,7 +48,7 @@ pub fn load_anim_classes(core: &LevelCore, core_data: &[u8], classes: &[LevelMob
         .iter()
         .map(|c| {
             let seqs = if c.o_class == 0 && !core.ratchet_seqs.is_empty() && c.class.sequence_pointers.iter().all(|&p| p == 0) {
-                ratchet_sequences(core, &block)
+                ratchet_sequences(core, &block, c.class.header.joint_count as usize)
             } else {
                 match block(&format!("moby_class/{:04}", c.o_class)).map(|blob| moby_anim::parse_sequences(blob, &c.class)) {
                     Some(Ok(s)) => s,
@@ -61,11 +61,13 @@ pub fn load_anim_classes(core: &LevelCore, core_data: &[u8], classes: &[LevelMob
         .collect()
 }
 
-fn ratchet_sequences<'a>(core: &LevelCore, block: &dyn Fn(&str) -> Option<&'a [u8]>) -> Vec<Option<MobySequence>> {
+fn ratchet_sequences<'a>(core: &LevelCore, block: &dyn Fn(&str) -> Option<&'a [u8]>, joints: usize) -> Vec<Option<MobySequence>> {
     (0..core.ratchet_seqs.len())
         .map(|i| {
             let blob = block(&format!("ratchet_seq/{i:03}"))?;
-            moby_anim::parse_sequence(blob, 0).map_err(|e| warn!("ratchet_seq {i}: {e}")).ok()
+            // Going Commando's are compressed (`parse_sequence_joints`); R&C1's never are.
+            let joints = (core.game == rc_formats::Game::Rac2).then_some(joints);
+            moby_anim::parse_sequence_joints(blob, 0, joints).map_err(|e| eprintln!("ratchet_seq {i}: {e}")).ok()
         })
         .collect()
 }

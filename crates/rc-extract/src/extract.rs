@@ -111,14 +111,12 @@ pub(crate) fn fail_with(problems: &[String], what: &str, emit: Emit) -> Error {
     Error::new(Code::VerifyFailed, format!("{} {what}", problems.len()))
 }
 
-/// Full extraction into `out` (the launcher's `games/rac1/data/`).
+/// Full extraction into `out` (the launcher's `games/<game>/data/`).
 pub fn extract(iso_path: &Path, out: &Path, builds: &[Build], opts: &Options, emit: Emit) -> Result<(Identified, Summary), Error> {
     let (id, iso) = identify::identify(iso_path, builds, emit)?;
     let build = &builds[id.build.expect("supported build")];
     let table = build_table(build)?;
-    let disc = Disc::new(iso).map_err(|e| Error::new(Code::CannotRead, format!("cannot read the disc's table of contents: {e}")))?;
-    let jobs = archive::with_table(archive::disc_jobs(&disc)?, &table, opts.ntsc_only)?;
-    drop(disc);
+    let jobs = archive::with_table(plan(id.game, iso)?, &table, opts.ntsc_only)?;
     let summary = Summary { files: jobs.len() as u64, bytes: jobs.iter().map(|j| j.bytes).sum() };
 
     fs::create_dir_all(out).map_err(|e| workers::write_error(out, e))?;
@@ -145,6 +143,7 @@ pub fn extract(iso_path: &Path, out: &Path, builds: &[Build], opts: &Options, em
     if !problems.is_empty() { return Err(fail_with(&problems, "file(s) differ from the reference: the disc image is damaged; re-dump the disc", emit)); }
 
     let text = json::object(&[
+        ("game", id.game.id().into()),
         ("disc", id.serial.as_str().into()),
         ("data_format", DATA_FORMAT.into()),
         ("extractor_version", EXTRACTOR_VERSION.into()),
@@ -156,6 +155,8 @@ pub fn extract(iso_path: &Path, out: &Path, builds: &[Build], opts: &Options, em
     fs::write(&tmp, text).map_err(|e| workers::write_error(&tmp, e))?;
     fs::rename(&tmp, &info).map_err(|e| workers::write_error(&info, e))?;
 
+    // R&C2 has no Tier 1 cache yet (docs/plan/rac2_bringup.md).
+    if id.game != Game::Rac1 { return Ok((id, summary)); }
     // Tier 1 after the Tier 0 archive is complete (its stamp hashes `extract-info.json`). The cache is optional and
     // rebuilt from Tier 0 at any time (the game builds missing lumps itself), so a failure here does not fail the
     // extraction: one info line says so. Cancelling still cancels.
@@ -168,14 +169,19 @@ pub fn extract(iso_path: &Path, out: &Path, builds: &[Build], opts: &Options, em
     Ok((id, summary))
 }
 
-/// `table`: hashes every archive file straight from an RC1 image (any RC1 build whose ToC parses; nothing is
-/// written) and returns the rows of its size/SHA-1 table.
+/// The disc's Tier 0 files: RC1's from its table of contents, R&C2's from the ISO filesystem.
+fn plan(game: Game, iso: rc_formats::iso9660::IsoImage<File>) -> Result<Vec<Job>, Error> {
+    if game == Game::Rac2 { return Ok(archive::iso_jobs(&iso)); }
+    let disc = Disc::new(iso).map_err(|e| Error::new(Code::CannotRead, format!("cannot read the disc's table of contents: {e}")))?;
+    archive::disc_jobs(&disc)
+}
+
+/// `table`: hashes every archive file straight from an RC1 or R&C2 image (any build whose files can be listed;
+/// nothing is written) and returns the rows of its size/SHA-1 table.
 pub fn table(iso_path: &Path, builds: &[Build], threads: usize, emit: Emit) -> Result<(Identified, Vec<TableEntry>), Error> {
     let (id, iso) = identify::probe(iso_path, builds, emit)?;
-    if id.game != Game::Rac1 { identify::require_supported(&id, builds, emit)?; }
-    let disc = Disc::new(iso).map_err(|e| Error::new(Code::CannotRead, format!("cannot read the disc's table of contents: {e}")))?;
-    let jobs = archive::disc_jobs(&disc)?;
-    drop(disc);
+    if !matches!(id.game, Game::Rac1 | Game::Rac2) { identify::require_supported(&id, builds, emit)?; }
+    let jobs = plan(id.game, iso)?;
     let total = jobs.iter().map(|j| j.bytes).sum();
     let hashes = workers::run(
         jobs.len(), total, Stage::Copy, threads, None, emit,
