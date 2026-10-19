@@ -24,6 +24,9 @@ jobs:
           name: native-source-reference
           path: reference
           retention-days: 14
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Inspect original v16 without changing it
         shell: bash
         run: |
