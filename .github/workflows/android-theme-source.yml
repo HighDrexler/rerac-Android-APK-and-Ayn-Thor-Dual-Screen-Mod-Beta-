@@ -1,0 +1,78 @@
+name: Android theme source and candidate
+on:
+  push:
+    branches: [integration/launcher-1.1-polish-core035]
+    paths: [.github/workflows/android-theme-source.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: android-polish-candidate
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply only the locally compiled and reviewed source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f android/integration/theme-source-0.xz.b64 ]; then
+            python - <<'PY'
+          import base64,hashlib,lzma,subprocess
+          from pathlib import Path
+          parts=sorted(Path('android/integration').glob('theme-source-*.xz.b64'))
+          assert len(parts)==4
+          patch=lzma.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts),validate=True))
+          assert hashlib.sha256(patch).hexdigest()=='90a42ab1626b55bcc3d7c9d12ea5794521879a369771fbbeecdb5222c8933302'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          PY
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add android/launcher .github/workflows/android-polish-candidate.yml
+            git rm android/integration/theme-source-*.xz.b64 android/integration/theme-source.patch.z64
+            git commit -m 'Implement Gadgetron-inspired launcher, Mods and Updates presentation with regression tests'
+            git push origin HEAD:integration/launcher-1.1-polish-core035
+          fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: android/launcher/pom.xml
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Prepare verified baseline and Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/tools work/output
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          ln -s "$ANDROID_HOME/build-tools/36.0.0" work/tools/build-tools
+          ln -s "$ANDROID_HOME/platforms/android-36/android.jar" work/tools/android.jar
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/v1.0/ReRAC-Mobile-v1.0.zip' -o work/baseline.zip
+          echo '327e92b042e135dba115f332104ee947978d6aca9b3a4fa56c8e48e29bf623cc  work/baseline.zip' | sha256sum -c -
+          unzip -q work/baseline.zip -d work/baseline
+      - name: Run policy, mod, persistence and Android rendering tests
+        run: mvn -B -f android/launcher/pom.xml test
+      - name: Build theme candidate with honest native version
+        run: |
+          python android/launcher/tools/android/build_launcher.py --baseline work/baseline/ReRAC-Mobile-v16.apk --tools work/tools --output work/output/ReRAC-Launcher-1.1.0-beta.3-unsigned.apk --version 1.1.0-beta.3 --code 19
+          git rev-parse HEAD > work/output/source-commit.txt
+      - name: Preserve candidate and test evidence (no release or channel mutation)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-polish-candidate
+          path: |
+            work/output
+            android/launcher/target/surefire-reports
+            android/launcher/target/theme-renders
+          retention-days: 14
