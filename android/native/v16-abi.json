@@ -1,0 +1,27 @@
+{
+  "candidate": "ReRAC-Mobile-v16.apk",
+  "checks": [
+    {
+      "abi": "arm64-v8a",
+      "bytes": 105529344,
+      "machine": "AArch64",
+      "machine_ok": true,
+      "missing_exports": [],
+      "ok": true,
+      "required_exports": 21,
+      "sha256": "67a8859411c621edb834e7689ff520010349161b13d0ff31a97f1ea2ee2d037f"
+    },
+    {
+      "abi": "x86_64",
+      "bytes": 113901568,
+      "machine": "Advanced Micro Devices X86-64",
+      "machine_ok": true,
+      "missing_exports": [],
+      "ok": true,
+      "required_exports": 21,
+      "sha256": "4297a53c0fc783046fe0517789d9e52fddb78281bf3ad7cbce85d859d03e00d5"
+    }
+  ],
+  "ok": true,
+  "schema": 1
+}
