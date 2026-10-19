@@ -5,7 +5,7 @@ on:
     branches: [dev]
     paths:
       - android/launcher/**
-      - android/recovery/source-chunks/**
+      - android/release/launcher-build.json
       - .github/workflows/android-launcher.yml
 permissions:
   contents: read
@@ -16,43 +16,14 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - name: Restore editable recovered source when bootstrapping
-        shell: bash
+          persist-credentials: false
+      - name: Require recovered editable source and explicit candidate identity
         run: |
-          set -euo pipefail
-          if [ -d android/recovery/source-chunks ]; then
-            python - <<'PY'
-          import base64, hashlib, json, lzma
-          from pathlib import Path
-          parts = sorted(Path('android/recovery/source-chunks').glob('*.b64'))
-          assert len(parts) == 9
-          blob = base64.b64decode(''.join(p.read_text() for p in parts), validate=True)
-          assert hashlib.sha256(blob).hexdigest() == '7721b6e54afe07216b10836e77ec09ec1a26e71c807d5829b5b101c26b663000'
-          files = json.loads(lzma.decompress(blob))
-          root = Path('android/launcher').resolve()
-          for name, content in files.items():
-              target = (root / name).resolve()
-              assert target.is_relative_to(root) and not target.exists(), name
-              assert not name.endswith(('.apk', '.p12', '.jks', '.keystore')) and 'password' not in name
-              target.parent.mkdir(parents=True, exist_ok=True)
-              target.write_text(content, encoding='utf-8')
-          print('Restored', len(files), 'editable source/test files. No native game data or signing keys.')
-          PY
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add android/launcher
-            git rm -r android/recovery/source-chunks
-            git commit -m 'Restore editable Android launcher 1.1 sources, tests and pinned v16 build path'
-            git push origin HEAD:dev
-          fi
-      - name: Require editable source
-        run: test -f android/launcher/tools/android/build_launcher.py
+          test -f android/launcher/tools/android/build_launcher.py
+          test -f android/release/launcher-build.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -77,17 +48,31 @@ jobs:
           unzip -q work/baseline.zip -d work/baseline
       - name: Policy, persistence and launcher regression tests
         run: mvn -B -f android/launcher/pom.xml test
-      - name: Build unsigned launcher candidates (native core remains v16)
+      - name: Build configured unsigned candidate; refuse a false native-core label
         shell: bash
         run: |
           set -euo pipefail
-          for pair in '1.1.0-beta.1 17' '1.1.0-beta.2 18'; do
-            read -r version code <<< "$pair"
-            python android/launcher/tools/android/build_launcher.py --baseline work/baseline/ReRAC-Mobile-v16.apk --tools work/tools --output "work/output/ReRAC-Launcher-$version-unsigned.apk" --version "$version" --code "$code"
-          done
+          python - <<'PY'
+          import json,re,subprocess,sys,zipfile
+          from pathlib import Path
+          tools=Path('android/launcher/tools/android').resolve();sys.path.insert(0,str(tools))
+          import build_launcher
+          config=json.loads(Path('android/release/launcher-build.json').read_text())
+          assert config['schema']==1
+          version=config['launcher_version'];code=config['version_code']
+          assert isinstance(version,str) and re.fullmatch(r'1\.1\.\d+(?:-[A-Za-z0-9.]+)?',version)
+          assert type(code) is int and 16<code<=2100000000
+          assert config['core_version']==build_launcher.CORE=='0.3.4','Native port must be rebuilt before advertising 0.3.5'
+          output=Path('work/output')/f'ReRAC-Launcher-{version}-unsigned.apk'
+          subprocess.run([sys.executable,str(tools/'build_launcher.py'),'--baseline','work/baseline/ReRAC-Mobile-v16.apk','--tools','work/tools','--output',str(output),'--version',version,'--code',str(code)],check=True)
+          with zipfile.ZipFile(output) as z:
+              meta=json.loads(z.read('assets/rerac-build.json'))
+              assert meta['core_version']==config['core_version'] and meta['version_code']==code and not meta['native_source_rebuild']
+          Path('work/output/launcher-build.json').write_text(json.dumps(config,indent=2)+'\n')
+          PY
           git rev-parse HEAD > work/output/source-commit.txt
-          echo 'Unsigned candidates only. ReRAC core remains 0.3.4/v16. No Stable release or update channel is changed.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Retain candidates and test reports
+          echo 'Unsigned candidate only. Original native core remains 0.3.4/v16. Signing, tested release publication and signed channel promotion remain separate gates.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain candidate and test evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -95,4 +80,5 @@ jobs:
           path: |
             work/output
             android/launcher/target/surefire-reports
+            android/launcher/target/theme-renders
           retention-days: 14
