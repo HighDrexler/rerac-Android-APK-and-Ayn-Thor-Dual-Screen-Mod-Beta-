@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "status": "passed-for-device-testing-not-stable",
+  "tested_date": "2026-10-19",
+  "package_id": "org.rerac.android.uipreview",
+  "signer_sha256": "25c5eebb05a013bf3fb84706f9ad87904b8d4d8a99ba7857d62e665d2b94e24a",
+  "core_version": "0.3.4",
+  "native_engine": "All four v16 native libraries preserved byte-for-byte. Upstream 0.3.5 source is not compiled into these APKs.",
+  "candidates": [
+    {"version": "1.1.0-beta.1", "version_code": 17, "bytes": 221600681, "sha256": "09154d2abfc5d079e2b8d32418b2a91216f78e9be372ba708a8baaa0cd3eda0d"},
+    {"version": "1.1.0-beta.2", "version_code": 18, "bytes": 221600681, "sha256": "474e2e3a75a334aff2691128e8520291ab59af3fcb2fc3e6532d9f5a6700444f"}
+  ],
+  "java_tests": {"run": 39316627810, "passed": 50, "failed": 0, "errors": 0, "skipped": 0},
+  "emulator_install_smoke": {
+    "run": 39319846388,
+    "status": "passed",
+    "android": "15",
+    "abi": "x86_64",
+    "checks": ["original v1.0 to beta.1 in-place installation", "beta.1 to beta.2 in-place installation", "version footer", "original dual-screen setting toggle", "private-data canary retained", "mod and channel choices retained", "Android rejects version downgrade"]
+  },
+  "live_network_updater": {
+    "run": 39322237867,
+    "artifact": 12220532599,
+    "status": "passed",
+    "android": "15",
+    "abi": "x86_64",
+    "initial_version_code": 17,
+    "final_version_code": 18,
+    "live_https_feed_verified": true,
+    "live_https_apk_download_verified": true,
+    "actual_android_installer_confirmed": true,
+    "reopened_through_installer_open_action": true,
+    "existing_data_preserved": true,
+    "mod_and_channel_preserved": true,
+    "no_repeated_update_offer": true,
+    "permission_setup": "REQUEST_INSTALL_PACKAGES was pre-granted only in the disposable emulator; the actual Android installation confirmation was exercised."
+  },
+  "not_tested": ["physical AYN Thor companion display and touch", "ARM64 device gameplay/performance", "real imported ISO/game assets", "loading real saved games", "native cutscenes"],
+  "release_tag": "launcher-v1.1.0-beta-test",
+  "channel_state": {"stable": "no new release advertised", "development": "signed beta.2 feed published on update-channels"},
+  "private_signing_key_in_repository_or_ci": false
+}
