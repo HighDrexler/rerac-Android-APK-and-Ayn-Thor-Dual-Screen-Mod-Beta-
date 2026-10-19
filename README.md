@@ -6,6 +6,16 @@ Android and AYN Thor dual-screen adaptation of **Ratchet & Clank (2002)**, based
 
 The published `ReRAC-Mobile-v1.0.zip` is the verified ReRAC Mobile v16 build. It contains the signed APK, not game data.
 
+## Launcher 1.1 development test
+
+**[Launcher 1.1 beta test APKs](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/launcher-v1.1.0-beta-test)** are available for device testing. They add Updates, Stable/Development channels, a small launcher/core version footer, and a Mods manager with only the existing Dual-Screen Mod bundled. The original v1.0 release remains available and has not been replaced.
+
+Install beta.1 over v1.0 without uninstalling. In Updates, select Development, check, download and approve installation of beta.2. Android may require allowing installations from ReRAC first. Beta.2 is an otherwise equivalent build with a higher Android versionCode for exercising the update process. Stable does not advertise this experimental build.
+
+**The 1.1 beta APKs retain ReRAC 0.3.4/v16 native code. Upstream 0.3.5 is merged in the development Rust source, not in these Android binaries.** Physical-device gameplay and companion-display testing are still required. Back up important saves before testing.
+
+See the [editable launcher source on dev](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/tree/dev/android/launcher) and [release/update instructions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/blob/dev/android/RELEASE_PROCESS.md).
+
 ## Android and dual-screen features
 
 - Optional companion display for maps, menus, weapons, gadgets and quick selection, with gameplay continuing on the main screen.
@@ -19,18 +29,19 @@ The published `ReRAC-Mobile-v1.0.zip` is the verified ReRAC Mobile v16 build. It
 
 ## Getting started
 
-Install the APK from the ZIP linked above. In the launcher, import a supported original **USA v1.00 (SCUS-97199)** Ratchet & Clank ISO or compatible extracted game-data ZIP. Choose the rendering resolution and enable **Dual screen** in Display settings for a companion display. Use **Setup** in-game to select and customize the mobile controls.
+Install the APK from the ZIP linked above. In the launcher, import a supported original **USA v1.00 (SCUS-97199)** Ratchet & Clank ISO or compatible extracted game-data ZIP. Choose the rendering resolution and enable **Dual screen** in Display settings for a companion display (in Launcher 1.1, use **Mods** instead). Use **Setup** in-game to select and customize the mobile controls.
 
 No copyrighted game content is supplied. Saves are stored separately from imported game data. Android gameplay and cutscene performance can vary with device and graphics drivers.
 
 ## Release integrity
 
-- Published ZIP SHA-256: `327e92b042e135dba115f332104ee947978d6aca9b3a4fa56c8e48e29bf623cc`
-- Signed APK SHA-256: `cb13360fc1796e2c1e9ef00029eacbb853bd8e966837140878bd65df55f3b477`
+- Published v1.0 ZIP SHA-256: `327e92b042e135dba115f332104ee947978d6aca9b3a4fa56c8e48e29bf623cc`
+- Signed v16 APK SHA-256: `cb13360fc1796e2c1e9ef00029eacbb853bd8e966837140878bd65df55f3b477`
 - Android application ID: `org.rerac.android.uipreview` (retained for in-place updates).
+- Launcher 1.1 beta hashes are included with its prerelease assets.
 
 ## Source status
 
-This branch currently retains the original ReRAC engine source. The Android release contains additional Java/DEX and native modifications that have **not yet been reconstructed as a fully integrated, independently rebuildable source tree in this repository**. The published APK is the release baseline. Do not assume that compiling `main` alone reproduces its binary.
+This branch retains the original ReRAC engine source and reviewed Android workflow definitions. The dev branch contains the editable Launcher 1.1 recovery project, regression tests and pinned-v16 APK rebuild path. The complete native Android port is **not yet reconstructed as an independently rebuildable source tree**. The published v16 APK remains the native baseline. Do not assume that compiling the Rust workspace reproduces its Android libraries or that a workspace version bump updates the packaged native game.
 
 Original ReRAC project and license: [re-rac/rerac](https://github.com/re-rac/rerac). This adaptation is an unofficial community project.
