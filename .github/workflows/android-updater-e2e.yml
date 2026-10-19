@@ -17,23 +17,25 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Download and verify the actual published beta.1
+      - name: Download and verify the previous published beta.2
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p work/reports
-          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta-test/ReRAC-Launcher-1.1.0-beta.1.apk' -o work/beta1.apk
-          echo '09154d2abfc5d079e2b8d32418b2a91216f78e9be372ba708a8baaa0cd3eda0d  work/beta1.apk' | sha256sum -c -
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta-test/ReRAC-Launcher-1.1.0-beta.2.apk' -o work/previous.apk
+          echo '474e2e3a75a334aff2691128e8520291ab59af3fcb2fc3e6532d9f5a6700444f  work/previous.apk' | sha256sum -c -
       - name: Enable KVM for disposable emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Use the real signed feed, APK download and Android confirmation
+      - name: Use real signed feed, APK download and Android confirmation
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -42,7 +44,7 @@ jobs:
           disable-animations: true
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
-          script: python android/release/emulator_update_test.py --apk work/beta1.apk --output work/reports
+          script: python android/release/emulator_update_test.py --apk work/previous.apk --output work/reports --initial-code 18 --target-code 19 --target-version 1.1.0-beta.3 --target-sha256 06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3
       - name: Retain real updater evidence
         if: always()
         uses: actions/upload-artifact@v4

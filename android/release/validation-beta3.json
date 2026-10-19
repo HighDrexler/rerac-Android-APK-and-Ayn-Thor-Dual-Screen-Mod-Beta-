@@ -1,0 +1,22 @@
+{
+  "launcher_version": "1.1.0-beta.3",
+  "version_code": 19,
+  "core_version": "0.3.4",
+  "native_035_implemented": false,
+  "package_id": "org.rerac.android.uipreview",
+  "apk_bytes": 221604777,
+  "apk_sha256": "06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3",
+  "release_tag": "launcher-v1.1.0-beta.3",
+  "channel": "development",
+  "source_commit": "53e20ea572614d5ce4b670b6b37a35a9408f594f",
+  "candidate_source_commit": "d8692a45371cf9a2bd7de7cd66473558c47862a2",
+  "application_source_blobs_identical": true,
+  "regression": {"run": 39331452982, "status": "passed", "tests": 55, "failures": 0, "errors": 0, "skipped": 0},
+  "signed_apk_emulator": {"run": 39333056672, "status": "passed", "same_signer_upgrade": true, "theme_and_navigation": true, "mod_toggle_both_directions": true, "private_test_data_and_settings_preserved": true},
+  "live_updater": {"run": 39334913265, "status": "passed", "initial_version_code": 18, "final_version_code": 19, "real_https_feed": true, "real_apk_download": true, "actual_android_installation_confirmation": true, "installed_apk_hash_matches": true, "private_test_data_mod_and_channel_preserved": true, "repeat_update_not_offered": true},
+  "environment": {"android_release": "15", "abi": "x86_64", "install_source_permission": "Pre-granted only in disposable AOSP emulator; Android installation confirmation exercised normally"},
+  "tested_native_gameplay": false,
+  "tested_physical_thor_dual_screen": false,
+  "tested_real_user_saves": false,
+  "stable_feed_changed": false
+}
