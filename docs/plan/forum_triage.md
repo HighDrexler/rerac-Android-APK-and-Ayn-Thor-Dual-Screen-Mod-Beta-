@@ -114,6 +114,11 @@ grind rail (accd9d3: Ratchet's aim frame 0x13f990, the rail's yaw plus the aim l
 auto-aim (23a24cf: the wrench states run the target search `0x22e238`); the escape / air timers over the pause menu
 (14c8b55).
 
+**Fixed 2026-10-20:** Clank on Orxon plays Ratchet's track (§1.21): the Clank section (class 22) requests
+`MusicRequestTrack(2, 4)` from the first tick's moby loop, before the port's sound step made the level start's
+`music_start_track(0)` (`entry` 0x259c40 makes it before its main loop): the idle player took track 2, then the start
+overwrote it with 0. The start now runs before a class's first request (`AudioSystem::level_music_start`).
+
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
 view, FUN_002ac608); the autosave icon (8447e57: the main loop's card icon 0x755d while the card is in use).

@@ -556,6 +556,8 @@ pub struct AudioSystem {
     /// The checkpoint record's music track 0x1bc304 ([`AudioSystem::checkpoint_saved`]); None: no record this visit.
     pub checkpoint_track: Option<i16>,
     started: bool,
+    /// The level start's `music_start_track(0, 1, 0x400)` done ([`AudioSystem::level_music_start`]).
+    music_started: bool,
     snd_cmds: Vec<SndCommand>,
     stream_cmds: Vec<StreamCommand>,
     snd_replies: Vec<SndReply>,
@@ -603,6 +605,7 @@ impl AudioSystem {
             underwater: false,
             checkpoint_track: None,
             started: false,
+            music_started: false,
             snd_cmds: Vec::new(),
             stream_cmds: Vec::new(),
             snd_replies: Vec::new(),
@@ -643,7 +646,7 @@ impl AudioSystem {
         let l = input.listener;
         if !self.started {
             self.started = true;
-            self.music.start_track(0, 1, 0x400, &mut self.stream_cmds);
+            self.level_music_start();
             // `GameStateUpdate`'s level-start `HeroTeleport(0x13e090, …)`: the env sample point near the spawn.
             self.hero_teleported(input.hero_pos);
         }
@@ -747,8 +750,19 @@ impl AudioSystem {
         fresh.reverb.dirty |= reverb::dirty::OFF;
         fresh.reverb_boxes = std::mem::take(&mut self.reverb_boxes);
         fresh.started = true;
+        fresh.music_started = true;
         fresh.music.main.track = track;
         *self = fresh;
+    }
+
+    /// The level start's `music_start_track(0x151708 = 0, 1, 0x400)`: `entry` 0x259c40 makes it before its main loop,
+    /// so before any class update. The port's sound step comes after the moby loop, so a class's first-tick
+    /// `MusicRequestTrack` (Orxon's Clank section, class 22: `(2, 4)`) makes it first ([`class_sounds`]): the request
+    /// then finds the main player busy and becomes a transition, as in the game, instead of being overwritten by track 0.
+    pub fn level_music_start(&mut self) {
+        if self.music_started { return; }
+        self.music_started = true;
+        self.music.start_track(0, 1, 0x400, &mut self.stream_cmds);
     }
 
     /// `MovieExitToGameplay` 0x2ad2b8: `music_start_track(0x151708, 1, 0x400)`, the current track from the start, and
@@ -1031,6 +1045,45 @@ mod tests {
         assert!(rms(&a[..2400]) > 1.0);
         // The emitters at the spawn started (instance 9's loop at least).
         assert!(sys.stats.plays >= 1, "no ambience played");
+    }
+
+    /// Orxon's first visit: the Clank section (class 22) hands the hero to Clank on the first tick and requests
+    /// `MusicRequestTrack(2, 4)` from the moby loop, before the tick's sound step. The level start's track 0 has
+    /// already started (`entry` 0x259c40 starts it before its main loop), so the request becomes a transition: the
+    /// stinger, then Clank's track 2 ("Clank's Second Foray"), not Ratchet's track 0.
+    #[test]
+    fn orxon_clank_first_tick_request_plays_clanks_track() {
+        let _lock = scene::TEST_INBOX.lock().unwrap_or_else(|e| e.into_inner());
+        let root = rc_formats::test_data::root().join("levels/10");
+        let Ok(bank) = std::fs::read(root.join("sound_bank.bin")) else { eprintln!("skipped: no extracted/"); return };
+        let rd = |n: &str| std::fs::read(root.join(n)).unwrap();
+        let idx = rd("core_index.bin");
+        let data = rc_formats::test_data::core_data(10).unwrap();
+        let core = rc_formats::level::parse_level_core(&idx, data.len()).unwrap();
+        let gameplay = rc_formats::test_data::gameplay(10).unwrap();
+        let music: [Option<Vec<u8>>; 15] = std::array::from_fn(|k| std::fs::read(root.join(format!("music/{k:03}.bin"))).ok());
+        let coll = rc_formats::collision::parse_collision(&core, &data).ok();
+        let audio = LevelAudio::from_parts(&bank, &idx, &core, &data, &gameplay, &rd("level_header.bin"), &music, coll).unwrap();
+        let input = FrameInput { listener: Listener::default(), hero_pos: [0.0; 3] };
+        // The old order (the request before the level start): the idle player takes track 2, then the start
+        // overwrites it with track 0 — Ratchet's music for Clank.
+        let mut old = AudioSystem::new(audio.clone());
+        old.music.request(2, 4);
+        let mut out = Vec::new();
+        for _ in 0..600 { old.tick(&input, &mut out); }
+        assert_eq!(old.music.main.track, 0);
+        let mut sys = AudioSystem::new(audio);
+        // The first tick: the class request (through the class sound sink's path), then the sound step.
+        sys.level_music_start();
+        sys.music.request(2, 4);
+        let mut out = Vec::new();
+        let mut tracks = Vec::new();
+        for _ in 0..1200 {
+            sys.tick(&input, &mut out);
+            tracks.push(sys.music.main.track);
+        }
+        assert_eq!(sys.music.main.track, 2, "main track after 20 s (tracks seen {:?})", { let mut t = tracks.clone(); t.dedup(); t });
+        assert!(sys.music.main.state != 0, "the main player plays");
     }
 
     /// The Start → Loop hand-over is sample-exact: a stream voice playing part A then part B outputs the same
