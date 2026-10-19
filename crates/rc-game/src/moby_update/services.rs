@@ -1422,6 +1422,14 @@ impl HeroFields {
             h.pos = [pf(p.pos[0]), pf(p.pos[1]), pf(p.pos[2]), h.pos[3]];
             h.rot[2] = pf(p.yaw);
             h.target_yaw = pf(p.target_yaw);
+            // `HeroTeleport` 0x2368e0 builds Ratchet's moby rows (+0xc0) from the new Euler before its
+            // `CameraResetBehindHero`, which the camera calls apply next (the snap reads them): without it the camera
+            // snapped behind his facing on the pad he left (the forum's warp pads).
+            if self.calls.iter().flatten().any(|c| matches!(c, HeroCall::Teleport { .. })) {
+                h.rows = crate::hero::physics::euler_rows(h.rot);
+                h.moby_rows = h.rows;
+                h.moby_rot = h.rot;
+            }
         }
     }
 
@@ -2398,6 +2406,27 @@ pub fn normalize_angle(a: Pf) -> Pf {
 mod tests {
     use super::*;
     use crate::particles::type11;
+
+    /// A class's `HeroTeleport` turns Ratchet's moby rows to the new yaw when its stores land, before the camera calls
+    /// (its `CameraResetBehindHero` snaps behind those rows): the warp pads on Gemlik left the camera facing the old way.
+    #[test]
+    fn a_class_teleport_turns_the_moby_rows_before_the_camera_reset() {
+        let mut h = Hero::new();
+        h.rot = [Pf::ZERO; 4];
+        h.moby_rows = crate::hero::physics::euler_rows(h.rot);
+        let mut f = HeroFields::of(&h);
+        let yaw = std::f32::consts::FRAC_PI_2;
+        f.pose = Some(HeroPose { pos: [10.0, 20.0, 30.0], yaw, target_yaw: yaw });
+        f.call(HeroCall::Teleport { state: 0 });
+        f.apply(&mut h);
+        let fwd = h.moby_rows[0].map(|x| x.to_f32());
+        assert!(fwd[0].abs() < 1e-3 && (fwd[1] - 1.0).abs() < 1e-3, "facing {fwd:?}");
+        // A pose store without a teleport (a class carrying Ratchet) leaves the rows to the hero's write-back.
+        let mut f = HeroFields::of(&h);
+        f.pose = Some(HeroPose { pos: [10.0, 20.0, 30.0], yaw: 0.0, target_yaw: 0.0 });
+        f.apply(&mut h);
+        assert!((h.moby_rows[0][1].to_f32() - 1.0).abs() < 1e-3);
+    }
 
     /// `SetDeathBits` writes the persistent bits straight into the save's chunk 3005 (0x14c190 + L·0x100), and the load's
     /// spawn test / `CollectBolt` the spawner slots into chunk 3006: the save and the next arrival see them.
