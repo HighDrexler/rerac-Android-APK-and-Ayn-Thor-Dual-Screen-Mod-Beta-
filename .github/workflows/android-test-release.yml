@@ -1,0 +1,109 @@
+name: Android signed test release
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - android/release/test-approval.json
+      - android/release/public_signature.py
+      - android/release/emulator_smoke.py
+      - .github/workflows/android-test-release.yml
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: android-approved-test-release
+  cancel-in-progress: false
+jobs:
+  verify-test-stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TEST_TAG: launcher-v1.1.0-beta-test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require successful candidate build and expand public signature approval
+        id: approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/reports work/candidates
+          python - <<'PY'
+          import base64,hashlib,json,lzma,os,re,subprocess
+          from pathlib import Path
+          doc=json.loads(Path('android/release/test-approval.json').read_text())
+          assert doc['schema']==1 and type(doc['candidate_run']) is int
+          assert re.fullmatch('[0-9a-f]{40}',doc['candidate_sha'])
+          run=json.loads(subprocess.check_output(['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{doc['candidate_run']}"]))
+          assert run['conclusion']=='success' and run['head_sha']==doc['candidate_sha']
+          assert run['repository']['id']==1424927008 and run['path']=='.github/workflows/android-launcher.yml'
+          raw=lzma.decompress(base64.b64decode(doc['receipt_xz_base64'],validate=True))
+          assert len(raw)<65536 and hashlib.sha256(raw).hexdigest()==doc['receipt_sha256']
+          receipt=json.loads(raw)
+          assert receipt['candidate_run']==doc['candidate_run'] and receipt['candidate_sha']==doc['candidate_sha']
+          Path('work/approval.json').write_bytes(raw)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('run='+str(doc['candidate_run'])+'\n')
+          PY
+      - name: Download verified candidate artifact
+        run: gh run download '${{ steps.approval.outputs.run }}' --repo "$GITHUB_REPOSITORY" --name launcher-1.1-candidates --dir work/candidates
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Reconstruct and verify only the exact approved signed APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          python android/release/public_signature.py --approval work/approval.json --artifacts work/candidates --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/v1.0/ReRAC-Mobile-v1.0.zip' -o work/baseline.zip
+          echo '327e92b042e135dba115f332104ee947978d6aca9b3a4fa56c8e48e29bf623cc  work/baseline.zip' | sha256sum -c -
+          unzip -q work/baseline.zip -d work/baseline
+      - name: Enable KVM for disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Real Android installation, controls and data-preserving upgrade tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: python android/release/emulator_smoke.py --baseline work/baseline/ReRAC-Mobile-v16.apk --signed work/signed --output work/reports
+      - name: Publish development test only (never Stable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          assert json.loads(Path('work/reports/smoke-report.json').read_text())['status']=='passed'
+          Path('work/notes.md').write_text('''# Launcher 1.1 development test
+          **ReRAC core remains 0.3.4/v16. This APK does not contain the 0.3.5 native engine.**
+          Adds Updates (Stable/Development), a small dual-version footer, and a Mods manager with only the existing Dual-Screen Mod bundled. Original native libraries, game controls and importer are preserved.
+          Install beta.1 over v1.0 without uninstalling. Beta.2 is the matching second build for testing the update process; it has the same features with a higher Android version code.
+          Automated checks: 50 Java policy/persistence/UI tests; exact payload and signer checks; Android emulator installs, version footer, mod toggle, and two data-preserving upgrades.
+          Physical AYN Thor dual-screen output, native gameplay, cutscenes and in-launcher network installation still require separate device verification. Back up important saves before testing. Do not promote to Stable yet.
+          Private signing keys are not stored in this repository or CI.
+          ''')
+          PY
+          if gh release view "$TEST_TAG" >/dev/null 2>&1; then
+            echo 'Test release already exists. Refusing to replace published APKs.'
+          else
+            gh release create "$TEST_TAG" work/signed/*.apk work/signed/SHA256SUMS.txt work/reports/smoke-report.json --target "$GITHUB_SHA" --prerelease --latest=false --title 'Launcher 1.1 beta test — ReRAC 0.3.4' --notes-file work/notes.md
+          fi
+      - name: Retain signed candidates and actual emulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-1.1-signed-emulator-test
+          path: |
+            work/signed
+            work/reports
+            work/approval.json
+          retention-days: 14
