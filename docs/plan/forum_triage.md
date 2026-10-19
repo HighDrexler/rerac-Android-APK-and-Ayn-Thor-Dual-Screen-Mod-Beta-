@@ -145,7 +145,14 @@ the Sharp setting shows the pixels. The fix the post wants is the planned HUD Hi
 Kalebo III grind-rail death (§1.11): level 16's grind transitions (0x2270c8's case 0x28: the grind hit at health < 2
 knocks Ratchet off backwards into the hurt 0x16) match the port; a headless run on rail 1 with a hit at 1 health goes
 0x16 → the fall 6 → below the death height → the death fall 0x77, as the report says the PS2 does. Not reproduced:
-needs the spot (a knock-off that lands back on a rail would end in the ground death 0x3d in both).
+needs the spot (a knock-off that lands back on a rail would end in the ground death 0x3d in both). The thrown
+wrench's trail hiding the water (§1.28): the trail is the wrench's after-images (mode 0x80a: bit 8 fading, TEST_1
+0x5308b = As ≥ 8 writes colour and Z; bit 0x800 deferred), drawn in `DrawMobys` before `RunDrawCallbacks_1`, the list
+the ocean 1111 and the strip water draw from — the port's order too, so their Z hides the water behind them in both
+unless the game masks Z for faded mobys (ZBUF ZMSK, not read). Needs a PS2 capture of a throw over water. The canisters
+and enemy attacks (§1.10): the tanks 1261 take any record through `MobyGetHitMessage(0x330001)` and the resolver gives
+out5 = 2 for every attack type, and enemy shots with a template (the turret's 1238, flags 0x10001) line-test into
+mobys with mode 0x4000 as the hero's do; the Space Commandos' class is not identified (needs the spot).
 
 **Fixed later 2026-10-19:** the warp pads' camera (4f34672: a class teleport turns Ratchet's moby rows before the
 camera reset snaps behind them); the FOV after Pokitaru's dogfight (142909a: a scene's end restores the gameplay
