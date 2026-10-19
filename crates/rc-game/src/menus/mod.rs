@@ -104,6 +104,10 @@ pub const DATA_LABELS: &[u32] = &[
     // The confirm page's gold-bolt totals and the kind-0x23 scroller's message lists.
     pause::map_page::GOLD_TOTALS, pause::media::label::SCROLL_LISTS[0], pause::media::label::SCROLL_LISTS[1],
     pause::media::label::SCROLL_LISTS[2], pause::media::label::SCROLL_LISTS[3], pause::media::label::SCROLL_LISTS[4],
+    // The cheats' tables (`crate::cheats::CheatTables`): the move patterns, the Cheats page's slots and labels, the
+    // debug codes. Unmapped, every level but 01 read other data there (one-move patterns: a side-flip toggling the
+    // mirror, a double jump a cheat).
+    crate::cheats::label::PATTERNS, crate::cheats::label::LIST_SLOTS, crate::cheats::label::LIST_LABELS, crate::cheats::label::CODES,
 ];
 
 /// The pad fields the menus read (the `PAD` record at 0x13c940 after this frame's `UpdatePad`).
