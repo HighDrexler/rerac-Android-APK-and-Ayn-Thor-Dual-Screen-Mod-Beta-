@@ -47,21 +47,19 @@ def code():
     return int(match.group(1)) if match else -1
 
 def reopen_after_install(out):
-    # Package replacement can complete before the installer leaves the foreground.
-    # Its completion screen must be handled, not mistaken for the launcher.
+    # Package replacement completes before the system's App installed dialog.
+    # Use its actual Open action. Do not force-stop the just-opened app: doing so
+    # leaves the installer's DeleteStagedFileOnResult task below it in Android 15.
     end=time.monotonic()+60
     while time.monotonic()<end:
         root=dump()
         if any('Launcher 1.1.0-beta.2' in n.get('text','') for n in root.iter('node')):break
-        buttons=[n for n in root.iter('node') if 'packageinstaller' in n.get('package','') and n.get('text','').lower() in ('open','done') and n.get('enabled')=='true']
+        buttons=[n for n in root.iter('node') if 'packageinstaller' in n.get('package','') and n.get('text','').lower()=='open' and n.get('enabled')=='true']
         if buttons:
-            screen(out,'05-installer-completed')
-            chosen=next((n for n in buttons if n.get('text','').lower()=='open'),buttons[0])
-            tap_text(root,chosen.get('text'));time.sleep(2);break
+            screen(out,'05-installer-completed');tap_text(root,buttons[0].get('text'));break
         time.sleep(1)
-    # A normal Home + explicit launch removes any retained system task overlay.
-    sh('input keyevent 3');launch();await_text('Launcher 1.1.0-beta.2',60)
-    screen(out,'06-updated-launcher-beta2')
+    else:raise AssertionError('Android installer did not finish with an Open action')
+    await_text('Launcher 1.1.0-beta.2',60);screen(out,'06-updated-launcher-beta2')
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--apk',type=Path,required=True);p.add_argument('--output',type=Path,required=True);args=p.parse_args()
