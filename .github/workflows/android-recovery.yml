@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: android-actions/setup-android@v3
       - name: Recover public baseline and Android tools
         shell: bash
         run: |
@@ -33,6 +34,7 @@ jobs:
           recovery/tools/build-tools/aapt2 dump xmltree --file AndroidManifest.xml recovery/baseline/ReRAC-Mobile-v16.apk > recovery/inspection/baseline-manifest.txt
           find recovery/tools -type f -print0 | sort -z | xargs -0 sha256sum > recovery/inspection/tool-checksums.txt
       - name: Retain recovery tools and disassembly (no game data, no signing keys)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-v16-recovery
