@@ -65,6 +65,12 @@ impl Plugin for FramePacePlugin {
 /// This frame's ticks (module docs).
 fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>) {
     let now = Instant::now();
+    #[cfg(target_os = "android")]
+    if crate::android::paused() {
+        pace.last = Some(now); pace.acc = 0.0; pace.next = None;
+        *strategy = TimeUpdateStrategy::FixedTimesteps(0);
+        return;
+    }
     let Some(last) = pace.last.replace(now) else {
         *strategy = TimeUpdateStrategy::FixedTimesteps(1);
         return;
@@ -97,7 +103,10 @@ fn period_for(mhz: Option<u32>) -> Option<Duration> {
 
 /// The limiter (module docs).
 fn wait(mut pace: ResMut<Pace>, monitors: Query<&Monitor, With<PrimaryMonitor>>) {
+    #[cfg(not(target_os = "android"))]
     let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));
+    #[cfg(target_os = "android")]
+    let period = period_for(Some(crate::android::display_mhz()));
     if period != pace.period {
         pace.period = period;
         pace.next = None;

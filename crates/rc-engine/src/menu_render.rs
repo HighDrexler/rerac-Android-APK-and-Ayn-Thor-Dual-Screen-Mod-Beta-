@@ -147,15 +147,15 @@ pub struct MenuMode {
 }
 
 #[derive(Resource)]
-struct MenuRt {
-    assets: MenuAssets,
-    qs: Option<QuickSelect>,
-    menu: Option<PageMenu>,
-    draws: Vec<MenuDraw>,
+pub(crate) struct MenuRt {
+    pub(crate) assets: MenuAssets,
+    pub(crate) qs: Option<QuickSelect>,
+    pub(crate) menu: Option<PageMenu>,
+    pub(crate) draws: Vec<MenuDraw>,
     /// The mode the frame's draws belong to (the mode at the frame's start).
-    render_mode: Mode,
+    pub(crate) render_mode: Mode,
     script: Option<Script>,
-    last_counter: Option<u64>,
+    pub(crate) last_counter: Option<u64>,
     /// The menu was entered this frame: the snapshot is taken of this frame's render.
     snapshot_request: bool,
     /// The return page reopened the menu before this frame's tick ([`return_page_reopen`]): the frame still renders
@@ -1702,7 +1702,7 @@ fn translate(d: &Draw, ox: i32, oy: i32) -> Draw {
 
 /// Converts the menu draws to primitives; returns whether the snapshot is shown. The snapshot and the
 /// menu's black 0x30 are the menu layer's (module docs), not primitives.
-fn convert(
+pub(crate) fn convert(
     draws: &[MenuDraw],
     h: &mut Hud2d,
     statics: &mut [Vec<Prim>; 3],
