@@ -1,0 +1,10 @@
+build/
+target/
+work/
+*.apk
+*.apk.idsig
+*.p12
+*.jks
+*.keystore
+*password*
+__pycache__/

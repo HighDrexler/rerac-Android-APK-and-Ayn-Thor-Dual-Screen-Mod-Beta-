@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "dual-screen",
+  "name": "AYN Thor Dual-Screen Mod",
+  "version": "1.0",
+  "kind": "built-in",
+  "launcher_api": 1,
+  "core_versions": ["0.3.4"],
+  "description": "The existing v16 companion display: maps, menus, weapons, gadgets and interactive quick selection on a second screen. The game stays on the main screen."
+}
