@@ -639,6 +639,9 @@ fn sway_sin(i: u32) -> f32 { sway_table(i) as f32 / 128.0 }
 /// matrix block, `tick` = the frame counter (boot 0x15f438 / level01 0x15f3f8, +1 per frame in the main
 /// loop), `rel` = origin − camera position (world units). None: no sway (mode 0, or `|rel|² > 6000`).
 ///
+/// The same block runs in `TieProc` (see [`crate::tie::wind_sway`]): ties feed it `(block >> 9) & 0x1ff`
+/// as the phase instead of the address itself.
+///
 /// ```text
 /// u = block·67 + tick,  w = block·123 + tick·(mode ≥ 2 ? 2 : 1)          (u32, wrapping)
 /// s(i) = table[i & 0xff] / 128
@@ -647,13 +650,19 @@ fn sway_sin(i: u32) -> f32 { sway_table(i) as f32 / 128.0 }
 /// sx = (s(w + 64)·0.02 + g·1.0)·k,  sy = (s(w >> 1)·0.02 + g·0.0)·k,  both ·0.5 when mode = 1
 /// ```
 pub fn wind_sway(mode: u16, block: u32, tick: u32, rel: [f32; 3]) -> Option<[f32; 2]> {
+    wind_sway_phase(mode, block, tick, rel)
+}
+
+/// [`wind_sway`] with the phase input already reduced. `ShrubProc` passes the matrix-block address;
+/// `TieProc` passes `(address >> 9) & 0x1ff` (the address's 512-byte page, masked to 9 bits).
+pub fn wind_sway_phase(mode: u16, phase: u32, tick: u32, rel: [f32; 3]) -> Option<[f32; 2]> {
     if mode == 0 { return None; }
     let d2 = (rel[0] * rel[0] + rel[1] * rel[1]) + 1.0 * (rel[2] * rel[2]);
     if SWAY_VF9[1] - d2 < 0.0 { return None; }
     let k = 1.0 - d2 * SWAY_VF9[2];
     let double = mode >> 1 != 0;
-    let u = block.wrapping_mul(67).wrapping_add(tick);
-    let w = block.wrapping_mul(123).wrapping_add(tick).wrapping_add(if double { tick } else { 0 });
+    let u = phase.wrapping_mul(67).wrapping_add(tick);
+    let w = phase.wrapping_mul(123).wrapping_add(tick).wrapping_add(if double { tick } else { 0 });
     let g = ((sway_sin(u) * sway_sin(u >> 1)) * SWAY_VF9[0] + (1.0 - SWAY_VF9[0])) * SWAY_VF8[0];
     let mut sx = (sway_sin(w.wrapping_add(0x40)) * SWAY_VF8[1] + g * SWAY_VF8[2]) * k;
     let mut sy = (sway_sin(w >> 1) * SWAY_VF8[1] + g * SWAY_VF8[3]) * k;

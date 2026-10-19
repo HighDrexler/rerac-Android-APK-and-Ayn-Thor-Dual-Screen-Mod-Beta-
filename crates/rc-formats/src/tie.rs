@@ -632,6 +632,16 @@ pub fn rgba5551(c: u16) -> [u8; 4] {
     [((c & 0x1f) << 3) as u8, (((c >> 5) & 0x1f) << 3) as u8, (((c >> 10) & 0x1f) << 3) as u8, if c & 0x8000 != 0 { 0x80 } else { 0 }]
 }
 
+/// The wind shear of one tie instance this frame, `(sx, sy)` (`TieProc` boot 0x235be8, level01 0x2a9a90,
+/// the block at `0x2aa53c..0x2aa6b0`). It is the same shear as [`crate::shrub::wind_sway`] (the same 256-byte
+/// table and `vf8` / `vf9` constants, shearing the instance columns `x += sx·z`, `y += sy·z`), except that the
+/// phase input is `(block >> 9) & 0x1ff`: the EE address's 512-byte page rather than the address itself.
+/// `mode` = `(flags_24 & 6) >> 1` (0 = none), `block` = EE address of the instance's 0x40-byte matrix block,
+/// `tick` = the frame counter, `rel` = origin − camera position (world units).
+pub fn wind_sway(mode: u16, block: u32, tick: u32, rel: [f32; 3]) -> Option<[f32; 2]> {
+    crate::shrub::wind_sway_phase(mode, (block >> 9) & 0x1ff, tick, rel)
+}
+
 /// Parses a tie instance section (`s32 count`, 12 bytes pad, `count` x 0xe0 records).
 pub fn parse_tie_instance_section(section: &[u8]) -> Result<Vec<TieInstance>> {
     let b = Buf(section);
@@ -734,6 +744,24 @@ mod tests {
             TieTriangle { a: 5, b: 5, c: 0, ad_gif: 0 },
             TieTriangle { a: 2, b: 0, c: 5, ad_gif: 0 },
         ]);
+    }
+
+    #[test]
+    fn wind_sway_uses_the_address_page_as_its_phase() {
+        // `(block >> 9) & 0x1ff`: the page, not the address (TieProc's extra shift).
+        assert_eq!(wind_sway(0, 0x100000, 5, [1.0, 1.0, 0.0]), None);
+        assert_eq!(wind_sway(2, 0x100000, 5, [70.0, 40.0, 0.0]), None); // 4900 + 1600 > 6000
+        for tick in [0u32, 1, 7, 255, 256, 4097] {
+            for block in [0u32, 0x40, 0x1c0, 0x200, 0x240, 0x1040] {
+                assert_eq!(
+                    wind_sway(2, block, tick, [0.0, 0.0, 10.0]),
+                    crate::shrub::wind_sway_phase(2, (block >> 9) & 0x1ff, tick, [0.0, 0.0, 10.0])
+                );
+            }
+        }
+        // Eight consecutive 0x40-byte blocks share a page (and so a phase).
+        assert_eq!(wind_sway(2, 0x1c000, 3, [0.0; 3]), wind_sway(2, 0x1c1c0, 3, [0.0; 3]));
+        assert_ne!(wind_sway(2, 0x1c000, 3, [0.0; 3]), wind_sway(2, 0x1c200, 3, [0.0; 3]));
     }
 
     #[test]
