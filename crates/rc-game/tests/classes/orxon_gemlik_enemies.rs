@@ -177,7 +177,10 @@ fn w3_units_resolve_on_their_levels() {
 /// Level `level` after its load pass with Ratchet at `at`.
 fn level_at(level: u32, at: [f32; 3]) -> Option<(Lv, Hero)> {
     let mut lv = load(level)?;
-    let hero = hero_at(at);
+    let mut hero = hero_at(at);
+    // Orxon with the O2 Mask owned: without it Clank is the hero at the load and the Ratchet-only brawlers (+0x1dc,
+    // the packs) delete themselves at their start (the Clank section 22 deletes itself once the mask is owned).
+    if level == 10 { hero.owned.set(6, true); }
     lv.load_pass(&hero);
     Some((lv, hero))
 }
