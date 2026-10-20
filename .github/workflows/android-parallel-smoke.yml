@@ -50,6 +50,7 @@ jobs:
           set -euo pipefail
           mkdir -p work/candidate work/reports work/test
           [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/native-run.json
           python3 - <<'PY'
           import json,os
@@ -60,7 +61,6 @@ jobs:
           assert run['head_branch']=='experimental'
           assert run['id']==int(os.environ['NATIVE_RUN'])
           PY
-          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
           printf '%s\n' "$NATIVE_RUN" > work/reports/native-build-run.txt
           sdkmanager 'build-tools;36.0.0'
