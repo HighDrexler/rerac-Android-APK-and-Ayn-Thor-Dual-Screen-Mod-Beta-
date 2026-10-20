@@ -267,6 +267,8 @@ pub struct Camera {
     pub line_flags: u32,
     pub sph_flags: u32,
     pub end_flags: u32,
+    /// 0x167350: the surface the camera line passes through, kept from the last surface Ratchet was in (`0x20eb40`).
+    pub line_surface: u32,
     /// Number of 30-tick blocked resets so far (diagnostics).
     pub resets: u32,
     /// The crate the blocked camera line hit during the last update (0x312ef8): the moby and the hit
@@ -889,7 +891,10 @@ impl Camera {
         self.out
     }
 
-    /// 0x20eb40: collision flags (no hero-side surface flags on land: lines 0xb4, spheres 0x94, end 0x14).
+    /// 0x20eb40: collision flags. Spheres 0x94 (0xb4 in the water groups or the swim 0x73, unless the camera is above
+    /// the water), end 0x14 / 0x34. The camera line (0xb4: through water, surface 0) passes through the surface Ratchet is
+    /// in (0x20 | id << 8): surface 1 (0x140635), 0xb (0x14063b), 3 (the quicksand, 0x140636) or 0xd (0x14063c), and keeps
+    /// it (0x167350) after he leaves it, until he is in water (0x140634) again.
     fn pre_flags(&mut self, inp: &CamInput) {
         let h = inp.hero;
         let mut f = 0x14;
@@ -897,7 +902,19 @@ impl Camera {
         if h.group != 0x11 && h.water_level < self.out.pos[2] { f = 0x14; }
         self.end_flags = f;
         self.sph_flags = f | 0x80;
-        self.line_flags = 0xb4;
+        let s = &h.surf;
+        let surface = if s.f0635 != 0 { Some(0x100) } else if s.f063b != 0 { Some(0xb00) } else if s.f0636 != 0 { Some(0x300) } else if s.f063c != 0 { Some(0xd00) } else { None };
+        match surface {
+            Some(k) => {
+                self.line_surface = k;
+                self.line_flags = k | 0xb4;
+            }
+            None if h.f0634 != 0 => {
+                self.line_surface = 0;
+                self.line_flags = 0xb4;
+            }
+            None => self.line_flags = self.line_surface | 0xb4,
+        }
     }
 
     /// 0x20e670: up vectors and hero motion.
@@ -2624,6 +2641,31 @@ mod tests {
         assert!(r[0].to_f32().abs() < 1e-5 && (r[1].to_f32() - 1.0).abs() < 1e-5, "{r:?}");
         let c = cross(v, z); // z × x = y
         assert_eq!(c[1], Pf::ONE);
+    }
+
+    /// `0x20eb40`'s line flags: through the surface Ratchet is in (the quicksand 3: 0x3b4), kept after he leaves it,
+    /// back to water only (0xb4) once he is in water.
+    #[test]
+    fn camera_line_passes_the_last_surface() {
+        let (coll, mut hero, pad) = setup();
+        let mut cam = Camera::new(&CamInput { hero: &hero, pad: &pad, coll: &coll, mobys: None, hero_moby: None }, CameraOptions::default());
+        let mut flags = |cam: &mut Camera, hero: &crate::hero::Hero| {
+            cam.pre_flags(&CamInput { hero, pad: &pad, coll: &coll, mobys: None, hero_moby: None });
+            cam.line_flags
+        };
+        assert_eq!(flags(&mut cam, &hero), 0xb4);
+        hero.surf.f0636 = 1;
+        assert_eq!(flags(&mut cam, &hero), 0x3b4);
+        hero.surf.f0636 = 0;
+        assert_eq!(flags(&mut cam, &hero), 0x3b4, "kept after the quicksand");
+        hero.surf.f0635 = 1;
+        hero.surf.f063b = 1;
+        assert_eq!(flags(&mut cam, &hero), 0x1b4, "surface 1 first");
+        hero.surf = Default::default();
+        hero.f0634 = 1;
+        assert_eq!(flags(&mut cam, &hero), 0xb4);
+        hero.f0634 = 0;
+        assert_eq!(flags(&mut cam, &hero), 0xb4);
     }
 
     /// The look stance (camera mode 4): 7 ticks turning the follow camera, then the first-person camera takes over

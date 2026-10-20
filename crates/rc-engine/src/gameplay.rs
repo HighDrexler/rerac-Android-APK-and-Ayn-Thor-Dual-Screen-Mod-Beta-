@@ -2529,7 +2529,7 @@ fn tick(
         let s = &p.ratchet.state;
         println!(
             "tick {:5}: state {:#04x} pos {:.4?} yaw {:+.4} air {:3} | anim {}:{} -> {}:{} t {:.3} | cam {:.3?} | {:?} | rng {:#010x} \
-             mobys {n_active} bolts {} free {} dyn {}/{} parts {} grass seq1 {} | hand {}:{} {:?} combo {} hit {} fr {:.2} tip {:.3?} | back {} | snd {} | hp {} inv {} | shake {:.4} {:.4} | arm grp {:#x} out {} raised {} layers {:?} recs8/9 {:.3} {:.3} r0..3 {:.3?} irows {:.2?} aim {:.2?}",
+             mobys {n_active} bolts {} free {} dyn {}/{} parts {} grass seq1 {} | hand {}:{} {:?} combo {} hit {} fr {:.2} tip {:.3?} | back {} | snd {} | hp {} energy {} inv {} | shake {:.4} {:.4} | arm grp {:#x} out {} raised {} layers {:?} recs8/9 {:.3} {:.3} r0..3 {:.3?} irows {:.2?} aim {:.2?}",
             p.game.counter - 2, h.state, h.position(), h.yaw().to_f32(), h.air_ticks, s.seq_a, s.frame_a, s.seq_b, s.frame_b, s.t,
             report.camera.pos_f32(), report.hero, p.game.rng.state, p.svc.counters.bolts, p.game.mobys.free_slots,
             p.dynamic.drawn, p.dynamic.live, particles.as_ref().map_or(0, |s| s.sys.pool.count),
@@ -2538,7 +2538,7 @@ fn tick(
             h.melee.combo, h.melee.hit, p.ratchet.frame.to_f32(), rc_game::hero::physics::to_f32x3(h.melee.tip),
             h.back.as_ref().map_or("-".to_string(), |b| format!("pack {}:{} clank {}:{}", b.pack.anim.seq_b, b.pack.anim.frame_b, b.clank.anim.seq_b, b.clank.anim.frame_b)),
             audio_cell.borrow().as_ref().map_or("-".to_string(), |a| { let st = a.stats(); format!("{} plays, class {}/{}", st.plays, st.class_slots, st.class_sounds) }),
-            h.health, h.f510, p.game.camera.shake[0].offset.to_f32(), p.game.camera.shake[1].offset.to_f32(),
+            h.health, h.bodies.energy, h.f510, p.game.camera.shake[0].offset.to_f32(), p.game.camera.shake[1].offset.to_f32(),
             h.group, h.f13f8, h.f13fa, h.weapons.layers.iter().map(|l| l.map(|l| (l.seq_b, l.weight))).collect::<Vec<_>>(),
             h.idle.joints[rc_game::hero::idle::joint::ARM_L].cur[1], h.idle.joints[rc_game::hero::idle::joint::ARM].cur[1],
             h.idle.joints[..4].iter().map(|j| (j.attached, j.cur)).collect::<Vec<_>>(),
