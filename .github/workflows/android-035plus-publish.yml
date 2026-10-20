@@ -1,5 +1,9 @@
 name: Publish ReRAC Android 0.3.5+ Development APK
 on:
+  push:
+    branches: [main]
+    paths:
+      - android/release/development-publish-request.json
   workflow_dispatch:
     inputs:
       native_build_run:
@@ -54,6 +58,28 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
+      - name: Load a reviewed Development publication request from main
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          gh api "repos/$GITHUB_REPOSITORY/contents/android/release/development-publish-request.json?ref=main" --jq '.content' | tr -d '\n' | base64 -d > work/publish-request.json
+          python3 - <<'PY'
+          import json,os,re
+          from pathlib import Path
+          doc=json.loads(Path('work/publish-request.json').read_text())
+          assert set(doc)=={'native_build_run','smoke_run','release_tag','launcher_version','version_code'}
+          for key in ('native_build_run','smoke_run'):
+              assert str(doc[key]).isdigit()
+          assert re.fullmatch(r'rerac-android-[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+',doc['release_tag'])
+          assert re.fullmatch(r'1\.1\.0-beta\.[0-9]+',doc['launcher_version'])
+          assert type(doc['version_code']) is int and doc['version_code']>=21
+          names={'native_build_run':'NATIVE_RUN','smoke_run':'SMOKE_RUN','release_tag':'RELEASE_TAG','launcher_version':'LAUNCHER_VERSION','version_code':'VERSION_CODE'}
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+              for name,variable in names.items():
+                  env.write(variable+'='+str(doc[name])+'\n')
+          PY
       - name: Require release secrets and validated native build
         shell: bash
         run: |
