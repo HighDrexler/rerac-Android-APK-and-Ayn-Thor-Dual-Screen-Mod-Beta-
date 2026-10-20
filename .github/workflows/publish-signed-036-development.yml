@@ -73,6 +73,8 @@ jobs:
               meta=json.loads(z.read('assets/rerac-build.json'))
               assert (meta['package_id'],meta['core_version'],meta['launcher_version'],meta['version_code'])==('org.rerac.android.ui035test','0.3.6','1.1.0-beta.10',26)
               assert meta['native_source_sha']==rec['source_native_sha'] and meta['native_source_rebuild'] is True
+              assert meta['upstream_sha']=='89c87e98f9d8296187df2a6310c67b32144090d3'
+              assert rec['upstream_sha']==meta['upstream_sha']
               assert all('lib/'+abi+'/librc_engine.so' in z.namelist() for abi in ('arm64-v8a','x86_64'))
           signed=bytes(reconstruct(original,rec))
           assert hashlib.sha256(signed).hexdigest()==rec['signed_sha256'] and len(signed)==rec['signed_bytes']
@@ -127,7 +129,7 @@ jobs:
           cert.public_key().verify(base64.b64decode(envelope['signature'],validate=True),payload,padding.PKCS1v15(),hashes.SHA256())
           body=json.loads(payload);rel=body['release']
           apk=Path('work/out/ReRAC-Android-0.3.6-Launcher-1.1-beta10-DEV.apk')
-          assert body['channel']=='development' and rel['version_code']==26
+          assert body['channel']=='development' and rel['version_code']==26 and rel['core_version']=='0.3.6'
           assert rel['signer_sha256']==pin and rel['sha256']==hashlib.sha256(apk.read_bytes()).hexdigest()
           assert rel['bytes']==apk.stat().st_size and rel['apk_url'].endswith('/rerac-android-0.3.6-dev.1/'+apk.name)
           PY
@@ -140,7 +142,7 @@ jobs:
           release=json.loads(base64.b64decode(json.loads(base64.b64decode(obj['content']))['payload']))['release']
           assert release['version_code']==25 and release['sha256']=='626d7304c3b106d70e83b0aed158df94ca57c0fd8c3e67ed1b9d5158510b16c7'
           PY
-      - name: Upload exact beta9 APK and verify downloadable asset
+      - name: Upload actual source-built ReRAC 0.3.6 APK and verify byte-identical asset
         shell: bash
         run: |
           set -euo pipefail
@@ -148,8 +150,8 @@ jobs:
             echo 'Existing immutable 0.3.6 tag: verify rather than replace'
           else
             gh release create "$TAG" "work/out/$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
-              --title 'ReRAC Android 0.3.5 Experimental beta.9' \
-              --notes 'Movie-only quality upgrade: softens low-resolution MPEG enlargement and reduces source horizontal line banding. Preserves beta.8 FMV performance path, dialogue, dual screen and skip. Launcher beta.9/code25; core0.3.5. Original signer validated; physical-device results pending.'
+              --title 'ReRAC Android 0.3.6-alpha Android beta.10 (Development)' \
+              --notes 'Real native ReRAC 0.3.6-alpha source merge (39 upstream commits) with all Android/AYN Thor and beta.9 FMV features retained. Launcher 1.1.0-beta.10 / code26, original signing certificate, preserving saves and settings. Development validation first; physical AYN Thor and official Stable-channel test separate.'
           fi
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir work/downloaded --clobber
           cmp "work/out/$APK" "work/downloaded/$APK"
@@ -201,7 +203,7 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Download working original-signed beta8
+      - name: Download working original-signed beta9 for in-launcher core upgrade
         run: |
           set -euo pipefail
           mkdir -p work/previous work/reports
