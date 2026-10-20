@@ -2,6 +2,7 @@
 //! JNI threads only exchange immutable snapshots or bounded commands. All game
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
+include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));
 mod companion_policy;
 mod skip_policy;
 
