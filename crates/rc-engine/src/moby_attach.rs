@@ -55,6 +55,20 @@
 //! Grabber; def attach word 7) and 30 (Persuader; attach word 8). The port keeps them here as ordinary items of
 //! their own, their animation state advanced per tick while owned ([`Slot::Extra`]).
 //!
+//! **The same extras in a cutscene** (`FUN_0024a0e8`, the tail of `FUN_0024a1d0` on the scene's Ratchet actor and the
+//! mode-6 take-off / landing actors): in game modes 2 / 6 the hero's own moby is hidden and `HeroItemsAttach` attaches
+//! **only item slots 4 / 5** — the extras — to the actor, with the attach matrices `HeroComputeAttachMatrices(actor)`
+//! computes from the actor's pose. So there they follow the cutscene Ratchet ([`cutscene_host`]), and the scene / travel
+//! hide passes leave them drawn (`crate::scene_render` / `crate::travel_render` skip [`Slot::Extra`]). The vendor is game
+//! mode 5, which `FUN_0024a0e8`'s gate excludes: its weapon demo's actor stays bare (the vendor's `FUN_002486c0` hide is
+//! never cleared there), as on the PS2. Their glow pulses
+//! (`FUN_00249ea0`: [`pulse_extras`]: the Map-o-Matic's and the Bolt Grabber's colour cycles, the Bolt Grabber's slow
+//! tween, the Persuader's pulse and its spinning joint). That function is not cutscene-only: the hero update (0x231268)
+//! calls it every game tick while Ratchet is the hero body; only the rates and the Bolt Grabber's scheme change in game
+//! mode 2. In modes 2 / 6 the scene actor loop calls it once more per class-0 actor through `FUN_0024a0e8` (twice a
+//! tick for a scene's Ratchet; `CutsceneModeUpdate`'s order). The word holds between game ticks (a held scene frame
+//! advances nothing).
+//!
 //! **Clank's antenna glow** (class 1204, `HeroItemsAttach` 0x22fec0: [`place_antenna`]) on Clank's joint list 6, its
 //! +0x90 pulsing (ticks(120)). The red dot over it (the hero's draw callback `0x229440`) and the other hero glow sprites
 //! are `rc_game::hero::glow`'s, drawn by crate::fx_draw at the points [`MobyAttach::glow_point`] gives.
@@ -142,6 +156,15 @@ struct Item {
     /// Its glow word +0x90 when the game writes one (Clank's pulse, `Back::clank_color`) and the one last uploaded.
     glow: Option<u32>,
     glow_written: Option<u32>,
+    /// The extra's moby+0x90 at creation: its class header's glow colour (`InitMobyInstance`; 0: the class has no glow
+    /// and its mode bit 0x10 stays clear). The Bolt Grabber's tween starts from it; 0 for a non-extra.
+    class_glow: u32,
+    /// The glow phase of an always-on extra (the hero's +0x22E8 / +0x22EC, `FUN_00249ea0`); 0 otherwise.
+    phase: f32,
+    /// The Persuader's manipulator record (hero +0x1D90) is attached (`FUN_00249ea0`).
+    manip_attached: bool,
+    /// The class's joint list 0 target joint, where that record goes.
+    target_joint: Option<u8>,
     /// A gold weapon's class ([`ExtraMobys::set_gold`]) and the look last given to its metal.
     gold: bool,
     gold_written: Option<bool>,
@@ -168,6 +191,9 @@ pub struct MobyAttach {
     clank_antenna_chain: Vec<u8>,
     palette_len: u32,
     ticks: u64,
+    /// The game tick counter the extras' glow pulses last ran on (`play.game.counter`): `FUN_00249ea0` is called from the
+    /// hero update (0x231268), once per game tick, not from this module's fixed step.
+    last_counter: Option<u64>,
     uploaded: Option<u64>,
 }
 
@@ -384,18 +410,28 @@ fn build(
     let mut palette_len = 0u32;
     let mut geometry = Vec::new();
     // Joint lists 0 / 1 of each class (from its gadget-table blob, else the level core's).
+    let blob_of = |o: i32| gadgets.iter().find(|g| g.moby.o_class == o).map(|g| g.blob.clone()).or_else(|| crate::interact_render::class_blob(o).ok());
     let lists_of = |o: i32, c: &rc_formats::moby::MobyClass| -> [Vec<u8>; 2] {
-        let blob = gadgets.iter().find(|g| g.moby.o_class == o).map(|g| g.blob.clone()).or_else(|| crate::interact_render::class_blob(o).ok());
-        std::array::from_fn(|l| blob.as_ref().and_then(|b| gadget::joint_list(b, &c.header, l).ok()).map(|(a, _)| a).unwrap_or_default())
+        let b = blob_of(o);
+        std::array::from_fn(|l| b.as_ref().and_then(|b| gadget::joint_list(b, &c.header, l).ok()).map(|(a, _)| a).unwrap_or_default())
+    };
+    // The target joint of the class's joint list 0 (the Persuader's manipulator record, `FUN_00249ea0`).
+    let target_of = |o: i32, c: &rc_formats::moby::MobyClass| -> Option<u8> {
+        let b = blob_of(o)?;
+        let (_, s) = gadget::joint_list(&b, &c.header, 0).ok()?;
+        moby_anim::list_target(&s)
     };
     for (name, class, ac, attach) in specs {
         let lists = lists_of(class.o_class, &class.class);
+        let extra = attach.slot == Slot::Extra;
+        let target_joint = if extra { target_of(class.o_class, &class.class) } else { None };
+        let class_glow = if extra { class.class.header.glow_rgba as u32 } else { 0 };
         let slots = (ac.joint_count as u32).max(ExtraMobys::max_skinned_joint(&class) as u32 + 1).max(1);
         // CreateMoby: init_moby_instance's state; the wrench then blends to sequence 1 (FUN_0022f3c0).
         let mut state = AnimState::spawn(&ac);
         let mut snapshot = None;
         if attach.slot == Slot::Hand { moby_anim::set_sequence(&mut state, &ac, 1, 0, 1, &mut snapshot); }
-        let extra_item = if attach.slot == Slot::Extra { EXTRAS.iter().find(|e| e.1 == class.o_class).map_or(0, |e| e.0) } else { 0 };
+        let extra_item = if extra { EXTRAS.iter().find(|e| e.1 == class.o_class).map_or(0, |e| e.0) } else { 0 };
         // Without the game tick only the wrench, the Heli-Pack and Clank show (the old viewer behaviour).
         let visible = extra_item == 0
             && !matches!(name, "bomb glove" | "Thruster-Pack" | "Hydro-Pack" | "Swingshot" | "Swingshot hook" | "hand item" | "left boot" | "right boot" | "head item" | "Clank antenna");
@@ -403,7 +439,9 @@ fn build(
         let scale = class.class.header.scale * if attach.slot == Slot::Antenna { 1.3 } else { 1.0 };
         items.push(Item {
             name, o_class: class.o_class as i16, extra_item, visible, shown: None, attach, anim: ac, state, snapshot, scale,
-            base: palette_len, slots, rows: [[0; 4]; 3], position: [0.0; 3], entities: Vec::new(), mods: Vec::new(), glow: None, glow_written: None, gold: false, gold_written: None, lists,
+            base: palette_len, slots, rows: [[0; 4]; 3], position: [0.0; 3], entities: Vec::new(), mods: Vec::new(),
+            glow: if extra { (class_glow != 0).then_some(class_glow) } else { None }, glow_written: None, class_glow, phase: 0.0, manip_attached: false,
+            target_joint, gold: false, gold_written: None, lists,
         });
         palette_len += slots;
         geometry.push(class);
@@ -414,7 +452,7 @@ fn build(
         host_k, host_class: placed.class, chains,
         host_rows: crate::moby_light::instance_rows(inst), host_pos: inst.position, host_scale: placed.scale,
         host_light: inst.light_word(), host_ambient: inst.ambient_rgb(),
-        items, extra, clank_targets: clank_targets(), clank_antenna_chain: clank_antenna_chain(), palette_len, ticks: 0, uploaded: None,
+        items, extra, clank_targets: clank_targets(), clank_antenna_chain: clank_antenna_chain(), palette_len, ticks: 0, last_counter: None, uploaded: None,
     };
     // Placement before the first tick (the game creates the items in the first hero update).
     let host = &anim.instances[host_k];
@@ -527,8 +565,15 @@ fn place(a: &mut MobyAttach, host_class: &MobyAnimClass, host: &AnimState, snap:
 /// tick running, the hand item is the game's (`rc_game::hero::items`: which item, its animation, rows and
 /// position as `HeroItemsAttach` placed them) and the back items' animation is the hero's (`Hero::back`: pack
 /// and Clank, with Clank's fidgets); the back items are placed here.
-fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level: Res<crate::Level>, play: Option<Res<crate::gameplay::Play>>, scene: Option<Res<crate::scene_render::ActiveScene>>) {
-    let (Some(mut a), Some(anim)) = (attach, anim) else { return };
+fn update(
+    attach: Option<ResMut<MobyAttach>>,
+    anim: Option<Res<MobyAnim>>,
+    level: Res<crate::Level>,
+    play: Option<Res<crate::gameplay::Play>>,
+    active: Option<Res<crate::scene_render::ActiveScene>>,
+) {
+    let (Some(mut attach), Some(anim)) = (attach, anim) else { return };
+    let a = &mut *attach;
     // `FUN_0022fec0`: every item copies Ratchet's +0x38..0x3f (light sets, cross-fade, ambient) every frame, so they
     // follow `HeroEnvLighting`.
     if let Some(m) = play.as_ref().and_then(|p| p.game.mobys.mobys.get(p.game.hero_moby)) {
@@ -580,27 +625,49 @@ fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level
     }
     let (k, class) = (a.host_k, &level.0.mobys.anim[a.host_class]);
     let mods = play.as_ref().map(|p| p.game.mobys.mobys[p.game.hero_moby].joint_mods.clone()).unwrap_or_default();
-    place(&mut a, class, &anim.instances[k].state, anim.snapshots[k].as_ref(), back.is_none(), hand.is_none(), &mods);
-    place_antenna(&mut a, play.as_ref().map(|p| p.game.hero.idle.counter));
+    place(a, class, &anim.instances[k].state, anim.snapshots[k].as_ref(), back.is_none(), hand.is_none(), &mods);
+    place_antenna(a, play.as_ref().map(|p| p.game.hero.idle.counter));
+    // `FUN_0024a0e8`: in a scene (mode 2) or the take-off / landing (mode 6) Ratchet is a scene actor, and the extras
+    // attach to it instead of the hidden hero moby (`HeroComputeAttachMatrices(actor)` → `HeroItemsAttach`, which
+    // attaches only item slots 4 / 5 in those modes).
+    let (scene, actor_calls) = match (active.as_deref(), play.as_deref()) {
+        (Some(active), Some(p)) => (
+            cutscene_host(active, &p.game.mobys, p.svc.game_mode),
+            cutscene_actors(active, &p.game.mobys, p.svc.game_mode).count(),
+        ),
+        _ => (None, 0),
+    };
+    if let Some((_, host_class, host)) = scene {
+        let rows = [0, 1, 2].map(|i| [host.rows[i][0].to_bits(), host.rows[i][1].to_bits(), host.rows[i][2].to_bits(), 0]);
+        let position = [host.position[0], host.position[1], host.position[2]];
+        place_on_actor(&mut a.items, &a.chains, host_class, &host.anim, &rows, position, host.scale, &host.joint_mods);
+    }
     // The always-on extras (items 33 / 34 / 35, `HeroItemsCreate` / `HeroItemsAttach`): each shows while its owned
     // flag (0x13d4e1 / 0x13d4e2 / 0x13d4e3) is set and Ratchet is drawn, its own sequence advanced every tick
-    // (`HeroItemsAttach`'s `MobyAnimAdvance`; [`place`] put it at its attach list).
+    // (`HeroItemsAttach`'s `MobyAnimAdvance`; [`place`] or [`place_on_actor`] put it at its attach list). In a scene
+    // they show on the actor, where modes 2 / 6 in the game attach them whatever the first-person flag says, and not
+    // at all on a frame without one (at the start of a take-off, a scene without Ratchet).
     let owned = play.as_ref().map(|p| p.game.hero.owned);
-    // In a scene (modes 2 / 6) `FUN_0024a1d0` → `FUN_0024a0e8` runs on the scene's Ratchet (class 0):
-    // `HeroComputeAttachMatrices(actor)` and `HeroItemsAttach` place Ratchet's items on the actor's pose, and the item
-    // slots 4 / 5 (0x140520 / 0x140524 / 0x140570: the always-on extras) lose their hidden bit. Without an actor of class
-    // 0 they stay hidden with Ratchet (`FUN_002486c0`).
-    let actor_ws = play.as_ref().and_then(|p| scene_ratchet_lists(p, scene.as_deref(), &a.chains));
+    let mode = play.as_ref().map_or(0, |p| p.svc.game_mode);
+    let cutscene = matches!(mode, 2 | 6);
+    // `FUN_00249ea0` runs once per hero update tick (0x231268 calls it every game tick), not once per fixed step: a held
+    // scene / vendor frame must not advance the phases.
+    let ticked = play.as_ref().is_some_and(|p| a.last_counter != Some(p.game.counter));
+    if let Some(p) = play.as_ref() { a.last_counter = Some(p.game.counter); }
+    // `FUN_00228870` returns before `FUN_00210928` (and its `FUN_00249ea0` / `HeroItemsAttach`) while another body is
+    // the hero (`0x20A4` ≠ 0: Clank, Giant Clank, the disguise). The scene actor loop's `FUN_0024a0e8` still runs in
+    // modes 2 / 6.
+    let hero_update = play.as_ref().is_some_and(|p| p.game.hero.mode == 0);
+    let calls = pulse_calls(hero_update, cutscene, actor_calls);
+    for _ in 0..calls { pulse_extras(&mut a.items, mode, owned.as_ref(), ticked); }
     for item in a.items.iter_mut().filter(|i| i.attach.slot == Slot::Extra) {
         let on = extra_owned(item.extra_item, owned.as_ref());
-        item.visible = on && (!fp || actor_ws.is_some());
-        if let Some(w) = actor_ws.as_ref().and_then(|ws| ws.iter().find(|(l, _)| *l == item.attach.joint_list).map(|(_, w)| *w)) {
-            item.position = [w[3][0], w[3][1], w[3][2]];
-            let mut rows: [V4; 3] = [0, 1, 2].map(|i| w[i].map(f32::to_bits));
-            if item.attach.normalise { moby_anim::normalise_columns(&mut rows); }
-            item.rows = rows;
-        }
-        if on { moby_anim::advance(&mut item.state, &item.anim); }
+        item.visible = if cutscene { on && scene.is_some() } else { on && !fp };
+        // One `MobyAnimAdvance` per tick is enough for these extras: the second `HeroItemsAttach` call at
+        // `FUN_0024a0e8` advances them again, but the Map-o-Matic and Bolt Grabber are static (speed 0, mode 0x40) and
+        // the Persuader's three sequences are one frame each, so a second advance changes no pose. A future multi-frame
+        // extra should run the whole attach step at both call sites (with their own matrices), not add an advance here.
+        if on && ticked && calls > 0 { moby_anim::advance(&mut item.state, &item.anim); }
     }
     // The worn items (item slots 1 and 2, rc_game::hero::worn): the class of the slot's item shows while the slot
     // has its moby (states 2 and 3), hidden with Ratchet's items (first person; Clank hidden does not hide them).
@@ -681,28 +748,128 @@ fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level
     a.ticks += 1;
 }
 
-/// The attach matrices of `chains` (Ratchet's lists) on the running scene's Ratchet actor (class 0, modes 2 / 6), from its
-/// table moby's pose, rows, position and scale (`HeroComputeAttachMatrices(actor)`); None outside a scene or without one.
-fn scene_ratchet_lists(p: &crate::gameplay::Play, scene: Option<&crate::scene_render::ActiveScene>, chains: &[(usize, Vec<u8>)]) -> Option<Vec<(usize, Rows)>> {
-    let actor = match p.svc.game_mode {
-        2 => p.svc.cinematic.scene.as_ref()?.actors.iter().find(|x| x.o_class == 0).and_then(|x| Some((x.moby?, x.anim.clone()))),
-        6 => scene?.space_actors.iter().find(|(id, _)| p.game.mobys.mobys.get(*id).is_some_and(|m| m.o_class == 0)).cloned(),
-        _ => None,
-    }?;
-    let m = p.game.mobys.mobys.get(actor.0)?;
-    let rows: [V4; 3] = [0, 1, 2].map(|i| m.rows[i].map(f32::to_bits));
-    let lists: Vec<&[u8]> = chains.iter().map(|c| c.1.as_slice()).collect();
-    let ps = moby_anim::evaluate_chains_posed(&actor.1, &m.anim, None, &lists, &[], &[]);
-    let pos = [m.position[0], m.position[1], m.position[2]];
-    Some(chains.iter().zip(&ps).map(|(c, pm)| (c.0, moby_anim::attach_matrix(pm, &rows, pos, m.scale))).collect())
-}
-
 /// Whether the hand entity set of class `o_class` shows: only the class of the slot's item moby (the game has no
 /// other hand moby), hidden in first person (`0x2486c0`) unless the item is the wrench (`wrench`: 0x140408 = 8 in game
 /// mode 0) off the hand (thrown: `mstate` ≠ 0), and while `FUN_002487a8` hides the hand item
 /// (`rc_game::hero::Hero::hand_hidden`).
 pub(crate) fn hand_shows(o_class: i16, held: Option<&rc_game::hero::items::HandItem>, fp: bool, wrench: bool, hand_off: bool) -> bool {
     held.is_some_and(|m| m.o_class == o_class && (!fp || (wrench && m.mstate != 0)) && !hand_off)
+}
+
+/// The class-0 actors the renderer publishes for `game_mode`: mode 2's scene actors (`ActiveScene::actors`) and mode
+/// 6's take-off / landing actors (`ActiveScene::space_actors`), in the order the actor loop visits them. The hero's own
+/// class-0 moby is hidden in those modes; only the actors are drawn (`FUN_0024a0e8`).
+fn cutscene_actors<'a>(
+    active: &'a crate::scene_render::ActiveScene,
+    table: &'a rc_game::moby_runtime::MobyTable,
+    game_mode: i32,
+) -> impl Iterator<Item = (rc_game::moby_runtime::MobyId, &'a MobyAnimClass, &'a rc_game::moby_runtime::Moby)> + 'a {
+    let actors: &'a [(rc_game::moby_runtime::MobyId, std::sync::Arc<MobyAnimClass>)] = match game_mode {
+        2 => &active.actors,
+        6 => &active.space_actors,
+        _ => &[],
+    };
+    actors.iter().filter_map(|(id, anim)| {
+        let moby = table.mobys.get(*id)?;
+        (moby.o_class == 0 && !moby.is_deleted()).then_some((*id, anim.as_ref(), moby))
+    })
+}
+
+/// The last class-0 actor: the actor loop re-attaches from each in order, so its matrices are the ones left in place.
+fn cutscene_host<'a>(
+    active: &'a crate::scene_render::ActiveScene,
+    table: &'a rc_game::moby_runtime::MobyTable,
+    game_mode: i32,
+) -> Option<(rc_game::moby_runtime::MobyId, &'a MobyAnimClass, &'a rc_game::moby_runtime::Moby)> {
+    cutscene_actors(active, table, game_mode).last()
+}
+
+/// `HeroItemsAttach` 0x22fec0 on the cutscene's Ratchet actor (`FUN_0024a0e8`, modes 2 / 6): in those modes the item
+/// loop attaches only item slots 4 / 5 — the always-on extras — to the actor's lists 29 / 30. The actor's pose gives
+/// the attach matrices (`HeroComputeAttachMatrices(actor)`: `Moby_GetJointWorldMatrices(actor, 9, …)`), its rotations
+/// the item's rows (columns normalised, as for a non-glove hand item) and its position and scale the world point.
+#[allow(clippy::too_many_arguments)]
+fn place_on_actor(items: &mut [Item], chains_in: &[(usize, Vec<u8>)], class: &MobyAnimClass, state: &AnimState, rows: &[V4; 3], position: [f32; 3], scale: f32, mods: &[moby_anim::JointModifier]) {
+    let chains: Vec<&[u8]> = chains_in.iter().map(|c| c.1.as_slice()).collect();
+    let ps = moby_anim::evaluate_chains_posed(class, state, None, &chains, &[], mods);
+    let placed: Vec<(usize, usize)> = items.iter().enumerate()
+        .filter(|(_, i)| i.attach.slot == Slot::Extra)
+        .filter_map(|(k, i)| chains_in.iter().position(|c| c.0 == i.attach.joint_list).map(|c| (c, k)))
+        .collect();
+    for (c, k) in placed {
+        let Some(p) = ps.get(c) else { continue };
+        let w = moby_anim::attach_matrix(p, rows, position, scale);
+        let item = &mut items[k];
+        item.position = [w[3][0], w[3][1], w[3][2]];
+        let mut r: [V4; 3] = [0, 1, 2].map(|i| w[i].map(f32::to_bits));
+        moby_anim::normalise_columns(&mut r);
+        item.rows = r;
+    }
+}
+
+/// The number of `FUN_00249ea0` calls in one game tick: the hero update's (while Ratchet is the hero body) plus one per
+/// class-0 actor the scene actor loop runs `FUN_0024a0e8` on in modes 2 / 6.
+fn pulse_calls(hero_update: bool, cutscene: bool, actors: usize) -> usize {
+    hero_update as usize + if cutscene { actors } else { 0 }
+}
+
+/// `FUN_00249ea0`: the always-on extras' glow pulses and the Persuader's spinner, run at the two attach call sites
+/// ([`pulse_calls`]): the hero update (0x231268, while Ratchet is the hero body) and, in modes 2 / 6, the scene actor
+/// loop's `FUN_0024a0e8`. Mode 2 picks the cutscene rates, every other mode the slower set. The game keeps the phases
+/// in the hero block (+0x22E8 Map-o-Matic, +0x22EC Bolt Grabber, +0x22F0 the Persuader's result); the Persuader's phase
+/// is the Bolt Grabber's plus its own step, and its manipulator record goes on the item class's joint list 0 (attached
+/// once, its quaternion then set from the phase).
+fn pulse_extras(items: &mut [Item], mode: i32, owned: Option<&rc_game::hero::Owned>, ticked: bool) {
+    if !ticked { return; }
+    use rc_game::ps2v::Pf;
+    let dt = rc_game::hero::physics::DT;
+    let sin01 = |p: Pf| {
+        let s = rc_game::hero::physics::fast_sin(p);
+        f32::from_bits((s * Pf::f(0.5) + Pf::f(0.5)).0)
+    };
+    let advance = |phase: &mut f32, rate: f32| {
+        let p = rc_game::moby_update::services::normalize_angle(Pf::f(*phase) + dt * Pf::f(rate));
+        *phase = f32::from_bits(p.0);
+        p
+    };
+    let find = |items: &[Item], o: i32| items.iter().position(|i| i.attach.slot == Slot::Extra && i.o_class == o as i16);
+    let (ma, bo, pe) = (find(items, EXTRAS[0].1), find(items, EXTRAS[1].1), find(items, EXTRAS[2].1));
+    // The Map-o-Matic (item 33): a slow pulse between D2D2D2 and 285050.
+    if let Some(k) = ma.filter(|&k| extra_owned(items[k].extra_item, owned)) {
+        let p = advance(&mut items[k].phase, if mode == 2 { 1.2217305 } else { 2.0943952 });
+        if items[k].class_glow != 0 { items[k].glow = Some(rc_game::hud::tween_color(sin01(p), 0xD2D2D2, 0x285050)); }
+    }
+    // The Bolt Grabber (item 34): mode 2 pulses it between two colours; every other mode (gameplay and mode 6) tweens
+    // it toward one of two reds at 0.07 a tick.
+    if let Some(k) = bo.filter(|&k| extra_owned(items[k].extra_item, owned)) {
+        if mode == 2 {
+            let p = advance(&mut items[k].phase, 1.5707964);
+            if items[k].class_glow != 0 { items[k].glow = Some(rc_game::hud::tween_color(sin01(p), 0x1E1ED2, 0x1E1E50)); }
+        } else {
+            let p = advance(&mut items[k].phase, 2.9670596);
+            let v = f32::from_bits(p.0);
+            let to = if 0.0 < v && v < 1.9198622 { 0x1E1ED2 } else { 0x1EE628 };
+            if items[k].class_glow != 0 {
+                let from = items[k].glow.unwrap_or(items[k].class_glow);
+                items[k].glow = Some(rc_game::hud::tween_color(0.07, from, to));
+            }
+        }
+    }
+    // The Persuader (item 35): its phase is the Bolt Grabber's (+0x22EC) plus its own step.
+    let Some(k) = pe.filter(|&k| extra_owned(items[k].extra_item, owned)) else { return };
+    let rate = if mode == 2 { 1.3962634 } else { 1.9198622 };
+    let base = bo.map_or(0.0, |b| items[b].phase);
+    let p = rc_game::moby_update::services::normalize_angle(Pf::f(base) + dt * Pf::f(rate));
+    let item = &mut items[k];
+    if item.class_glow != 0 { item.glow = Some(rc_game::hud::tween_color(sin01(p), 0xAAC8AA, 0x965050)); }
+    if !item.manip_attached {
+        if let Some(j) = item.target_joint {
+            item.mods.insert(0, moby_anim::JointModifier { joint: j, mode: 0, weight: 0.0, quat: [0.0, 0.0, 0.0, 1.0], scale: [1.0; 3], trans: [0.0; 3] });
+        }
+        item.manip_attached = true;
+    } else if let Some(n) = item.mods.first_mut() {
+        n.quat = rc_game::hero::idle::axis_quat(f32::from_bits(p.0), 0);
+    }
 }
 
 /// Whether the always-on extra of inventory item `extra_item` (33 / 34 / 35; 0 for a non-extra) exists: its owned
@@ -961,5 +1128,171 @@ mod tests {
         assert!(extra_owned(item::PERSUADER, Some(&o)));
         assert!(!extra_owned(item::MAP_O_MATIC, Some(&o)));
         assert!(!extra_owned(0, Some(&o)), "a non-extra has no owned flag");
+    }
+
+    /// `FUN_00249ea0`: the extras' glow pulses use the game's phases (Map-o-Matic +0x22E8, Bolt Grabber +0x22EC,
+    /// the Persuader the Bolt Grabber's + its own step) and the Persuader's manipulator record is attached once on its
+    /// class's joint list 0, its quaternion set from the next tick. The hero update calls it in every mode, so gameplay
+    /// (mode 0) pulses with the non-mode-2 rates too. Nothing moves while the game tick does not run or an item is not
+    /// owned.
+    #[test]
+    fn the_extras_glow_pulse_every_game_tick() {
+        use rc_game::hero::Owned;
+        use rc_game::inventory::item;
+        use rc_game::moby_update::services::normalize_angle;
+        use rc_game::ps2v::Pf;
+        let class = MobyAnimClass { joint_count: 0, skeleton: vec![], rest: vec![], parent_word: vec![], sequences: vec![] };
+        let state = AnimState { seq_a: 0, frame_a: 0, seq_b: 0, frame_b: 0, t: 0.0, speed: 1.0, rate: 1.0, flags: 0, trigger_count: 0, skip_advance: true };
+        let extra = |id, o, class_glow, target_joint| Item {
+            name: "extra", o_class: o, extra_item: id, visible: true, shown: None,
+            attach: AttachedTo { host: 0, slot: Slot::Extra, joint_list: 7, normalise: true },
+            anim: class.clone(), state, snapshot: None, scale: 1.0, base: 0, slots: 1,
+            rows: [[0; 4]; 3], position: [0.0; 3], entities: Vec::new(), mods: Vec::new(),
+            glow: Some(class_glow), glow_written: None, class_glow, phase: 0.0, manip_attached: false, target_joint,
+            gold: false, gold_written: None, lists: [Vec::new(), Vec::new()],
+        };
+        let (map, bolt, pers) = (0x80_646464, 0x80_787878, 0x80_8c8c8c);
+        let mut items = vec![
+            extra(item::MAP_O_MATIC, 0x266, map, None),
+            extra(item::BOLT_GRABBER, 0x26a, bolt, None),
+            extra(item::PERSUADER, 0x197, pers, Some(3)),
+        ];
+        let mut owned = Owned::default();
+        for id in [item::MAP_O_MATIC, item::BOLT_GRABBER, item::PERSUADER] { owned.set(id as usize, true); }
+        let before = items.iter().map(|i| (i.phase.to_bits(), i.glow)).collect::<Vec<_>>();
+        // Not owned: nothing. Owned but the game tick held: nothing either.
+        pulse_extras(&mut items, 2, Some(&Owned::default()), true);
+        pulse_extras(&mut items, 2, Some(&owned), false);
+        assert_eq!(items.iter().map(|i| (i.phase.to_bits(), i.glow)).collect::<Vec<_>>(), before);
+
+        // Mode 2, one tick: each phase advances and its glow is the sin tween the game writes.
+        pulse_extras(&mut items, 2, Some(&owned), true);
+        let dt = rc_game::hero::physics::DT;
+        let p0 = normalize_angle(dt * Pf::f(1.2217305));
+        let p1 = normalize_angle(dt * Pf::f(1.5707964));
+        assert_eq!(items[0].phase.to_bits(), p0.0);
+        assert_eq!(items[1].phase.to_bits(), p1.0);
+        let sin01 = |p: Pf| f32::from_bits((rc_game::hero::physics::fast_sin(p) * Pf::f(0.5) + Pf::f(0.5)).0);
+        assert_eq!(items[0].glow, Some(rc_game::hud::tween_color(sin01(p0), 0xD2D2D2, 0x285050)));
+        assert_eq!(items[1].glow, Some(rc_game::hud::tween_color(sin01(p1), 0x1E1ED2, 0x1E1E50)));
+        let p2 = normalize_angle(Pf::f(items[1].phase) + dt * Pf::f(1.3962634));
+        assert_eq!(items[2].glow, Some(rc_game::hud::tween_color(sin01(p2), 0xAAC8AA, 0x965050)));
+        // The Persuader's record: attached this tick at its class list 0's target joint, identity.
+        assert!(items[2].manip_attached);
+        assert_eq!(items[2].mods.len(), 1);
+        assert_eq!((items[2].mods[0].joint, items[2].mods[0].quat), (3, [0.0, 0.0, 0.0, 1.0]));
+
+        // The next tick sets the record's quaternion from the phase (axis 0, `FUN_00221e38`).
+        pulse_extras(&mut items, 2, Some(&owned), true);
+        let p2b = normalize_angle(Pf::f(items[1].phase) + dt * Pf::f(1.3962634));
+        assert_eq!(items[2].mods.len(), 1);
+        assert_eq!(items[2].mods[0].quat, rc_game::hero::idle::axis_quat(f32::from_bits(p2b.0), 0));
+
+        // Mode 6's Bolt Grabber tweens from its live colour toward one of two reds.
+        let from = items[1].glow.unwrap();
+        let phase_before = Pf::f(items[1].phase);
+        pulse_extras(&mut items, 6, Some(&owned), true);
+        let p = normalize_angle(phase_before + dt * Pf::f(2.9670596));
+        assert_eq!(items[1].phase.to_bits(), p.0);
+        let v = f32::from_bits(p.0);
+        let to = if 0.0 < v && v < 1.9198622 { 0x1E1ED2 } else { 0x1EE628 };
+        assert_eq!(items[1].glow, Some(rc_game::hud::tween_color(0.07, from, to)));
+
+        // Normal gameplay (mode 0) takes the same non-mode-2 rates: the pulses were not cutscene-only in the game.
+        let phase_before = Pf::f(items[0].phase);
+        pulse_extras(&mut items, 0, Some(&owned), true);
+        let p = normalize_angle(phase_before + dt * Pf::f(2.0943952));
+        assert_eq!(items[0].phase.to_bits(), p.0);
+        assert_eq!(items[0].glow, Some(rc_game::hud::tween_color(sin01(p), 0xD2D2D2, 0x285050)));
+    }
+
+    /// `FUN_00249ea0` runs at the hero update's call site while Ratchet is the hero body, and again through the scene
+    /// actor loop in modes 2 / 6; `FUN_00228870` skips the hero half for Clank / Giant Clank / the disguise (`0x20A4`).
+    #[test]
+    fn extras_pulse_from_the_two_attach_call_sites() {
+        assert_eq!(pulse_calls(false, false, 0), 0, "another body outside a scene");
+        assert_eq!(pulse_calls(false, false, 1), 0, "another body: no scene loop");
+        assert_eq!(pulse_calls(true, false, 0), 1, "gameplay");
+        assert_eq!(pulse_calls(true, true, 0), 1, "a scene without its Ratchet actor");
+        assert_eq!(pulse_calls(false, true, 1), 1, "another body's scene: the actor loop only");
+        assert_eq!(pulse_calls(true, true, 1), 2, "a scene with Ratchet: the hero update and the actor loop");
+        assert_eq!(pulse_calls(true, true, 2), 3, "one call per class-0 actor");
+    }
+
+    /// The cutscene's Ratchet is the class-0 actor the renderer publishes: mode 2's scene actors, mode 6's take-off /
+    /// landing actors, never the hidden hero moby or another class. A deleted actor is not one.
+    #[test]
+    fn the_cutscene_host_is_the_renderers_class_0_actor() {
+        use rc_game::moby_runtime::{Moby, MobyTable};
+        let class = MobyAnimClass { joint_count: 0, skeleton: vec![], rest: vec![], parent_word: vec![], sequences: vec![] };
+        let anim = std::sync::Arc::new(class);
+        let mut table = MobyTable::new(
+            vec![Moby { o_class: 0, state: 1, ..Moby::default() }, Moby { o_class: 10, state: 1, ..Moby::default() }, Moby { o_class: 0, state: 1, ..Moby::default() }],
+            4,
+        );
+        let mut active = crate::scene_render::ActiveScene { actors: vec![(1, anim.clone()), (2, anim.clone())], ..Default::default() };
+        // Mode 2: a Clank actor first, then Ratchet. Mode 0 has no scene host; mode 6 reads its own list.
+        assert_eq!(cutscene_host(&active, &table, 0).map(|(id, _, _)| id), None);
+        assert_eq!(cutscene_host(&active, &table, 2).map(|(id, _, _)| id), Some(2));
+        assert_eq!(cutscene_actors(&active, &table, 2).count(), 1);
+        assert_eq!(cutscene_host(&active, &table, 6).map(|(id, _, _)| id), None, "mode 6's actors are not the scene's");
+        // A second class-0 actor: the loop's last matrices win.
+        active.actors.push((0, anim.clone()));
+        assert_eq!(cutscene_host(&active, &table, 2).map(|(id, _, _)| id), Some(0));
+        assert_eq!(cutscene_actors(&active, &table, 2).count(), 2);
+        active.space_actors = vec![(1, anim.clone())];
+        assert_eq!(cutscene_host(&active, &table, 6).map(|(id, _, _)| id), None, "class 10 is not Ratchet");
+        active.space_actors.push((2, anim));
+        assert_eq!(cutscene_host(&active, &table, 6).map(|(id, _, _)| id), Some(2));
+        table.mobys[0] = Moby { o_class: 0, state: rc_game::moby_runtime::state::DELETED, ..Moby::default() };
+        table.mobys[2] = Moby { o_class: 0, state: rc_game::moby_runtime::state::DELETED, ..Moby::default() };
+        assert_eq!(cutscene_host(&active, &table, 2).map(|(id, _, _)| id), None, "a deleted actor is gone");
+        assert_eq!(cutscene_actors(&active, &table, 2).count(), 0);
+    }
+
+    /// The extras follow the cutscene actor (`FUN_0024a0e8` → `HeroComputeAttachMatrices(actor)` + `HeroItemsAttach`): at
+    /// its list 29 / 30 point, in its world position, with its rotations; the hero's other items are not placed on it.
+    #[test]
+    fn the_extras_attach_to_the_cutscene_actor() {
+        use rc_formats::moby_anim::{MobyFrame, MobyFrameHeader, MobySequence, MobySequenceHeader, IDENTITY};
+        let q = [0u8, 0, 0, 0, 0, 0, 0xff, 0x7f];
+        let frame = MobyFrame {
+            header: MobyFrameHeader { rate: 0.0, time: 0, qwc: 1, quat_bytes: 16, scale_count: 0, trans_offset: 16, trans_count: 0 },
+            quats: vec![[0, 0, 0, 0x7fff]; 2],
+            scales: vec![],
+            trans: vec![],
+            payload: [q, q].concat(),
+        };
+        let seq = MobySequence { header: MobySequenceHeader { frame_count: 1, loop_sound: 0xff, ..Default::default() }, frames: vec![frame], triggers: vec![] };
+        // Joint 1 at z = 1024 model units: 1.0 at scale 1.
+        let class = MobyAnimClass {
+            joint_count: 2,
+            skeleton: vec![IDENTITY, IDENTITY],
+            rest: vec![[0.0; 3], [0.0, 0.0, 1024.0]],
+            parent_word: vec![0, 0x7000_0000],
+            sequences: vec![Some(seq)],
+        };
+        let state = AnimState { seq_a: 0, frame_a: 0, seq_b: 0, frame_b: 0, t: 0.0, speed: 1.0, rate: 1.0, flags: 0, trigger_count: 0, skip_advance: true };
+        let item = |slot, list| Item {
+            name: "item", o_class: 0x266, extra_item: rc_game::inventory::item::MAP_O_MATIC, visible: true, shown: None,
+            attach: AttachedTo { host: 0, slot, joint_list: list, normalise: true },
+            anim: class.clone(), state, snapshot: None, scale: 1.0, base: 0, slots: 1,
+            rows: [[0; 4]; 3], position: [0.0; 3], entities: Vec::new(), mods: Vec::new(),
+            glow: None, glow_written: None, class_glow: 0x80_7c7c7c, phase: 0.0, manip_attached: false, target_joint: None,
+            gold: false, gold_written: None, lists: [Vec::new(), Vec::new()],
+        };
+        let mut items = vec![item(Slot::Extra, 7), item(Slot::Hand, 7), item(Slot::Extra, 8)];
+        let chains = vec![(7, vec![0, 1]), (8, vec![0, 1])];
+        let rows = [[1.0f32, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]].map(|r| [r[0].to_bits(), r[1].to_bits(), r[2].to_bits(), 0]);
+        place_on_actor(&mut items, &chains, &class, &state, &rows, [0.0, 0.0, 10.0], 1.0, &[]);
+        for k in [0, 2] {
+            let p = items[k].position;
+            assert!((p[0].abs() < 1e-4 && p[1].abs() < 1e-4 && (p[2] - 11.0).abs() < 1e-4), "list {} point: {p:?}", 7 + k / 2);
+            assert_eq!(items[k].rows, rows, "the actor's rotations");
+        }
+        assert_eq!(items[1].position, [0.0; 3], "a hand item is not placed on the scene actor");
+        // The actor's scale multiplies its joint point (moby +0x2c / 1024).
+        place_on_actor(&mut items, &chains, &class, &state, &rows, [0.0, 0.0, 10.0], 2.0, &[]);
+        assert!((items[0].position[2] - 12.0).abs() < 1e-4, "scaled: {:?}", items[0].position);
     }
 }

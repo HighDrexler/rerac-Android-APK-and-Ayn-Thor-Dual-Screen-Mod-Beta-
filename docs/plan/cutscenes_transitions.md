@@ -104,7 +104,8 @@ Each chunk repeats the entries that overlap it. The tables hold every line **twi
 2. Buffers: base = 0x1611cc − 0x3c000; read buffer 0x16cd3c, decompress buffer 0x16cd38. Set 0x16cd10 = id,
    tick 0x16cd14 = 0, chunk 0x16cd1c = 0, 0x15f59c = 1.0.
 3. `FUN_002258b0`. Fade 0x15f3fc = **1.0**. Mode 0x15f5c4 = **2**. Hero `SetState(100, 2)` (0x23cf98), 0x1413f5 = 1,
-   `FUN_002486c0`. The dialog NPC 0x179588 and 0x1ba25c get mode |= 1 (hidden).
+   `FUN_002486c0`. The actor loop's `FUN_0024a0e8` re-shows the always-on extras (item slots 4 / 5) on the scene
+   actor each tick. The dialog NPC 0x179588 and 0x1ba25c get mode |= 1 (hidden).
 4. Read chunk 0 (`FUN_002591d0(0)`: sync CD read). `FadeToBlack(ticks(6))` (blocking, draws only black quads).
    Parse chunk 0: spawn actors with `CreateMoby(class)`: +0x32 = 0x1ff, +0x72 = 0xff, mode |= 6, +0x94 = 0,
    +0x38 = Ratchet's +0x38 (or 0x38383800000000), +0x73 = 0x18 if class+6 ≠ 0.
@@ -337,9 +338,10 @@ music resume after 30 ticks); the frame accounting of the blocking loops is [M].
 Scene 5: 1532 frames from the trigger; in the engine the trigger is app frame 3 (gameplay tick 1 runs on frame 2), scene
 tick T is drawn on app frame T + 13, the cut at 181 lands between frames 193 and 194, control returns on frame 1535.
 
-**Engine.** The gameplay tick is suspended while a scene runs (`GameTick.run_if`), the hero and his items hidden, the
-HUD hidden (`SceneLayer`), `MenuMode` = `Mode::Cutscene`; actors are extra mobys with the streamed sequence in an extra
-class slot (slot = class sequence count), Ratchet's light word/ambient; camera applied after `play_camera::apply`;
+**Engine.** The gameplay tick is suspended while a scene runs (`GameTick.run_if`), the hero and his items hidden (the
+always-on extras excepted: they ride the scene actor, `FUN_0024a0e8`), the HUD hidden (`SceneLayer`), `MenuMode` =
+`Mode::Cutscene`; actors are extra mobys with the streamed sequence in an extra class slot (slot = class sequence
+count), Ratchet's light word/ambient; camera applied after `play_camera::apply`;
 fade = a GS-blend full-screen pass after the UI pass and the underwater tint; subtitle box per `fun_001f4be0`
 (window 200/0x208/0x28/0x1d8, anchor 0x100, y h−0x38, line 0x12, flags 7; box y = h−0x3c, alpha 0x60, text
 0x80b0b0b0). Speech (`speech/05_en.bin`, 44,056 Hz) plays on a group-2 stream voice; the music voices are frozen at the

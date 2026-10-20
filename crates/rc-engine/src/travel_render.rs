@@ -1154,7 +1154,8 @@ fn force_hidden(
         for (e, name) in &hero {
             if name.as_str().starts_with("Ratchet (play)") { commands.entity(e).insert((TravelHidden, Visibility::Hidden)); }
         }
-        // The always-on extras follow the take-off / landing's Ratchet actor (`FUN_0024a0e8`, crate::moby_attach).
+        // The always-on extras stay drawn on the mode-6 Ratchet actor (`FUN_0024a0e8` → `HeroItemsAttach` attaches only
+        // item slots 4 / 5 in mode 6): crate::moby_attach places them on the actor.
         for (e, at) in &items {
             if at.slot != crate::moby_attach::Slot::Extra { commands.entity(e).insert((TravelHidden, Visibility::Hidden)); }
         }
