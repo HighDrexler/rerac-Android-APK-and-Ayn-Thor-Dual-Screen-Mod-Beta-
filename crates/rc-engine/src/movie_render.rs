@@ -166,6 +166,10 @@ struct Running {
     rgba: Vec<u8>,
     /// The picture on screen (uploaded).
     shown: Option<u32>,
+    /// The last fixed tick's desired UI state. Only Update uploads/presents it;
+    /// a slow render may run up to twelve movie ticks but presents one image.
+    wants_picture: bool,
+    black: f32,
     pad: PadState,
     /// Movie-mode frames so far.
     frames: u32,
@@ -212,7 +216,7 @@ impl Plugin for MovieRenderPlugin {
             // Mode 1 runs MovieModeUpdate instead of the game tick.
             .configure_sets(FixedUpdate, GameTick.run_if(|s: Res<MovieState>| !blocking(&s)))
             .add_systems(Startup, setup)
-            .add_systems(Update, target_main_camera)
+            .add_systems(Update, (target_main_camera, movie_present))
             .add_systems(FixedUpdate, (movie_exit.before(GameTick), movie_frame.after(GameTick)));
     }
 }
@@ -337,9 +341,6 @@ fn movie_frame(
     det: Res<crate::determinism::Deterministic>,
     frame_no: Res<crate::determinism::FrameNumber>,
     ticks: Res<crate::determinism::GameTicks>,
-    mut images: ResMut<Assets<Image>>,
-    mut vis: Query<&mut Visibility>,
-    mut bg: Query<&mut BackgroundColor>,
 ) {
     let st = &mut *state;
     // RC_PLAY_MOVIE: after gameplay tick 1.
@@ -382,6 +383,8 @@ fn movie_frame(
             received: 0,
             rgba: Vec::new(),
             shown: None,
+            wants_picture: false,
+            black: 0.0,
             pad: PadState::default(),
             frames: 0,
             last_phase: None,
@@ -403,7 +406,7 @@ fn movie_frame(
     // Frame-exact tooling still waits for every original picture.
     if !rt.opened {
         rt.fetch(0, det.0);
-        if !rt.opened { set_visible(&mut vis, st.root, true); return; }
+        if !rt.opened { return; }
     }
     if let Some(p) = rt.player.wanted_picture(latency) { rt.fetch(p, det.0); }
     let out: MovieFrame = rt.player.tick(&rt.pad, rt.total, latency);
@@ -413,15 +416,11 @@ fn movie_frame(
         rt.media_cancelled = true;
     }
     rt.frames += 1;
-    // The picture.
-    if out.picture.is_some() {
-        let p = rt.received.saturating_sub(1);
-        if rt.shown != Some(p) && rt.received > 0 {
-            if let Some(mut img) = images.get_mut(&st.image) { img.data = Some(rt.rgba.clone()); }
-            if st.trace && p.is_multiple_of(30) { println!("movie: app frame {} (movie frame {}): picture {} of {:?}", frame_no.0, rt.frames, rt.received - 1, rt.total); }
-            rt.shown = Some(p);
-        }
-    }
+    // Never upload every intermediate fixed tick: Android may run several
+    // 60 Hz movie ticks between two GPU frames during cutscenes.
+    // Keep only the latest eligible decoded picture for movie_present (Update).
+    rt.wants_picture = out.picture.is_some();
+    rt.black = out.black;
     if st.trace && rt.last_phase.as_ref().map(std::mem::discriminant) != Some(std::mem::discriminant(&out.phase)) {
         println!("movie: app frame {} (movie frame {}): {:?}", frame_no.0, rt.frames, out.phase);
     }
@@ -447,13 +446,37 @@ fn movie_frame(
         a.buf = buf;
         a.push_movie_frame(rt.owner.as_ref().map_or(0, |o| o.id));
     }
-    // The UI.
-    let playing = out.picture.is_some() && rt.shown.is_some();
-    let set = set_visible;
-    set(&mut vis, st.root, true);
-    set(&mut vis, st.picture, playing);
+}
+
+/// Present only once per rendered frame, after all FixedUpdate audio/movie
+/// ticks have been run. Moving the pixel Vec into the Bevy image avoids a
+/// 512x416x4-byte clone for each 30 Hz picture and cuts GPU uploads when
+/// multiple fixed ticks catch up in a single rendered frame.
+fn movie_present(
+    mut state: ResMut<MovieState>,
+    frame_no: Res<crate::determinism::FrameNumber>,
+    mut images: ResMut<Assets<Image>>,
+    mut vis: Query<&mut Visibility>,
+    mut bg: Query<&mut BackgroundColor>,
+) {
+    let st = &mut *state;
+    let Some(rt) = st.running.as_mut() else { return };
+    if rt.wants_picture && rt.received > 0 {
+        let index = rt.received - 1;
+        if rt.shown != Some(index) && !rt.rgba.is_empty() {
+            if let Some(img) = images.get_mut(&st.image) {
+                img.data = Some(std::mem::take(&mut rt.rgba));
+                rt.shown = Some(index);
+                if st.trace && index.is_multiple_of(30) {
+                    println!("movie: rendered app frame {}: picture {} of {:?} ({} ticks)", frame_no.0, index, rt.total, rt.frames);
+                }
+            }
+        }
+    }
+    set_visible(&mut vis, st.root, true);
+    set_visible(&mut vis, st.picture, rt.wants_picture && rt.shown.is_some());
     if let Some(mut c) = st.fade.and_then(|e| bg.get_mut(e).ok()) {
-        let want = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fade_alpha(out.black)));
+        let want = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fade_alpha(rt.black)));
         if *c != want { *c = want; }
     }
 }
