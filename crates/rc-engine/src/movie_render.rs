@@ -472,7 +472,7 @@ fn movie_present(
     if rt.wants_picture && rt.received > 0 {
         let index = rt.received - 1;
         if rt.shown != Some(index) && !rt.rgba.is_empty() {
-            if let Some(img) = images.get_mut(&st.image) {
+            if let Some(mut img) = images.get_mut(&st.image) {
                 img.data = Some(std::mem::take(&mut rt.rgba));
                 rt.shown = Some(index);
                 rt.presented = rt.presented.saturating_add(1);
