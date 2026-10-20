@@ -157,7 +157,28 @@ pub(super) fn physics(h: &mut Hero, env: &Env, anim: &mut dyn AnimCtl) -> bool {
             turn_to_mode(h, SCALE64 * Pf::b(0x3d4c_cccd), SCALE64 * Pf::b(0x3e4c_cccd), DT_PF * Pf::b(0x4170_2845), force as i32);
         }
     }
-    if !blending && passed(&v, 33.0) { throw_wrench(h, env, false); }
+    // On a slippery floor (0x140632, levels 12 / 14: L00 0x217970 case 0x15) the throw pushes: at it, nearly still
+    // (|eff| 0x13f4b0 < 2·dt), the velocity gains 1.3·dt along the facing; at the catch (key 84) 2.5·dt back (3·dt with
+    // R1 / R2 held, 0x13cae0 & 0xa); both copied to 0x13f480; then the slide's move `0x2167d0` instead of the steps below.
+    let ice = super::surface::slippery(h);
+    let push = |h: &mut Hero, yaw: Pf, k: f32| {
+        let s = DT_PF * Pf::f(k);
+        h.vel[0] = h.vel[0] + fast_cos(yaw) * s;
+        h.vel[1] = h.vel[1] + fast_sin(yaw) * s;
+        h.eff_h = h.vel;
+    };
+    if !blending && passed(&v, 33.0) {
+        if ice && h.eff_len < DT_PF + DT_PF { push(h, h.rot[2], 1.3); }
+        throw_wrench(h, env, false);
+    }
+    if ice {
+        if passed(&v, 84.0) {
+            let k = if env.pad.held & crate::pad::button::CROUCH != 0 { 3.0 } else { 2.5 };
+            push(h, fast_add_rotations(h.rot[2], Pf::b(0x4049_0fdb)), k);
+        }
+        super::surface::slide_move(h, env);
+        return true;
+    }
     h.speed_step(DT2 * Pf::b(0x4214_0000), DT2 * Pf::b(0x41e0_0000));
     h.set_planar_vel(Pf::b(0x47c3_4f80));
     // 0x248b68: along −normal on the Magneboots (mode 0: z only).

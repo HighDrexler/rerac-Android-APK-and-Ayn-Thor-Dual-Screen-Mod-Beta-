@@ -218,7 +218,7 @@ fn dust(w: &mut World, at: c::V) {
         let t1 = w.rng.randf(1.0, 10.0) as i32;
         let t2 = w.rng.randf(15.0, 25.0) as i32;
         let t3 = w.rng.randf(40.0, 70.0) as i32;
-        let s = crate::particles::type02::Spawn { pos: p, v1, v2, c1: 0xa0f0_e8e0, c2: 0x20f0_e8e0, t: [t1, t2, t3], def: -1 };
+        let s = crate::particles::type02::Spawn { pos: p, v1, v2, c1: 0xa0f0_e8e0, c2: 0x20f0_e8e0, t: [t1, t2, t3], def: 0x1_0017 }; // gp−0x5334: def[0x17], additive
         fx::part02(w, &s);
     }
 }

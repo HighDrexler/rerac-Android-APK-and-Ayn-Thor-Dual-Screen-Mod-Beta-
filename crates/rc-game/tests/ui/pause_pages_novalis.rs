@@ -379,6 +379,9 @@ fn goodies_skill_points_and_movies() {
     let Some((mut gs, mut m)) = setup() else { eprintln!("skipped: no extracted/"); return };
     // Goodies is on the root once the game is beaten (0x2917d8).
     gs.global.game_beaten = 1;
+    // Two skill points earned: their entries' check boxes are ticked (0x290eb0 flag 0x200, 0x13d408[i]).
+    gs.global.skill_points[0] = 1;
+    gs.global.skill_points[3] = 1;
     let mut d = Drv::default();
     open_root(&mut d, &mut m, &mut gs, 6);
     assert_eq!(m.menu.current, GOODIES);
@@ -387,6 +390,10 @@ fn goodies_skill_points_and_movies() {
     let draws = run(&mut d, &mut m, &mut gs, &[(0, 2)]);
     let lw = widget_of(&m.menu, |x| matches!(x, Data::List(_))).expect("the skill list");
     let Data::List(l) = &m.menu.widgets[&lw].data else { unreachable!() };
+    assert!(l.flags & 0x200 != 0, "the skill list's check boxes: flags {:#x}", l.flags);
+    let tick = m.assets.frame(0xe99e, 1);
+    let ticks = draws.iter().filter(|x| matches!(x, MenuDraw::Hud(rc_game::hud::Draw::Sprite { frame, .. }) if *frame == tick)).count();
+    assert_eq!(ticks, 2, "one tick per earned skill point");
     let lvl = l.items[l.cursor as usize].arg as i32;
     let t = texts(&draws);
     let want = if lvl == -1 { vec![m.assets.msg(0x5019).to_vec()] } else {

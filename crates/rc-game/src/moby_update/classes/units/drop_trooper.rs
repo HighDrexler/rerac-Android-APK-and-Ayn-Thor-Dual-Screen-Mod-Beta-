@@ -49,7 +49,7 @@
 //! | `0x2de530` | drawn and not carried: joint lists 4 / 5, each 3 in 4 (`randf ≤ 0.75`): a type-2 puff down its row 2 at `(1 ± 0.2)·3·dt`, the second velocity `(1 ± 0.2)·−2·dt` in z plus `rand_vec(±1.5·dt)`, sizes 0.2 / 0.4, colours tweened 0x801010ff..0x801080ff / 0x400000c0..0x4030ffff, phases 5 / 20 / 20 (±10 %) | [`jets`] |
 //! | `0x2a7a98` | `CreateMoby(0x31)`: distances 0xff, state 0, scale ·3, the owner's light; +0 v, +0x14 `ticks(240)`, +0x18 the owner, +0x10 0; yaw / pitch from v; hidden | [`spawn_shot`] |
 //! | `0x2a76e0` | within 15 of the camera once: `PlayClassSoundByClass(9, 0, m, 0x27e)`; state 0: rot x += 2π·dt; the hit (1 damage; Giant Clank 1 in 5) flags 0x10003 along v, its class; `CollLine_Fix(position − 2v, position + v, 0x10, m)`: no hit and the timer running, or the owner hit: moves on, the trail; else sound 8, the impact flash (0.5, 15, 90c000 / 60), deleted | [`shot_update`] |
-//! | `0x2a78c8` | a type-2 puff: velocities `rand_vec(0.25·dt)` / `rand_vec(2·dt)` (v ·0), sizes 0.25 / 0.125, phases 2 / 5..10 / 5..10, colours 0x8000c070 / 0x4000c0c0 | [`shot_trail`] |
+//! | `0x2a78c8` | a type-2 puff: velocities `rand_vec(0.25·dt)` / `rand_vec(2·dt)` (v ·0), sizes 0.25 / 0.125, phases 2 / 5..10 / 5..10, colours 0x8000c070 / 0x4000c0c0 (gp−0x5878 / −0x5874), texture word 0x18 (gp−0x583c, on the stack; 16 and 18 alike) | [`shot_trail`] |
 
 use crate::moby_runtime::{mode, MobyId};
 use crate::moby_update::classes::debris::flash_spawn;
@@ -66,6 +66,8 @@ pub const SHOT_FN: u32 = 0x2a_76e0;
 pub const SHOT_CLASSES: [i16; 1] = [SHOT];
 
 const SHOT: i16 = 0x31;
+/// gp−0x583c: the shot trail's type-2 texture word (`def[0x18]`, the bright ball; −1 would be the smoke `def[23]`).
+const SHOT_TRAIL_FX: i32 = 0x18;
 /// The class whose hits keep the skill point (0x47).
 const KEEPS_SKILL: i16 = 0x47;
 const SKILL: usize = 0x1d;
@@ -720,6 +722,6 @@ fn shot_trail(w: &mut World, id: MobyId) {
     v1[3] = 0.25;
     v2[3] = 0.125;
     let t: [i32; 3] = std::array::from_fn(|k| { let (a, b) = [(2.0, 2.0), (5.0, 10.0), (5.0, 10.0)][k]; let r = w.rng.randf(a, b); gscale(w, r) });
-    let a = crate::particles::type02::Spawn { pos: c::pos(w, id), v1, v2, c1: 0x8000_c070, c2: 0x4000_c0c0, t, def: -1 };
+    let a = crate::particles::type02::Spawn { pos: c::pos(w, id), v1, v2, c1: 0x8000_c070, c2: 0x4000_c0c0, t, def: SHOT_TRAIL_FX };
     crate::moby_update::creature::fx::part02(w, &a);
 }

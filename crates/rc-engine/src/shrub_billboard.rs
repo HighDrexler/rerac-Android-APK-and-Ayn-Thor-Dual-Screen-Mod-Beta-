@@ -115,7 +115,7 @@ impl Material for BillboardMaterial {
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
-        key.bind_group_data.specialize(descriptor);
+        key.bind_group_data.specialize_world(descriptor);
         descriptor.vertex.buffers =
             vec![layout.0.get_layout(&[Mesh::ATTRIBUTE_POSITION.at_shader_location(0), ATTRIBUTE_BILLBOARD_INFO.at_shader_location(1)])?];
         Ok(())

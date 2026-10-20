@@ -116,7 +116,7 @@ impl Material for TfragMaterial {
         key: MaterialPipelineKey<Self>,
     ) -> Result<(), SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
-        key.bind_group_data.specialize(descriptor);
+        key.bind_group_data.specialize_world(descriptor);
         // Own position (bounds only) and the (vertex-info, tfrag | list) reference; everything else is in storage.
         descriptor.vertex.buffers = vec![layout.0.get_layout(&[
             Mesh::ATTRIBUTE_POSITION.at_shader_location(0),

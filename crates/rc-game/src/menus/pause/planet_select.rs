@@ -35,8 +35,11 @@ pub fn build_list(l: &mut List, gs: &GameState, dest: i32, names: &[(u32, u32)])
     if let Some(k) = gs.global.map_order.iter().take_while(|&&id| id != 0).position(|&id| id == dest) { l.cursor = k as i32; }
 }
 
-/// The planet list draw 0x290eb0 (panel-local). The sub-label's x anchor is lost in the decompile: 20 [M].
-pub fn list_draw(m: &mut PageMenu, w: u32, a: &MenuAssets, out: &mut Vec<MenuDraw>) -> u32 {
+/// The planet list draw 0x290eb0 (panel-local). The sub-label's x anchor is lost in the decompile: 20 [M]. After each
+/// label, `draw_menu_selection_marker(0xf, y + 9, ticked)` (`media::check_box`): flag 0x200 ticked by the skill point
+/// 0x13d408[i] (the Goodies' Skill Points list), flag 0x800 by the entry's +4 = the language 0x15ed88.
+pub fn list_draw(m: &mut PageMenu, w: u32, a: &MenuAssets, gs: &GameState, out: &mut Vec<MenuDraw>) -> u32 {
+    let (navy, lang) = (m.consts.navy, m.lang);
     let focus = m.pages.get(&m.current).map_or(0, |p| p.focus);
     let swapped = m.text_swap == 2;
     let Some(wd) = m.widgets.get_mut(&w) else { return 1 };
@@ -71,6 +74,11 @@ pub fn list_draw(m: &mut PageMenu, w: u32, a: &MenuAssets, out: &mut Vec<MenuDra
         let mut m1 = win;
         wtext::layout(&mut m1, label, -1, glyphs, !sel);
         push_window(out, font, win, col, label, sel);
+        let line_y = win.y_start as i32;
+        if l.flags & 0x200 != 0 {
+            super::media::check_box(a, navy, 0xf, line_y + 9, gs.global.skill_points.get(i).is_some_and(|&b| b != 0), out);
+        }
+        if l.flags & 0x800 != 0 { super::media::check_box(a, navy, 0xf, line_y + 9, lang == it.arg, out); }
         let mut y = win.y_start as i32 + m1.height as i32;
         let mut last_h = m1.height as i32;
         if it.sublabel != 0 {

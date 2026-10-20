@@ -288,7 +288,8 @@ statistics / "hold ○" help (`0x2cde98`), the moby texture scroll of class 179,
 **The scene body 99 / 100** (`hero::scripted`) [H: SetState case 99/100, `0x2370b8` case 99/100, no `0x242930` case]:
 group 0x18, 0x1413fc = 1, the weapon put away, with `play` the idle sequence on eased curve 1; the physics zeroes the
 velocity; nothing leaves it but `SetState(0, 1)`. The gameplay Ratchet is never visible in it (the scene hides him and
-his items, `FUN_002486c0`, and draws its own actor; the vendor hides him too), so this is all of it.
+his items, `FUN_002486c0`, and draws its own actor; the vendor hides him too; the always-on extras 33 / 34 / 35 are
+re-attached to the actor by `FUN_0024a0e8`), so this is all of it.
 
 **Tests**: `moby_anim::modifier_tests` (3), `idle::tests::{modifier_list_order_and_blink, euler_node_quaternions,
 running_lean_targets}`, `type12::tests` (3), `pyrocitor::tests`, `pyro_glow::tests`, `scripted::tests`,

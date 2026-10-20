@@ -18,7 +18,7 @@
 //! | state 2 | link there and in B → start sound (unchecked), → 4; else xy distance from home ≤ travel → position += rows·(0, ±0.01 (K = 0x15ed60), 0); else stop sound, map flag = 1, → 3 | [`update`] |
 //! | state 3 | link there and in B → start sound, → 4 | [`update`] |
 //! | state 4 | link away or in A → start sound (unchecked), → 2; else xy distance > 0.01 → position += rows·(0, ∓0.01, 0); else position = home (w 0), the voice released when it owns it, voice −1, stop sound, map flag = 0, → 1 | [`update`] |
-//! | | the map zone flags `0x184528[i]` (read by the in-game map's zone table) | NOT ported: G-UI-001 (the map) |
+//! | | the map zone flags `0x184528[i]` (read by the in-game map's zone table) | `MapState::set_zone_flag` |
 //! | | no particle, light, save flag, other moby written | n/a |
 
 use crate::moby_runtime::MobyId;
@@ -39,6 +39,12 @@ fn link(w: &World, id: MobyId) -> Option<u8> { super::linked_mover::link_state(w
 fn sound(w: &mut World, id: MobyId, o: usize, checked: bool) {
     let s = w.m(id).pvars[o] as i8 as i32;
     if !checked || s != -1 { w.play_sound(s, 0, id); }
+}
+
+/// `0x184528[+0x14]` = v: the map zone flag (−1 none).
+fn zone(w: &mut World, id: MobyId, v: i32) {
+    let i = pi16(w, id, 0x14) as i32;
+    if i != -1 { w.svc.map.set_zone_flag(i, v); }
 }
 
 fn slide(w: &mut World, id: MobyId, out: bool) {
@@ -65,6 +71,7 @@ pub fn update(w: &mut World, id: MobyId) {
             let p = w.m(id).position;
             set_pv4(w, id, 0, [p[0], p[1], p[2], home[3]]);
             set_pi16(w, id, 0xc, -1);
+            zone(w, id, 0);
             w.mm(id).state = 1;
         }
         1 => {
@@ -80,6 +87,7 @@ pub fn update(w: &mut World, id: MobyId) {
                 slide(w, id, true);
             } else {
                 sound(w, id, 0xf, true);
+                zone(w, id, 1);
                 w.mm(id).state = 3;
             }
         }
@@ -101,6 +109,7 @@ pub fn update(w: &mut World, id: MobyId) {
                 if slot != -1 && w.sound_owner(slot) == Some(id) { w.release_sound(slot, id); }
                 set_pi16(w, id, 0xc, -1);
                 sound(w, id, 0xf, true);
+                zone(w, id, 0);
                 w.mm(id).state = 1;
             }
         }

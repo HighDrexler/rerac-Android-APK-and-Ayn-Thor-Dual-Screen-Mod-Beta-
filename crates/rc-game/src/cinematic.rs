@@ -180,6 +180,9 @@ pub struct Cinematic {
     /// 0x15f400 as the gameplay classes write it (the white quad over the world, 0..1, drawn like [`Cinematic::fade`];
     /// Blarg's escape 1108 whites out the exploding station).
     pub white: f32,
+    /// 0x1ba25c: the level moby an In-Level Movies replay hides while its scene runs (`MenuSetPostAction` case 6 from the
+    /// hook table 0x179638; `DialogStreamStart` sets its mode bit 1, `FUN_002ac608` clears it and the word).
+    pub replay_hide: Option<crate::moby_runtime::MobyId>,
 }
 
 /// `ShowBanner(msg, ticks)` 0x2789e0 as the HUD takes it (`HudState::show_banner_msg`).

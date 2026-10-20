@@ -520,6 +520,12 @@ impl MapState {
         open
     }
 
+    /// A level class's store into the map zone flags (0x184928 on level 1; each overlay has its own copy: 0x184528 on
+    /// 7, 0x1847a8 on 13, 0x184aa8 on 15, the writers' levels). An index past the table is dropped.
+    pub fn set_zone_flag(&mut self, i: i32, v: i32) {
+        if let Some(f) = usize::try_from(i).ok().and_then(|i| self.zone_flags.get_mut(i)) { *f = v; }
+    }
+
     /// `FUN_0025c4f8` (0x25c4f8): the hero's map pixel; within the map, every fogged pixel of the 32 × 32 square about
     /// it (x, y from pixel − 15 to < min(pixel + 17, 511)) inside the brush circle and in an open zone is revealed.
     /// Nothing without a map. Returns the number of pixels revealed.

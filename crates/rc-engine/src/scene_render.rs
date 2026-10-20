@@ -68,7 +68,7 @@ use crate::game_camera::CameraSource;
 use crate::gameplay::{GameTick, Persistent, Play};
 use crate::hud_render::{Hud2d, Prim, SceneLayer};
 use crate::input_map::PadFrame;
-use crate::moby_attach::AttachedTo;
+use crate::moby_attach::{AttachedTo, Slot};
 use crate::moby_render::{self, ExtraMobys, MobyMaterial};
 use crate::tfrag_render::game_to_bevy;
 use anyhow::{Context, Result};
@@ -430,7 +430,7 @@ fn scene_frame(
     pad: Option<Res<PadFrame>>,
     frame: Res<crate::determinism::FrameNumber>,
     hero: HeroEntities,
-    items: Query<Entity, With<AttachedTo>>,
+    items: Query<(Entity, &AttachedTo)>,
     hidden: Query<(Entity, Has<crate::gameplay::RatchetMesh>), With<SceneHidden>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
@@ -534,11 +534,15 @@ fn scene_frame(
         rt.player = Some(player);
         rt.frames = 0;
         if let Some(m) = menu.as_mut() { m.state.set(Mode::Cutscene); }
-        // FUN_002486c0: the hero and his items are hidden.
+        // FUN_002486c0: the hero and his items are hidden. The always-on extras stay drawn on the scene's Ratchet
+        // actor (`FUN_0024a0e8` → `HeroItemsAttach`, which attaches only item slots 4 / 5 in mode 2): crate::moby_attach
+        // places them on the actor, and the game clears their hidden bit every tick.
         for (e, name) in &hero {
             if name.as_str().starts_with("Ratchet (play)") { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
         }
-        for e in &items { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        for (e, at) in &items {
+            if at.slot != Slot::Extra { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        }
         active.running = true;
         if let Some(p) = play.as_mut() { enter_mode2(rt, p); }
     }
@@ -741,9 +745,25 @@ fn enter_mode2(rt: &mut SceneRuntime, p: &mut Play) {
         }
     }
     rt.hid.clear();
+    // DialogStreamStart: the In-Level Movies replay's level moby 0x1ba25c hidden too (FUN_002ac608 shows it again and
+    // clears the word): the level's own Big Al or Qwark beside the scene's.
+    if let Some(id) = p.svc.cinematic.replay_hide.take().filter(|&n| n < p.game.mobys.mobys.len()) {
+        p.game.mobys.mobys[id].mode |= 1;
+        rt.hid.push((id, 1));
+    }
     if let Some(npc) = rt.talker.filter(|&n| n < p.game.mobys.mobys.len()) {
         let m = &mut p.game.mobys.mobys[npc];
         if m.mode & 1 == 0 { m.mode |= 1; rt.hid.push((npc, 1)); }
+    }
+    // FUN_002486c0 with Clank the hero (0x1413f4 = 1): his antenna glow moby 0x140974 hidden too (+0x34 |= 1; shown again
+    // by FUN_002487a8 at the end). It stayed lit where Clank stood before the scene, over the scene's own Clank.
+    if p.game.hero.mode == 1 {
+        if let Some(g) = p.game.hero.bodies.glow {
+            if let Some(m) = p.game.mobys.mobys.get_mut(g).filter(|m| m.mode & 1 == 0) {
+                m.mode |= 1;
+                rt.hid.push((g, 1));
+            }
+        }
     }
     for (id, m) in p.game.mobys.mobys.iter_mut().enumerate() {
         if m.state < 0x80 && SCENE_HIDDEN_CLASSES.contains(&m.o_class) && m.mode & SCENE_HIDDEN_BIT == 0 {

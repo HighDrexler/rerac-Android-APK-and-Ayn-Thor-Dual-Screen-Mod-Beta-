@@ -460,6 +460,38 @@ impl UiMaterial for HudComposite {
     }
 }
 
+/// The GS blend `(Cs − Cd)·As + Cd` with As above 1 (a fragment alpha over 0x80: the look stance's marker
+/// `0xff917267`, `0x20fb60`): `Cs·As − Cd·(As − 1)`, the frame under it subtracted. The layer keeps such alphas (a float
+/// target); the frame's blend clamps its factors to [0, 1], so [`HudComposite`] takes the layer's pixels up to 1 and
+/// this second node, over the same image, the ones above: colour `Cs·As`, alpha `As − 1`, blended `src − dst·srcA`.
+/// [`HudComposite`] drew them opaque (`Cs`): the wrench's glassy blue reticle came out as a flat grey one.
+const OVER_ONE_BLEND: BlendState = BlendState {
+    color: BlendComponent { src_factor: BlendFactor::One, dst_factor: BlendFactor::SrcAlpha, operation: BlendOperation::Subtract },
+    alpha: BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::One, operation: BlendOperation::Add },
+};
+
+/// The HUD layer's pixels whose alpha is above 1 ([`OVER_ONE_BLEND`]); a child of each [`HudComposite`] node, same image.
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct HudCompositeOver {
+    #[texture(0)]
+    pub image: Handle<Image>,
+    #[uniform(1)]
+    pub scaling: Vec4,
+}
+
+impl UiMaterial for HudCompositeOver {
+    fn fragment_shader() -> ShaderRef { SHADER_PATH.into() }
+
+    fn specialize(descriptor: &mut RenderPipelineDescriptor, _key: UiMaterialKey<Self>) {
+        if let Some(f) = descriptor.fragment.as_mut() {
+            f.entry_point = Some("composite_over".into());
+            f.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
+            for t in f.targets.iter_mut().flatten() { t.blend = Some(OVER_ONE_BLEND); }
+        }
+        descriptor.vertex.shader_defs.push(ShaderDefVal::Bool("HUD_COMPOSITE".into(), true));
+    }
+}
+
 /// The static layer's UI node (a child of the HUD composite, over the canvases composed over the HUD): its image holds
 /// display-space premultiplied colour and coverage; the node adds the colour in linear light over what is under it,
 /// scaled by 1 − coverage (`(Cs − Cd)·As + Cd` exactly where the effect lies on black — the monitors, the navy
@@ -477,10 +509,11 @@ pub struct HudStaticComposite {
 pub fn scaling(h: crate::graphics::Hud) -> Vec4 { Vec4::new(if h == crate::graphics::Hud::Original { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0) }
 
 /// Applies a changed HUD option to both composites.
-fn apply_scaling(gfx: Res<crate::graphics::GraphicsSettings>, mut a: ResMut<Assets<HudComposite>>, mut b: ResMut<Assets<HudStaticComposite>>) {
+fn apply_scaling(gfx: Res<crate::graphics::GraphicsSettings>, mut a: ResMut<Assets<HudComposite>>, mut b: ResMut<Assets<HudStaticComposite>>, mut c: ResMut<Assets<HudCompositeOver>>) {
     if !gfx.is_changed() { return; }
     let v = scaling(gfx.hud);
     for (_, m) in a.iter_mut() { if m.scaling != v { m.scaling = v; } }
+    for (_, m) in c.iter_mut() { if m.scaling != v { m.scaling = v; } }
     for (_, m) in b.iter_mut() { if m.scaling != v { m.scaling = v; } }
 }
 
@@ -738,7 +771,7 @@ impl Plugin for HudPlugin {
         // A runtime level change (crate::level_switch): the level's HUD is built again by `setup`.
         app.add_systems(crate::level_switch::LevelUnload, (crate::level_switch::reset::<Hud2dHook>, crate::level_switch::reset::<SceneLayer>, crate::level_switch::reset::<HudFeed>, crate::level_switch::remove::<HudRuntime>, crate::level_switch::remove::<crate::hud_images::HudImages>));
         if std::env::var("RC_HUD").is_ok_and(|v| v.trim() == "0") { return; }
-        app.add_plugins((Material2dPlugin::<HudMaterial>::default(), UiMaterialPlugin::<HudComposite>::default(), UiMaterialPlugin::<HudStaticComposite>::default()))
+        app.add_plugins((Material2dPlugin::<HudMaterial>::default(), UiMaterialPlugin::<HudComposite>::default(), UiMaterialPlugin::<HudCompositeOver>::default(), UiMaterialPlugin::<HudStaticComposite>::default()))
             .add_systems(crate::level_switch::LevelStartup, setup)
             .add_systems(Update, (target_main_camera, tick_and_build, apply_fx_cuts).chain().in_set(HudBuild))
             .add_systems(PostUpdate, apply_scaling);
@@ -751,7 +784,7 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<HudMaterial>>,
-    (mut composites, mut static_composites): (ResMut<Assets<HudComposite>>, ResMut<Assets<HudStaticComposite>>),
+    (mut composites, mut static_composites, mut over_composites): (ResMut<Assets<HudComposite>>, ResMut<Assets<HudStaticComposite>>, ResMut<Assets<HudCompositeOver>>),
     gfx: Res<crate::graphics::GraphicsSettings>,
 ) {
     let sc = scaling(gfx.hud);
@@ -802,6 +835,8 @@ fn setup(
     // On the frame's 4:3 box (crate::display: in 16:9 the 512×416 screen is centred, the world widens around it).
     // The whole frame (crate::display): the 512×416 screen in its middle, wider in 16:9 ([`HudRuntime::extra`]).
     let hud_node = commands.spawn((full(), MaterialNode(composites.add(HudComposite { image: target.clone(), scaling: sc })), GlobalZIndex(i32::MAX), HudCompositeNode, Name::new("hud composite"))).id();
+    // Its pixels with an alpha above 1, right after it ([`HudCompositeOver`]).
+    commands.spawn((full(), MaterialNode(over_composites.add(HudCompositeOver { image: target.clone(), scaling: sc })), ZIndex(-1), ChildOf(hud_node), Name::new("hud composite (alpha above 1)")));
     // The 512×416 screen's box inside it: the parent of the canvases composed with the HUD (crate::screen_canvas).
     commands.spawn((full(), crate::display::UiBoxed, HudBoxNode, ChildOf(hud_node), Name::new("hud box")));
     // The static layer: its own 512×416 target, three meshes in pass order (Transparent2d sorts by z), a node over

@@ -142,6 +142,10 @@ fn composite(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // blend's result; a pixel only the ALPHA_1 0x48 draws touched (coverage 0: the vehicle HUDs' pips, crosshairs and
     // lock markers) adds its colour, as the GS adds it onto the frame (in linear light: exact over black). Discarding
     // those dropped every additive draw outside the HUD's covered areas.
+    // Above 1: `composite_over` (the GS blend with As > 1 subtracts the frame).
+    if c.a > 1.0 {
+        discard;
+    }
     if c.a <= 0.0 {
         let add = to_linear(clamp(c.rgb, vec3<f32>(0.0), vec3<f32>(1.0)));
         if max(add.r, max(add.g, add.b)) <= 0.0 {
@@ -152,6 +156,18 @@ fn composite(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let a = min(c.a, 1.0);
     let straight = clamp(c.rgb / c.a, vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(to_linear(straight) * a, a);
+}
+
+// The layer's pixels with an alpha above 1 (hud_render::HudCompositeOver, blend `src − dst·srcA`): the GS's
+// `(Cs − Cd)·As + Cd` = `Cs·As − Cd·(As − 1)` with As up to 0xff / 0x80 (the look stance's marker 0xff917267).
+@fragment
+fn composite_over(in: UiVertexOutput) -> @location(0) vec4<f32> {
+    let c = sample_layer(in.uv);
+    if c.a <= 1.0 {
+        discard;
+    }
+    let straight = clamp(c.rgb / c.a, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(min(to_linear(straight) * c.a, vec3<f32>(1.0)), c.a - 1.0);
 }
 
 // The static layer (hud_render::HudStaticComposite, premultiplied blend): its display-space premultiplied colour in
