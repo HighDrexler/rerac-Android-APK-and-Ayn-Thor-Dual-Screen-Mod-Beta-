@@ -98,6 +98,8 @@ struct RingState {
     frames: VecDeque<[i16; 2]>,
     running: bool,
     underruns: u64,
+    /// Frames dropped at the cap (the game ran ahead of the device).
+    dropped: u64,
 }
 
 /// Rendered frames waiting for the audio device.
@@ -110,6 +112,7 @@ impl Ring {
         r.frames.extend(frames.iter().copied());
         let over = r.frames.len().saturating_sub(RING_CAP);
         r.frames.drain(..over);
+        r.dropped += over as u64;
     }
 
     fn pop(&self) -> [i16; 2] {
@@ -402,9 +405,9 @@ fn run_audio(
     if out.done >= out.last_report + 600 {
         out.last_report = out.done;
         let s = &out.system;
-        let underruns = out.ring.0.lock().map(|r| r.underruns).unwrap_or(0);
+        let (underruns, dropped, fill) = out.ring.0.lock().map(|r| (r.underruns, r.dropped, r.frames.len())).unwrap_or_default();
         println!(
-            "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns{}",
+            "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns, {} frames dropped, ring {} frames{}",
             out.done,
             s.slots.slots.iter().filter(|x| x.state != audio::voices::state::FREE).count(),
             s.spu.voices.iter().filter(|v| v.active()).count(),
@@ -413,6 +416,8 @@ fn run_audio(
             s.stats.class_slots,
             s.stats.class_sounds,
             underruns,
+            dropped,
+            fill,
             if s.snd.unimplemented.is_empty() { String::new() } else { format!(", unported grains {:?}", s.snd.unimplemented) }
         );
     }
