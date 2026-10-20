@@ -91,7 +91,12 @@ fn sample_tick(
     let gameplay = menu.as_ref().is_some_and(|m|
         m.state.mode == rc_game::menus::mode::Mode::Gameplay)
         && !crate::saves::front_end_active();
-    let prompt = gameplay && play.as_ref().is_some_and(|p|p.svc.interact.prompt.shown());
+    // This is the identical visibility predicate used by interact_render.
+    // Talk and class prompts don't necessarily have an owned Prompt object.
+    let prompt = gameplay && play.as_ref().is_some_and(|p| {
+        let it = &p.svc.interact;
+        it.prompt_hud || it.talk_shown || it.class_shown
+    });
     let sample=input().lock().unwrap_or_else(|e| e.into_inner())
         .tick(Instant::now(), gameplay, prompt);
     const _: () = {
