@@ -10,6 +10,8 @@ def replace(name,old,new):
     p.write_text(s.replace(old,new,1))
 replace('crates/rc-engine/src/android.rs','include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));','include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));\nmod probe;')
 replace('crates/rc-engine/src/android.rs','    let _=bevy::android::ANDROID_APP.set(app);','    let diagnostic=probe::requested(&files);\n    let _=bevy::android::ANDROID_APP.set(app);\n    if let Some(nonce)=diagnostic { probe::run(files,nonce); return; }')
+replace('crates/rc-engine/src/android/companion.rs','if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(16,0);}','if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(8,0);}')
+replace('crates/rc-engine/src/android/companion.rs','let (x,y)=ring.slot_pos(i);slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0}));selection.push(item);','let (x,y)=ring.slot_pos(if play.game.hero.mode==1 {i*2}else{i});slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0&&(play.game.hero.mode!=1||play.svc.units.bot_listeners>0)}));selection.push(item);')
 p=ROOT/'Cargo.lock';s=p.read_text()
 m=re.search(r'\[\[package\]\]\nname = "rc-engine"\n.*?(?=\n\[\[package\]\])',s,re.S)
 if not m:raise RuntimeError('Native engine lock entry missing')
