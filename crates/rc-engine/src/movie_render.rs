@@ -403,6 +403,10 @@ fn movie_frame(
     let Some(rt) = st.running.as_mut() else { return };
     // The pad (readMpeg polls it each loop); RC_MOVIE_SKIP presses the skip combination on one frame.
     if let Some(p) = &pad { rt.pad.update(Some(&p.0.bytes()), false); }
+    // Android's dual-screen/touch Start button is a full cutscene skip.
+    // Retain the original PS2 skip gates and transition/fade handling.
+    #[cfg(target_os = "android")]
+    crate::android::cinematic_skip_pad(&mut rt.pad);
     if st.skip_at == Some(rt.frames) {
         let shoulders = button::L1 | button::L2 | button::R1 | button::R2;
         rt.pad.held |= shoulders | button::START;
