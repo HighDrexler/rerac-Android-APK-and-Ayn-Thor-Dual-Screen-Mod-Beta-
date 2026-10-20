@@ -64,6 +64,8 @@ jobs:
       CARGO_BUILD_JOBS: 2
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
       CARGO_PROFILE_RELEASE_DEBUG: 0
+      # Do not ship Rust static symbol/debug tables inside Android APKs.
+      CARGO_PROFILE_RELEASE_STRIP: symbols
       RERAC_SOURCE_REVISION: ${{ needs.prepare.outputs.source }}
       RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384
     steps:
