@@ -11,6 +11,7 @@ on:
     branches: [integration/native-core-035]
     paths:
       - .github/workflows/android-native-preflight.yml
+      - android/release/native_emulator.py
 permissions:
   contents: read
   actions: read
