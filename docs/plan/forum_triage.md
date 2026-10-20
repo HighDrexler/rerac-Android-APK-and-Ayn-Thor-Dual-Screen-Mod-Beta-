@@ -233,3 +233,19 @@ planets, image only).
 second Qwark); the camera dips under Aridia's quicksand (image).
 
 **No reply yet:** the Codebot softlock, Spoober's other items (he is replaying; has reached Blarg Station).
+
+**Worked on after the retest (2026-10-20):**
+- Fixed: the Skill Points page's check marks (a870581: 0x290eb0 flag 0x200); the always-on items on Ratchet in scenes and
+  the ship scenes (bdc0fa4: `FUN_0024a0e8` on the actor); the held mine inside the Mine Glove (be6e72f: the hand offset
+  turns with joint 0, `fun_001f9d20`); the Comet-Strike's pushes on ice (785eb3f: L00 case 0x15); the combo's lunge at the
+  aimed target (3b798b6: 0x239780's target branch; a crate 34° off and 3.6 away breaks on the first swing — no miss
+  reproduced for the swings themselves).
+- As the original (no change): the FOV after crashing the jet while boosting — no writer of the view tangent runs between
+  the crash and the respawn (`LoadLevelCoreData`'s death path, the loader pass, `entry`'s death branch on levels 01 / 11);
+  the map's ship star on other planets — the landmark is captured at every save since c3ee600, so a 0.3.4 save keeps its
+  (0, 0) until each planet is left once in 0.3.5.
+- Need a reference or a repro: guns held low while sliding on ice (the slide 0x2f has no arm rule of its own: same in
+  the code), the occasional freeze in an ice jump, Ratchet's pose on Giant Clank (joint list 5 and sequence 0x81 are the
+  original's), the mines' wrench hit box and the Taunter (the lure triples their reach, as ported), the commandos' shots,
+  the audio crackle and speed-ups, the pause menu's stray panels after spamming Start (the input script cannot drive the
+  menu: its ticks are gameplay ticks).
