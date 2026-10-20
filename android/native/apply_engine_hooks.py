@@ -34,7 +34,10 @@ for field in ('assets', 'qs', 'menu', 'draws', 'render_mode', 'last_counter'):
         p.write_text(s.replace(old, new, 1))
 replace('crates/rc-engine/src/menu_render.rs', '\nfn convert(', '\npub(crate) fn convert(')
 # Embed the actual compiled version and source provenance, not a launcher label.
-replace('crates/rc-engine/src/android.rs', 'mod companion;', 'mod companion;\ninclude!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));')
+# The editable adapter now also declares companion_policy/skip_policy; the
+# build stamp may no longer directly follow mod companion. Check globally.
+if 'include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));' not in (ROOT/'crates/rc-engine/src/android.rs').read_text():
+    replace('crates/rc-engine/src/android.rs', 'mod companion;', 'mod companion;\ninclude!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));')
 # Preserve the v16 Adreno skinning workaround while retaining every other .3.5
 # shader change (notably tie wind animation and the additive HUD blend).
 for name in ('moby', 'moby_metal'):
