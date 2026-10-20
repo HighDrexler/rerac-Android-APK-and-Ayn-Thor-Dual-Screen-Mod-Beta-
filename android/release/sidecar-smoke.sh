@@ -30,7 +30,7 @@ print('App PID:',pid)
 print('Launcher footer:',[x for x in texts if 'Launcher 1.1.0-beta.5' in x])
 print('Fatal log lines:',errors[-12:])
 assert pid,'Process died after opening launcher'
-assert any('Launcher 1.1.0-beta.4' in t and 'ReRAC 0.3.5' in t for t in texts),'No launcher footer'
+assert any('Launcher 1.1.0-beta.5' in t and 'ReRAC 0.3.5' in t for t in texts),'No launcher footer'
 assert not errors,'Fatal runtime exception'
 assert any('Mods' in t for t in texts) and any('Updates' in t for t in texts),'Missing Mods or Updates'
 PY
