@@ -1,0 +1,151 @@
+name: Prepare official Android SDK36 tools in isolated task workspace
+on:
+  push:
+    branches: [tooling/sdk36-readonly-offline]
+    paths:
+      - .github/workflows/sdk36-workspace-tools-validation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  official-sdk-build-tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tooling/sdk36-readonly-offline
+          persist-credentials: false
+      - name: Download OFFICIAL Google Android repository metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/google-sdk36/download work/google-sdk36/metadata work/google-sdk36/android-sdk/build-tools/36.0.0
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 120 \
+            'https://dl.google.com/android/repository/repository2-3.xml' \
+            -o work/google-sdk36/download/repository2-3.xml
+          python3 - <<'PY'
+          import json,xml.etree.ElementTree as ET
+          from pathlib import Path
+          root=ET.parse('work/google-sdk36/download/repository2-3.xml').getroot()
+          child=lambda node,tag: next((a for a in node if a.tag.split('}')[-1]==tag),None)
+          matches=[p for p in root.iter() if p.tag.split('}')[-1]=='remotePackage' and p.get('path')=='build-tools;36.0.0']
+          assert len(matches)==1, 'Official repository does not contain exactly one stable Build-Tools 36.0.0'
+          archives=child(matches[0],'archives')
+          assert archives is not None
+          selected=[]
+          for item in archives:
+              if item.tag.split('}')[-1]!='archive':continue
+              os=child(item,'host-os')
+              comp=child(item,'complete')
+              if os is not None and os.text=='linux' and comp is not None:
+                  selected.append(comp)
+          assert len(selected)==1, 'Expected one official complete Linux archive'
+          comp=selected[0]
+          url=child(comp,'url')
+          checksum=child(comp,'checksum')
+          size=child(comp,'size')
+          assert url is not None and url.text=='build-tools_r36_linux.zip', 'Unexpected official Linux archive URL'
+          assert checksum is not None and checksum.get('type')=='sha1', 'Expected Google SHA1 checksum field'
+          expected=checksum.text.strip().lower()
+          assert len(expected)==40 and all(c in '0123456789abcdef' for c in expected)
+          # Cross-check the pinned published Google repository checksum as well.
+          assert expected=='b0b6376977657e8ad9b969bacf4093601da2c6fb', 'Google archive checksum differs from previously published metadata'
+          assert size is not None and size.text.isdecimal()
+          document={'source':'https://dl.google.com/android/repository/repository2-3.xml',
+            'package':'build-tools;36.0.0',
+            'archive_url':'https://dl.google.com/android/repository/'+url.text,
+            'official_sha1':expected,'official_bytes':int(size.text),
+            'platform':'linux'}
+          out=Path('work/google-sdk36/metadata/resolved-google-package.json')
+          out.write_text(json.dumps(document,indent=2)+'\n')
+          print(json.dumps(document,indent=2))
+          PY
+      - name: Download exactly the Google archive and verify metadata SHA1 and declared byte count
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path('work/google-sdk36/metadata/resolved-google-package.json').read_text())
+          assert d['archive_url']=='https://dl.google.com/android/repository/build-tools_r36_linux.zip'
+          PY
+          curl --fail --location --retry 3 --connect-timeout 15 --max-time 300 \
+            'https://dl.google.com/android/repository/build-tools_r36_linux.zip' \
+            -o work/google-sdk36/download/build-tools_r36_linux.zip
+          python3 - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          base=Path('work/google-sdk36')
+          d=json.loads((base/'metadata/resolved-google-package.json').read_text())
+          path=base/'download/build-tools_r36_linux.zip'
+          h1=hashlib.sha1();h2=hashlib.sha256()
+          with path.open('rb') as f:
+              for block in iter(lambda:f.read(2*1024*1024),b''):
+                  h1.update(block);h2.update(block)
+          assert path.stat().st_size==d['official_bytes'],'Google metadata archive size mismatch'
+          assert h1.hexdigest()==d['official_sha1'],'Downloaded archive SHA1 mismatch'
+          d.update(download_sha1=h1.hexdigest(),download_sha256=h2.hexdigest(),download_bytes=path.stat().st_size,verified=True)
+          (base/'metadata/verified-google-package.json').write_text(json.dumps(d,indent=2)+'\n')
+          print('Verified exact official Google Linux Build-Tools 36 archive:',path.stat().st_size,'bytes; SHA256:',h2.hexdigest())
+          PY
+      - name: Unpack ONLY to the runner task workspace with explicit ZIP path validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path,PurePosixPath
+          from zipfile import ZipFile
+          import shutil,os
+          base=Path('work/google-sdk36')
+          target=base/'android-sdk/build-tools/36.0.0'
+          archive=base/'download/build-tools_r36_linux.zip'
+          with ZipFile(archive) as z:
+              assert z.testzip() is None,'Google archive ZIP CRC failed'
+              for info in z.infolist():
+                  parts=PurePosixPath(info.filename).parts
+                  assert len(parts)>=2 and parts[0]=='android-16' and '..' not in parts and not any(':' in p for p in parts),'Unsafe or unexpected Google ZIP entry'
+                  rel=Path(*parts[1:])
+                  dest=target/rel
+                  if info.is_dir():dest.mkdir(parents=True,exist_ok=True);continue
+                  dest.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(info) as src,dest.open('xb') as out:shutil.copyfileobj(src,out)
+                  perm=(info.external_attr>>16)&0o777
+                  if perm&0o111:dest.chmod(0o755)
+          for name in ['zipalign','apksigner','aapt','lib/apksigner.jar','source.properties']:
+              assert (target/name).is_file(),f'Missing official Build-Tools file: {name}'
+          for name in ['zipalign','apksigner','aapt']:
+              (target/name).chmod(0o755)
+          print('Unpacked under:',target.resolve())
+          print((target/'source.properties').read_text()[:700])
+          PY
+      - name: Validate existing Java, APK signing executable, zipalign and Linux library dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$PWD/work/google-sdk36/android-sdk/build-tools/36.0.0"
+          java -version 2>&1 | tee work/google-sdk36/metadata/java-version.txt
+          "$tools/apksigner" version 2>&1 | tee work/google-sdk36/metadata/apksigner-version.txt
+          java -jar "$tools/lib/apksigner.jar" version 2>&1 | tee work/google-sdk36/metadata/apksigner-java-version.txt
+          "$tools/aapt" version 2>&1 | tee work/google-sdk36/metadata/aapt-version.txt
+          "$tools/zipalign" -h > work/google-sdk36/metadata/zipalign-help.txt 2>&1 || rc=$?
+          test -s work/google-sdk36/metadata/zipalign-help.txt
+          for binary in zipalign aapt; do
+            env LD_LIBRARY_PATH="$tools/lib64" ldd "$tools/$binary" | tee "work/google-sdk36/metadata/ldd-$binary.txt"
+            if grep -q 'not found' "work/google-sdk36/metadata/ldd-$binary.txt"; then
+              echo "::error::Missing native dependency for $binary"
+              exit 1
+            fi
+          done
+          echo 'PASS: official checksum, ZIP CRC, local Java, apksigner, aapt, zipalign and linked dependencies'
+      - name: Export ONLY the Google archive and public verification metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-google-build-tools-36-linux-workspace
+          path: |
+            work/google-sdk36/download/build-tools_r36_linux.zip
+            work/google-sdk36/metadata/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
