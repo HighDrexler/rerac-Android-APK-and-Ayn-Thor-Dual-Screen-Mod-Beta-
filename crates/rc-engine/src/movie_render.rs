@@ -400,6 +400,12 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
                 let start = Instant::now();
                 let mut rgba = Vec::new();
                 rc_video::movie::frame_to_rgba(&f, &mut rgba);
+                // Android FMV only: tame horizontal MPEG banding on low-res
+                // encoded movies. No effect on in-engine scenes or 3D play.
+                #[cfg(target_os = "android")]
+                if std::env::var("RC_MOVIE_QUALITY").as_deref() != Ok("0") {
+                    rc_video::movie_quality::remove_scanline_banding(&mut rgba, f.width, f.height);
+                }
                 perf.convert += start.elapsed();
                 perf.converted += 1;
                 if tx.send(Msg::Picture(n, rgba)).is_err() { return; }
