@@ -33,3 +33,25 @@ for field in ('assets', 'qs', 'menu', 'draws', 'render_mode', 'last_counter'):
         if old not in s: raise RuntimeError('Missing MenuRt field: ' + field)
         p.write_text(s.replace(old, new, 1))
 replace('crates/rc-engine/src/menu_render.rs', '\nfn convert(', '\npub(crate) fn convert(')
+# Embed the actual compiled version and source provenance, not a launcher label.
+replace('crates/rc-engine/src/android.rs', 'mod companion;', 'mod companion;\ninclude!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));')
+# Preserve the v16 Adreno skinning workaround while retaining every other .3.5
+# shader change (notably tie wind animation and the additive HUD blend).
+for name in ('moby', 'moby_metal'):
+    path = f'crates/rc-engine/assets/shaders/{name}.wgsl'
+    replace(path, 'palette: array<mat4x4<f32>>;', 'palette: array<vec4<f32>>;')
+    replace(path, 'fn s16(x: i32) -> i32', '''// Explicit 16-byte column loads preserve v16's Adreno storage-matrix workaround.
+// The CPU still uploads the same 64-byte matrices; this changes no asset layout.
+fn joint(index: u32) -> mat4x4<f32> {
+    let p = index * 4u;
+    return mat4x4<f32>(palette[p], palette[p + 1u], palette[p + 2u], palette[p + 3u]);
+}
+
+fn s16(x: i32) -> i32''')
+    p=ROOT/path; s=p.read_text()
+    for axis,count in [('x',2),('y',1),('z',1)]:
+        old=f'palette[base + j.{axis}]'; new=f'joint(base + j.{axis})'
+        if old not in s and s.count(new)==count: continue
+        if s.count(old)!=count: raise RuntimeError(f'Changed skinning anchor in {path}: {axis}')
+        s=s.replace(old,new)
+    p.write_text(s)
