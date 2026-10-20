@@ -1,0 +1,83 @@
+name: Android signed native runtime validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/native-core-035]
+    paths:
+      - android/release/native-approval.json
+      - android/release/native_emulator.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: signed-native-runtime
+  cancel-in-progress: false
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require the successful source-built candidate run
+        id: approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidates work/reports
+          python - <<'PY'
+          import json,os,re,subprocess
+          from pathlib import Path
+          doc=json.loads(Path('android/release/native-approval.json').read_text())
+          assert doc['schema']==1 and type(doc['candidate_run']) is int and doc['candidate_run']>0
+          assert re.fullmatch('[0-9a-f]{40}',doc['native_source_sha'])
+          run=json.loads(subprocess.check_output(['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{doc['candidate_run']}"]))
+          assert run['conclusion']=='success' and run['repository']['id']==1424927008
+          assert run['path']=='.github/workflows/android-native-build.yml'
+          assert run['head_branch']=='integration/native-core-035'
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write('run='+str(doc['candidate_run'])+'\n')
+              f.write('apk='+doc['launcher_unsigned'].replace('-unsigned.apk','.apk')+'\n')
+          PY
+      - name: Download exact tested compilation artifacts
+        run: gh run download '${{ steps.approval.outputs.run }}' --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidates
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Reconstruct original-signer candidates and verify previous release
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          python android/release/native_approval.py --approval android/release/native-approval.json --artifacts work/candidates --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta.3/ReRAC-Launcher-1.1.0-beta.3.apk' -o work/previous.apk
+          echo '06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3  work/previous.apk' | sha256sum -c -
+      - name: Enable KVM for disposable emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run actual native and data-preserving update checks
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/native_emulator.py --previous work/previous.apk --candidate work/signed/${{ steps.approval.outputs.apk }} --probe work/signed/ReRAC-Native-Probe.apk --output work/reports
+      - name: Retain exact signed bytes and real Android evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-signed-native-runtime
+          path: |
+            work/signed
+            work/reports
+          retention-days: 14
+          if-no-files-found: error
