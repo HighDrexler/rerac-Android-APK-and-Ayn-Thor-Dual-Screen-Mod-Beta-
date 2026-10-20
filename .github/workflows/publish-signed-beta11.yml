@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p work/candidate work/proof work/out work/downloaded
-          for pair in '39507600973 .github/workflows/android-native-build.yml' '39507693858 .github/workflows/android-parallel-smoke.yml'; do
+          for pair in '39508511620 .github/workflows/android-native-build.yml' '39508603682 .github/workflows/android-parallel-smoke.yml'; do
             read -r run path <<< "$pair"
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "work/proof/$run.json"
             python3 - "$run" "$path" <<'PY'
@@ -46,9 +46,9 @@ jobs:
           assert o['head_branch']=='fix/036-touch-and-companion' and o['conclusion']=='success'
           PY
           done
-          gh run download 39507693858 --repo "$GITHUB_REPOSITORY" --name android-production-unsigned --dir work/candidate
-          gh run download 39507693858 --repo "$GITHUB_REPOSITORY" --name android-sidecar-smoke-evidence --dir work/proof/smoke
-          test "$(cat work/proof/smoke/native-build-run.txt)" = '39507600973'
+          gh run download 39508603682 --repo "$GITHUB_REPOSITORY" --name android-production-unsigned --dir work/candidate
+          gh run download 39508603682 --repo "$GITHUB_REPOSITORY" --name android-sidecar-smoke-evidence --dir work/proof/smoke
+          test "$(cat work/proof/smoke/native-build-run.txt)" = '39508511620'
           test "$(cat work/proof/smoke/result.txt)" = 'launcher_startup=passed'
       - name: Reconstruct the original-certified APK from immutable public bytes
         shell: bash
