@@ -114,6 +114,13 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
             }
             let out=q.update(&MenuInput::default(),&g,&mut gs.0.global,&mut sess.0,mm.loop_frame as u32,play.svc.units.bot_listeners);
             if let Some(command)=out.command {play.game.hero.bodies.command=command;}
+            // The ordinary quick-select's release writes 0x141408. The live
+            // gameplay tick reads item_globals.request; keeping both in sync
+            // makes touch selection identical to a physical △ release.
+            if let Some(request)=out.request {
+                sess.0.temp_hand=request;
+                play.game.item_globals.request=request;
+            }
         },
         Command::Touch{page,x,y}=>{
             let Some(menu)=rt.menu.as_mut() else{continue};
@@ -186,6 +193,16 @@ fn map_draws(cache:&mut Cache,source:&PageMenu,play:&Play,gs:&GameState,a:&MenuA
     let metadata=json!({"mapTitle":text(a.msg(name.1 as i32)),"objectives":missions.iter().filter(|m|!m.done).map(|m|text(a.msg(m.text))).collect::<Vec<_>>(),"mapCentre":[u,w],"mapZoom":v.zoom,"mapHero":[hu,hv],"mapMirror":m.map.mirror});
     (out,metadata)
 }
+/// The HUD fallback icon is frame zero even when the requested ID does not
+/// exist. That is fine for the game draw path, but not for a named companion
+/// icon; zero must mean "no valid image" rather than an unrelated sprite.
+fn checked_icon(cache:&mut Cache,a:&MenuAssets,hud:&LevelHud,id:u16,frame:i32)->i32 {
+    let Some(entry)=a.hud.icons.iter().find(|entry|entry.id==id) else{return 0};
+    if frame<0||frame>=entry.frame_count as i32{return 0}
+    let index=(entry.first_frame as usize).saturating_add(frame as usize);
+    if index>=hud.frames.len(){return 0}
+    cache.texture(Tex::Frame(index),hud)
+}
 fn collectibles(menu:&PageMenu,gs:&GameState,a:&MenuAssets,cache:&mut Cache,hud:&LevelHud)->Value {
     let level=gs.global.level.max(0) as usize;
     let found=gs.levels.get(level).map_or(0,|l|l.gold_bolts.iter().filter(|&&b|b!=0).count());
@@ -204,18 +221,22 @@ fn collectibles(menu:&PageMenu,gs:&GameState,a:&MenuAssets,cache:&mut Cache,hud:
         if !skills.is_empty(){break;}
     }
     let skill_found=skills.iter().filter(|v|v["complete"]==true).count();
-    let bolt=cache.texture(Tex::Frame(a.frame(0xe998,0)),hud);
-    let skill=cache.texture(Tex::Frame(a.frame(0xea24,0)),hud);
-    let check=cache.texture(Tex::Frame(a.frame(0xea24,1)),hud);
+    // These are HUD icon IDs, not overlay addresses. Previously 0xe998
+    // and 0xea24 were treated as icon IDs; absent IDs silently mapped to
+    // frame zero (an unrelated sprite). Never publish a false texture.
+    let bolt=checked_icon(cache,a,hud,rc_game::hud::icon::BOLT,0);
+    let skill=checked_icon(cache,a,hud,0xea24,0);
+    let check=checked_icon(cache,a,hud,0xea24,1);
     json!({"level":gs.global.level,"goldFound":found,"goldTotal":total,"skillFound":skill_found,"skillTotal":skills.len(),"skills":skills,"boltIcon":bolt,"skillIcon":skill,"checkIcon":check})
 }
 
-pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option<Res<Play>>,gs:Option<Res<Persistent>>,sess:Option<Res<Session>>,mm:Option<Res<MenuMode>>,mut cache:Local<Cache>) {
+pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option<Res<Play>>,gs:Option<Res<Persistent>>,sess:Option<Res<Session>>,mm:Option<Res<MenuMode>>,scene:Option<Res<crate::hud_render::SceneLayer>>,mut cache:Local<Cache>) {
     let (Some(rt),Some(play),Some(gs),Some(sess),Some(mm),Some(hud))=(rt.as_deref(),play.as_deref(),gs.as_deref(),sess.as_deref(),mm.as_deref(),level.0.hud.as_ref()) else{return;};
     let frontend=crate::saves::front_end_active();
-    let mode=mm.state.mode;let in_menu=matches!(mode,Mode::Menu|Mode::Freeze|Mode::Slideshow)||frontend;
+    let mode=mm.state.mode;
+    let (in_menu,touch_mode)=super::companion_policy::display_mode(mode.raw(),frontend);
     MENU.store(in_menu,Ordering::Release);
-    TOUCH_MODE.store(if matches!(mode,Mode::Movie|Mode::Cutscene|Mode::Ship){2}else if in_menu{1}else{0},Ordering::Release);
+    TOUCH_MODE.store(touch_mode,Ordering::Release);
     let now=Instant::now();let interval=if in_menu {Duration::from_millis(40)}else{Duration::from_millis(90)};
     if cache.at.is_some_and(|last|now.saturating_duration_since(last)<interval){return;}
     let mut generation=GENERATION.load(Ordering::Acquire);
@@ -248,7 +269,17 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
     // The small font (FX1) is v16's key -2.
     cache.texture(Tex::Fx(1),hud);
     let wheel=json!({"generation":generation,"enabled":allow,"box":bounds,"glyphs":hud.glyphs[0].iter().map(|g|[g.u as i32,g.v as i32,g.y_off as i32,g.advance as i32]).collect::<Vec<_>>(),"pages":pages}).to_string();
-    let p=cache.convert(&rt.draws,&rt.assets,hud);let prims=cache.prims(&p,hud);
+    // The original Android title already draws Start/Load text; duplicating
+    // the game's font quads overlaps its buttons. Preserve the panels/art.
+    // In-engine cutscenes publish SceneLayer subtitles (rt.draws is empty
+    // there) so the bottom display remains useful during dialogue.
+    let prims=if mode==Mode::Cutscene {
+        scene.as_ref().map_or_else(Vec::new, |layer|cache.prims(&layer.prims,hud))
+    }else{
+        let p=cache.convert(&rt.draws,&rt.assets,hud);
+        let p=p.into_iter().filter(|p|super::companion_policy::native_frontend_primitive(frontend,matches!(p.tex,Tex::Fx(_)))).collect::<Vec<_>>();
+        cache.prims(&p,hud)
+    };
     let panels:Vec<_>=rt.draws.iter().filter_map(|d|if let MenuDraw::PanelBegin{x,y,w,h,..}=d {Some([*x,*y,*w,*h])}else{None}).collect();
     let mut comp=json!({"menu":in_menu,"mode":mode.raw(),"page":rt.menu.as_ref().map_or(0,|m|m.current),"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"continuousArrows":false,"focusedPanels":false,"panels":panels,"prims":prims,"map":[],"textures":cache.frame});
     if let Some(menu)=rt.menu.as_ref(){
