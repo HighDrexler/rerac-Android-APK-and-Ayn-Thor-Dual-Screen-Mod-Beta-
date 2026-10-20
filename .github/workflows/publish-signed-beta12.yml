@@ -1,0 +1,234 @@
+name: Publish ReRAC Android 0.3.6 beta12 touchscreen and companion fix
+on:
+  push:
+    branches: [fix/036-touch-and-companion]
+    paths: [android/release/beta12-public-receipt.txt]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: rerac-upstream036-beta12-development
+  cancel-in-progress: false
+jobs:
+  publish:
+    outputs:
+      signed_sha256: ${{ steps.signed_hash.outputs.sha }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: rerac-android-0.3.6-dev.3
+      APK: ReRAC-Android-0.3.6-Launcher-1.1-beta12-DEV.apk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Require proven native engine and Android startup
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidate work/proof work/out work/downloaded
+          for pair in '39514150118 .github/workflows/android-native-build.yml' '39514206047 .github/workflows/android-parallel-smoke.yml'; do
+            read -r run path <<< "$pair"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "work/proof/$run.json"
+            python3 - "$run" "$path" <<'PY'
+          import json,sys
+          o=json.load(open('work/proof/'+sys.argv[1]+'.json'))
+          assert o['id']==int(sys.argv[1]) and o['path']==sys.argv[2]
+          assert o['repository']['id']==1424927008
+          assert o['head_branch']=='fix/036-touch-and-companion' and o['conclusion']=='success'
+          PY
+          done
+          gh run download 39514206047 --repo "$GITHUB_REPOSITORY" --name android-production-unsigned --dir work/candidate
+          gh run download 39514206047 --repo "$GITHUB_REPOSITORY" --name android-sidecar-smoke-evidence --dir work/proof/smoke
+          test "$(cat work/proof/smoke/native-build-run.txt)" = '39514150118'
+          test "$(cat work/proof/smoke/result.txt)" = 'launcher_startup=passed'
+      - name: Reconstruct the original-certified APK from immutable public bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography >/dev/null
+          sdkmanager 'build-tools;36.0.0'
+          python3 - <<'PY'
+          import base64,hashlib,json,sys,zipfile,zlib
+          from pathlib import Path
+          sys.path.insert(0,'android/release')
+          from public_signature import reconstruct
+          rec=json.loads(zlib.decompress(base64.b64decode(Path('android/release/beta12-public-receipt.txt').read_text().strip(),validate=True)))
+          assert rec['schema']==1 and rec['release_tag']=='rerac-android-0.3.6-dev.3'
+          assert rec['signed_name']=='ReRAC-Android-0.3.6-Launcher-1.1-beta12-DEV.apk'
+          assert rec['unsigned_name']=='ReRAC-1.1.0-beta.12-production-unsigned.apk'
+          assert rec['trust_cert_sha256']=='e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e'
+          source=next(Path('work/candidate').rglob(rec['unsigned_name']))
+          original=source.read_bytes()
+          assert hashlib.sha256(original).hexdigest()==rec['unsigned_sha256']
+          with zipfile.ZipFile(source) as z:
+              meta=json.loads(z.read('assets/rerac-build.json'))
+              assert (meta['package_id'],meta['core_version'],meta['launcher_version'],meta['version_code'])==('org.rerac.android.ui035test','0.3.6','1.1.0-beta.12',28)
+              assert meta['native_source_sha']==rec['source_native_sha'] and meta['native_source_rebuild'] is True
+              assert meta['upstream_sha']=='89c87e98f9d8296187df2a6310c67b32144090d3'
+              assert rec['upstream_sha']==meta['upstream_sha']
+              assert all('lib/'+abi+'/librc_engine.so' in z.namelist() for abi in ('arm64-v8a','x86_64'))
+          signed=bytes(reconstruct(original,rec))
+          assert hashlib.sha256(signed).hexdigest()==rec['signed_sha256'] and len(signed)==rec['signed_bytes']
+          damaged=bytearray(original);damaged[1000]^=1
+          try: reconstruct(bytes(damaged),rec)
+          except ValueError: pass
+          else:raise AssertionError('Modified source was accepted')
+          Path('work/out',rec['signed_name']).write_bytes(signed)
+          Path('work/out/development.json').write_text(rec['signed_development_feed_text'])
+          Path('work/proof/reconstruction.json').write_text(json.dumps({k:v for k,v in rec.items() if k not in ('public_signing_block','signed_development_feed_text','signed_stable_feed_text')},indent=2))
+          print('PASS: exact signed bytes',rec['signed_sha256'])
+          PY
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose --print-certs --print-certs-pem "work/out/$APK" > work/proof/signature.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e' work/proof/signature.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' work/proof/signature.txt
+          "$tools/zipalign" -c -P 16 4 "work/out/$APK"
+          "$tools/aapt" dump badging "work/out/$APK" > work/proof/manifest.txt
+          grep -q "package: name='org.rerac.android.ui035test' versionCode='28' versionName='1.1.0-beta.12'" work/proof/manifest.txt
+      - name: Expose exact approved APK hash to emulator updater
+        id: signed_hash
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,os
+          from pathlib import Path
+          apk=Path('work/out/ReRAC-Android-0.3.6-Launcher-1.1-beta12-DEV.apk')
+          digest=hashlib.sha256(apk.read_bytes()).hexdigest()
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('sha='+digest+'\n')
+          print('Signed APK SHA256:',digest)
+          PY
+      - name: Verify RSA-signed Development feed and preserve Stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,json,re
+          from pathlib import Path
+          from cryptography import x509
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.serialization import Encoding
+          sdk=Path('work/proof/signature.txt').read_text()
+          pem=re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',sdk,re.S)
+          assert pem
+          cert=x509.load_pem_x509_certificate(pem[0].encode())
+          pin='e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e'
+          assert hashlib.sha256(cert.public_bytes(Encoding.DER)).hexdigest()==pin
+          envelope=json.loads(Path('work/out/development.json').read_text())
+          assert envelope['algorithm']=='SHA256withRSA'
+          payload=base64.b64decode(envelope['payload'],validate=True)
+          cert.public_key().verify(base64.b64decode(envelope['signature'],validate=True),payload,padding.PKCS1v15(),hashes.SHA256())
+          body=json.loads(payload);rel=body['release']
+          apk=Path('work/out/ReRAC-Android-0.3.6-Launcher-1.1-beta12-DEV.apk')
+          assert body['channel']=='development' and rel['version_code']==28 and rel['core_version']=='0.3.6'
+          assert rel['signer_sha256']==pin and rel['sha256']==hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert rel['bytes']==apk.stat().st_size and rel['apk_url'].endswith('/rerac-android-0.3.6-dev.3/'+apk.name)
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha' > work/proof/stable-before.txt
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/proof/dev-before.json
+          python3 - <<'PY'
+          import json,base64
+          from pathlib import Path
+          obj=json.loads(Path('work/proof/dev-before.json').read_text())
+          release=json.loads(base64.b64decode(json.loads(base64.b64decode(obj['content']))['payload']))['release']
+          assert release['version_code']==27 and release['sha256']=='410f67c5a7a82979243f995e627c258f36e78cc43088ebbc7f30d200ba539caf'
+          PY
+      - name: Upload actual source-built ReRAC 0.3.6 APK and verify byte-identical asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Existing immutable 0.3.6 tag: verify rather than replace'
+          else
+            gh release create "$TAG" "work/out/$APK" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title 'ReRAC Android 0.3.6 beta.12 touch and dual-screen fixes (Development)' \
+              --notes 'ReRAC 0.3.6 alpha core, Launcher beta.12/code28. Restores crouch-then-Square wrench THROW without first person and fresh-touch Triangle Exit inside vendors. Retains touch weapon wheel, dual-screen mod and beta9 FMV improvements. Same release signer, Android package, saved data and settings; Stable unchanged pending physical testing.'
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir work/downloaded --clobber
+          cmp "work/out/$APK" "work/downloaded/$APK"
+          sha256sum "work/downloaded/$APK" > work/proof/download-sha.txt
+      - name: Announce update through in-launcher Development only
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(python3 - <<'PY'
+          import json
+          print(json.load(open('work/proof/dev-before.json'))['sha'])
+          PY
+          )"
+          current="$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          test "$current" = "$expected"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/development.json" \
+            -f branch=update-channel2 -f "sha=$current" \
+            -f "message=Publish signed ReRAC 0.3.6 Development update" \
+            -f "content=$(base64 -w0 work/out/development.json)" > work/proof/feed-write.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/proof/dev-after.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          assert base64.b64decode(json.load(open('work/proof/dev-after.json'))['content'])==Path('work/out/development.json').read_bytes()
+          PY
+          test "$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha')" = "$(cat work/proof/stable-before.txt)"
+          echo 'ReRAC 0.3.6 beta12 published to Development, Stable unchanged'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta12-development-publication-proof
+          path: work/proof
+          retention-days: 21
+          if-no-files-found: warn
+  live-update:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ needs.publish.outputs.signed_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Download original-signed beta11 for in-launcher touch repair
+        run: |
+          set -euo pipefail
+          mkdir -p work/previous work/reports
+          gh release download rerac-android-0.3.6-dev.2 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ReRAC-Android-0.3.6-Launcher-1.1-beta11-DEV.apk' --dir work/previous
+          echo '410f67c5a7a82979243f995e627c258f36e78cc43088ebbc7f30d200ba539caf  work/previous/ReRAC-Android-0.3.6-Launcher-1.1-beta11-DEV.apk' | sha256sum -c -
+      - name: Enable emulator KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test real beta11 to beta12 in-launcher update
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous/ReRAC-Android-0.3.6-Launcher-1.1-beta11-DEV.apk --output work/reports --initial-code 27 --target-code 28 --target-version 1.1.0-beta.12 --target-sha256 "$TARGET_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta12-development-live-upgrade
+          path: work/reports
+          retention-days: 21
+          if-no-files-found: warn
