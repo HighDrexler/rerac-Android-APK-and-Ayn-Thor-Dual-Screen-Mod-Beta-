@@ -122,9 +122,13 @@ fn period_for(mhz: Option<u32>) -> Option<Duration> {
 /// The limiter (module docs).
 fn wait(mut pace: ResMut<Pace>, monitors: Query<&Monitor, With<PrimaryMonitor>>) {
     #[cfg(not(target_os = "android"))]
-    let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));
+    let mut period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));
     #[cfg(target_os = "android")]
-    let period = period_for(Some(crate::android::display_mhz()));
+    let mut period = period_for(Some(crate::android::display_mhz()));
+    // Upstream v0.3.6: protect both desktop and Android when vsync doesn't
+    // pace a reported 60 Hz display; otherwise music and simulation run fast.
+    if period.is_none() && pace.avg < 0.97 * TICK { pace.unpaced = true; }
+    if pace.unpaced { period = period.or(Some(Duration::from_secs_f64(TICK))); }
     if period != pace.period {
         pace.period = period;
         pace.next = None;
