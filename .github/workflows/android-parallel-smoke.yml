@@ -1,0 +1,111 @@
+name: Android 0.3.5 parallel APK startup regression
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/native-core-035]
+    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Download the real source-built APK candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidate work/reports work/test
+          gh run download 39350794010 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography > /dev/null
+      - name: Reproduce sidecar packaging with a disposable signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          keydir="$RUNNER_TEMP/sidecar-smoke-key"
+          mkdir -m 700 "$keydir"
+          python3 -c 'import secrets,sys; open(sys.argv[1],"w").write(secrets.token_hex(24))' "$keydir/password"
+          chmod 600 "$keydir/password"
+          keytool -genkeypair -noprompt -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias preflight -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Disposable Sidecar Test'
+          keytool -exportcert -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias preflight -file "$keydir/cert.der"
+          export KEYDIR="$keydir"
+          python3 - <<'PY'
+          import hashlib,os,sys,importlib.util
+          from pathlib import Path
+          module=Path('android/release/parallel_package.py')
+          spec=importlib.util.spec_from_file_location('parallel_package',module)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          signer=hashlib.sha256((Path(os.environ['KEYDIR'])/'cert.der').read_bytes()).hexdigest()
+          mod.EXPECTED_SIGNER=signer
+          candidates=list(Path('work/candidate').rglob('ReRAC-Launcher-*-unsigned.apk'))
+          assert len(candidates)==1
+          report=mod.transform(candidates[0],Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/unsigned.apk'),signer)
+          print('Reproduced sidecar APK',report['core_version'],report['bytes'])
+          PY
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --alignment-preserved --ks "$keydir/test.p12" --ks-type PKCS12 --ks-key-alias preflight --ks-pass file:"$keydir/password" --v4-signing-enabled false --out work/test/sidecar.apk work/test/unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose work/test/sidecar.apk
+          rm -f "$keydir/test.p12" "$keydir/password" "$keydir/cert.der"
+          rmdir "$keydir"
+      - name: Enable disposable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actually install and launch the sidecar variant
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: |
+            mkdir -p work/reports
+            adb shell wm size 1280x720
+            adb shell wm density 160
+            adb logcat -c
+            adb install work/test/sidecar.apk
+            adb shell am start -W -n org.rerac.android.ui035test/org.rerac.android.LauncherActivity > work/reports/launch.txt 2>&1
+            sleep 8
+            adb shell pidof org.rerac.android.ui035test > work/reports/pid.txt || true
+            adb exec-out screencap -p > work/reports/launcher.png
+            adb shell uiautomator dump /sdcard/sidecar-ui.xml || true
+            adb exec-out cat /sdcard/sidecar-ui.xml > work/reports/ui.xml || true
+            adb logcat -d > work/reports/logcat.txt
+            python3 - <<'PY'
+            from pathlib import Path
+            s=Path('work/reports/logcat.txt').read_text(errors='replace')
+            xml=Path('work/reports/ui.xml').read_text(errors='replace')
+            pid=Path('work/reports/pid.txt').read_text().strip()
+            print('PID:',pid)
+            print('Footer found:', 'ReRAC 0.3.5' in xml)
+            errors=[x for x in s.splitlines() if 'FATAL EXCEPTION' in x or 'Fatal signal' in x or 'Process: org.rerac.android.ui035test' in x]
+            for e in errors[-30:]:print(e)
+            assert pid, 'SIDECAR CRASH: process died during launcher startup'
+            assert 'ReRAC 0.3.5' in xml, 'SIDECAR CRASH: launcher never reached version footer'
+            assert not errors,'FATAL ERROR in sidecar launcher'
+            PY
+      - name: Collect evidence, including failure cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-sidecar-smoke-evidence
+          path: work/reports
+          if-no-files-found: warn
+          retention-days: 14
