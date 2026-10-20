@@ -27,7 +27,7 @@ pid=Path('work/reports/pid.txt').read_text().strip()
 log=Path('work/reports/logcat.txt').read_text(errors='replace')
 errors=[x for x in log.splitlines() if 'FATAL EXCEPTION' in x or 'Fatal signal' in x or 'Process: org.rerac.android.ui035test' in x]
 print('App PID:',pid)
-print('Launcher footer:',[x for x in texts if 'Launcher 1.1.0-beta.4' in x])
+print('Launcher footer:',[x for x in texts if 'Launcher 1.1.0-beta.5' in x])
 print('Fatal log lines:',errors[-12:])
 assert pid,'Process died after opening launcher'
 assert any('Launcher 1.1.0-beta.4' in t and 'ReRAC 0.3.5' in t for t in texts),'No launcher footer'
