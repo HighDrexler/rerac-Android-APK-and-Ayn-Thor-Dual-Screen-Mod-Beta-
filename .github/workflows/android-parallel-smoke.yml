@@ -6,7 +6,7 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39366245358'
+        default: '39368970993'
       launcher_version:
         description: Candidate launcher version
         required: false
@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39366245358' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39368970993' }}
       REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.6' }}
       REQUEST_CODE: ${{ inputs.version_code || '22' }}
     steps:
@@ -60,6 +60,7 @@ jobs:
           assert run['head_branch']=='experimental'
           assert run['id']==int(os.environ['NATIVE_RUN'])
           PY
+          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
           printf '%s\n' "$NATIVE_RUN" > work/reports/native-build-run.txt
           sdkmanager 'build-tools;36.0.0'
