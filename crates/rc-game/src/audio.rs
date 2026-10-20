@@ -1087,6 +1087,58 @@ mod tests {
         assert!(sys.music.main.state != 0, "the main player plays");
     }
 
+    /// Blarg's escape 1108 at the end of the tube ride: `MusicRequestTrack(6, 9)` while the level's track plays (the
+    /// forum's "self-destruct music never starts"): the stinger, then track 6 — also when a scene paused the music at
+    /// any point of an earlier transition (the shuttle's (4, 8)).
+    #[test]
+    fn blarg_escape_request_plays_track_6() {
+        let _lock = scene::TEST_INBOX.lock().unwrap_or_else(|e| e.into_inner());
+        let root = rc_formats::test_data::root().join("levels/06");
+        let Ok(bank) = std::fs::read(root.join("sound_bank.bin")) else { eprintln!("skipped: no extracted/"); return };
+        let rd = |n: &str| std::fs::read(root.join(n)).unwrap();
+        let idx = rd("core_index.bin");
+        let data = rc_formats::test_data::core_data(6).unwrap();
+        let core = rc_formats::level::parse_level_core(&idx, data.len()).unwrap();
+        let gameplay = rc_formats::test_data::gameplay(6).unwrap();
+        let music: [Option<Vec<u8>>; 15] = std::array::from_fn(|k| std::fs::read(root.join(format!("music/{k:03}.bin"))).ok());
+        let coll = rc_formats::collision::parse_collision(&core, &data).ok();
+        let audio = LevelAudio::from_parts(&bank, &idx, &core, &data, &gameplay, &rd("level_header.bin"), &music, coll).unwrap();
+        let input = FrameInput { listener: Listener::default(), hero_pos: [0.0; 3] };
+        let level_audio = audio.clone();
+        let mut sys = AudioSystem::new(audio);
+        // A scene pausing the music at points of an earlier transition (the shuttle's (4, 8)), then the escape's request.
+        for pause_at in [0usize, 1, 3, 30, 91, 95, 150, 280, 400] {
+            let mut t = AudioSystem::new(level_audio.clone());
+            t.level_music_start();
+            let mut out = Vec::new();
+            for _ in 0..600 { t.tick(&input, &mut out); }
+            t.music.request(4, 8);
+            for _ in 0..pause_at { t.tick(&input, &mut out); }
+            t.scene_command(scene::SceneAudioCmd::PauseMusic);
+            for _ in 0..300 { t.tick(&input, &mut out); }
+            t.scene_command(scene::SceneAudioCmd::ResumeMusic { after: 30 });
+            for _ in 0..900 { t.tick(&input, &mut out); }
+            let before = (t.music.main.track, t.music.main.state, t.music.phase, t.music.pending_track);
+            t.music.request(6, 9);
+            for _ in 0..1800 { t.tick(&input, &mut out); }
+            assert_eq!((t.music.main.track, t.music.phase, t.music.pending_track), (6, 0, -1), "a pause {pause_at} ticks into the (4, 8) transition (before the escape {before:?})");
+            assert!(t.music.main.state != 0);
+        }
+        sys.level_music_start();
+        let mut out = Vec::new();
+        for _ in 0..600 { sys.tick(&input, &mut out); }
+        sys.music.request(6, 9);
+        let mut seen = Vec::new();
+        for f in 0..1800 {
+            sys.tick(&input, &mut out);
+            let m = &sys.music;
+            let k = (m.main.track, m.main.state, m.transition.state, m.phase, m.pending_track);
+            if seen.last().map(|x: &(i32, (i16, u16, u16, i16, i8))| x.1) != Some(k) { seen.push((f, k)); }
+        }
+        assert_eq!(sys.music.main.track, 6, "{seen:?}");
+        assert!(sys.music.main.state != 0, "{seen:?}");
+    }
+
     /// The Start → Loop hand-over is sample-exact: a stream voice playing part A then part B outputs the same
     /// samples as one RAM voice playing A's frames (end flag cleared) followed by B's, at the music pitch.
     #[test]
