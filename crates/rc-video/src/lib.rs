@@ -6,6 +6,7 @@
 pub mod bits;
 pub mod idct;
 pub mod movie;
+pub mod movie_quality;
 pub mod mpeg2;
 pub mod vlc;
 

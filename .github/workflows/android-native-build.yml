@@ -2,7 +2,7 @@ name: Android source-built native core
 on:
   workflow_dispatch:
   push:
-    branches: [experimental]
+    branches: [experimental, 'beta8/**', 'beta9/**']
     paths:
       - crates/**
       - Cargo.toml
@@ -18,7 +18,6 @@ concurrency:
   cancel-in-progress: true
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/experimental'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -27,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: experimental
+          ref: ${{ github.ref }}
           fetch-depth: 0
       - name: Commit reviewed Android hooks as normal editable source
         id: source
@@ -41,7 +40,11 @@ jobs:
           python3 android/native/apply_probe_hooks.py
           git diff --check
           git add -- crates/rc-engine Cargo.lock
-          if ! git diff --cached --quiet; then
+          if [[ "$GITHUB_REF" != refs/heads/experimental ]]; then
+            # Isolated candidates must contain all hooks already. Never push a
+            # validation branch into experimental as an incidental CI effect.
+            git diff --cached --exit-code
+          elif ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m 'Wire source-built Android runtime, graphics, media and diagnostic entry points'

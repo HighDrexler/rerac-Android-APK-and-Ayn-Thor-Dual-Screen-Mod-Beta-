@@ -135,8 +135,8 @@ impl Plugin for ShadowPlugin {
             .add_plugins((ExtractResourcePlugin::<ShadowVolumes>::default(), ExtractComponentPlugin::<ShadowCamera>::default()))
             .add_systems(crate::level_switch::LevelStartup, setup)
             .add_systems(Update, tag_camera)
-            .add_systems(Last, collect);
-        if crate::gameplay::enabled() { app.add_systems(FixedUpdate, shadow_tick.after(crate::gameplay::GameTick).after(crate::scene_render::actor_mobys)); }
+            .add_systems(Last, collect.run_if(crate::movie_render::world_visible));
+        if crate::gameplay::enabled() { app.add_systems(FixedUpdate, shadow_tick.after(crate::gameplay::GameTick).after(crate::scene_render::actor_mobys).run_if(crate::movie_render::world_visible)); }
         let Some(render_app) = app.get_sub_app_mut(RenderApp) else { return };
         render_app
             .init_resource::<ShadowGpu>()

@@ -6,19 +6,19 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39377763406'
+        default: '39472968413'
       launcher_version:
         description: Candidate launcher version
         required: false
         type: string
-        default: '1.1.0-beta.7'
+        default: '1.1.0-beta.9'
       version_code:
         description: Candidate Android versionCode
         required: false
         type: string
-        default: '23'
+        default: '25'
   push:
-    branches: [experimental]
+    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality']
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
 permissions:
   contents: read
@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39377763406' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.7' }}
-      REQUEST_CODE: ${{ inputs.version_code || '23' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39472968413' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.9' }}
+      REQUEST_CODE: ${{ inputs.version_code || '25' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '23'
+          java-version: '25'
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
@@ -58,7 +58,7 @@ jobs:
           run=json.loads(Path('work/native-run.json').read_text())
           assert run['conclusion']=='success' and run['repository']['id']==1424927008
           assert run['path']=='.github/workflows/android-native-build.yml'
-          assert run['head_branch']=='experimental'
+          assert run['head_branch'] in ('experimental','beta8/fmv-rendering','beta9/fmv-quality')
           assert run['id']==int(os.environ['NATIVE_RUN'])
           PY
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
@@ -117,6 +117,39 @@ jobs:
           Path('work/reports/production-launcher-classes6.dex').write_bytes(dex)
           print('Production launcher rebuilt with valid D8 string table:',len(dex),'bytes')
           PY
+      - name: Retain the aligned unsigned APK with the production certificate pinned
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/production
+          python3 - <<'PY'
+          import hashlib,importlib.util,json,os,zipfile
+          from pathlib import Path
+          path=Path('android/release/parallel_package.py')
+          spec=importlib.util.spec_from_file_location('parallel_package',path)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          candidates=list(Path('work/candidate').rglob('ReRAC-Launcher-*-unsigned.apk'))
+          assert len(candidates)==1
+          output=Path('work/production')/('ReRAC-'+os.environ['REQUEST_VERSION']+'-production-unsigned.apk')
+          report=mod.transform(candidates[0],Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',output,mod.EXPECTED_SIGNER,version=os.environ['REQUEST_VERSION'],code=int(os.environ['REQUEST_CODE']))
+          with zipfile.ZipFile(output) as z:
+              meta=json.loads(z.read('assets/rerac-build.json'))
+              assert meta['package_id']=='org.rerac.android.ui035test'
+              assert meta['signer_sha256']==mod.EXPECTED_SIGNER
+              assert meta['update_feed_branch']=='update-channel2'
+          report.update(native_source_sha=meta['native_source_sha'],native_build_run=int(os.environ['NATIVE_RUN']),packaging_source_sha=os.environ['GITHUB_SHA'],signed=False)
+          Path('work/production/package-report.json').write_text(json.dumps(report,indent=2)+'\n')
+          Path('work/production/SHA256SUMS').write_text(report['sha256']+'  '+output.name+'\n')
+          print(json.dumps(report,indent=2))
+          PY
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 work/production/*.apk
+      - name: Upload production unsigned candidate for existing offline signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-production-unsigned
+          path: work/production
+          if-no-files-found: error
+          retention-days: 14
       - name: Enable disposable Android emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

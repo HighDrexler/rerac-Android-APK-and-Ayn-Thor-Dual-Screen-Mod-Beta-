@@ -240,8 +240,8 @@ impl Plugin for SkyRenderPlugin {
             .add_systems(crate::level_switch::LevelStartup, spawn_sky)
             .add_systems(crate::level_switch::LevelPostStartup, main_camera_loads)
             .add_systems(crate::level_switch::LevelUnload, (crate::level_switch::remove::<SkyAnim>, crate::level_switch::remove::<SkyStarOrder>))
-            .add_systems(Update, (animate_shells, stop_clearing))
-            .add_systems(PostUpdate, follow_main_camera.before(TransformSystems::Propagate));
+            .add_systems(Update, (animate_shells, stop_clearing).run_if(crate::movie_render::world_visible))
+            .add_systems(PostUpdate, follow_main_camera.before(TransformSystems::Propagate).run_if(crate::movie_render::world_visible));
     }
 }
 
