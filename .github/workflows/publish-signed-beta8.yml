@@ -1,0 +1,208 @@
+name: Publish verified beta8 and test live launcher update
+on:
+  push:
+    branches: ['beta8/fmv-rendering']
+    paths: [.github/workflows/publish-signed-beta8.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: rerac-beta8-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: rerac-android-0.3.5-dev.3
+      APK: ReRAC-Android-0.3.5-Launcher-1.1-beta8-DEV.apk
+      SHA256: 90f188976db46a1b989ffec0ae49f109e70f15dc862ca5e4f82c85820a0ebac8
+      RELEASE_SOURCE: 1a220e82a1cf79a62c79e7761074b8cb2547ea38
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Require the exact successful signed-candidate verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/validation work/report work/verified
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39467711695" > work/report/validation-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('work/report/validation-run.json').read_text())
+          assert r['id']==39467711695 and r['conclusion']=='success' and r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/verify-signed-beta8.yml'
+          assert r['head_branch']=='beta8/fmv-rendering' and r['head_sha']==os.environ['RELEASE_SOURCE']
+          PY
+          gh run download 39467711695 --repo "$GITHUB_REPOSITORY" --name beta8-signed-validation --dir work/validation
+          echo "$SHA256  work/validation/out/$APK" | sha256sum -c -
+          test "$(stat -c%s "work/validation/out/$APK")" -eq 253574057
+          grep -q 'Ran 8 tests' work/validation/work/reports/verification-tests.log
+          grep -qx 'OK' work/validation/work/reports/verification-tests.log
+          test "$(cat work/validation/out/source-commit.txt)" = "$RELEASE_SOURCE"
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root=Path('work/validation/out')
+          for line in (root/'SHA256SUMS.txt').read_text().splitlines():
+              digest,name=line.split(None,1)
+              file=root/Path(name.strip()).name
+              assert hashlib.sha256(file.read_bytes()).hexdigest()==digest
+          PY
+      - name: Independently check signed APK, certificate, manifest, alignment and feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-cryptography > /dev/null
+          apk="work/validation/out/$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs --print-certs-pem "$apk" > work/report/apksigner.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > work/report/aapt.txt
+          python3 - <<'PY'
+          import json,os,re,sys
+          from pathlib import Path
+          sys.path.insert(0,'android/release')
+          import verify_signed_beta8 as v
+          sdk=Path('work/report/apksigner.txt').read_text()
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in sdk
+          cert,pub=v.sdk_certificate(sdk)
+          feed=Path('work/validation/out/beta8-development-signed-feed.json').read_text()
+          v.feed_check(feed,cert,pub,os.environ['SHA256'],253574057)
+          aapt=Path('work/report/aapt.txt').read_text()
+          m=re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",aapt,re.M)
+          assert m and m.groups()==(v.PACKAGE,'24',v.VERSION)
+          report=json.loads(Path('work/validation/out/reconstruction.json').read_text())
+          assert report['status']=='SIGNED_APK_AND_FEED_VERIFIED' and report['signed_sha256']==os.environ['SHA256']
+          assert report['native_source_sha']==v.NATIVE_SOURCE
+          assert report['sdk_checks']==dict(apk_signature='PASSED',zip_alignment_16k='PASSED',apk_manifest='PASSED')
+          Path('work/report/publisher-proof.json').write_text(json.dumps(report,indent=2)+'\n')
+          PY
+      - name: Check Development progression and retain Stable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/report/existing-dev.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" > work/report/existing-stable.json
+          python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          dev=json.loads(Path('work/report/existing-dev.json').read_text())
+          body=json.loads(base64.b64decode(json.loads(base64.b64decode(dev['content']))['payload']))
+          assert body['schema']==1 and body['channel']=='development'
+          release=body['release']
+          assert (release['version_code'],release['sha256']) in [
+           (23,'e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6'),
+           (24,os.environ['SHA256'])]
+          stable=json.loads(Path('work/report/existing-stable.json').read_text())
+          sb=json.loads(base64.b64decode(json.loads(base64.b64decode(stable['content']))['payload']))
+          assert sb['channel']=='stable'
+          Path('work/report/stable-sha.txt').write_text(stable['sha'])
+          Path('work/report/dev-before-sha.txt').write_text(dev['sha'])
+          PY
+      - name: Publish immutable beta8 and independently download the exact assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo 'Existing release: verify without replacing any asset.'
+          else
+            gh release create "$TAG" "work/validation/out/$APK" \
+              work/validation/out/ReRAC-Android-0.3.5-Launcher-1.1-beta8-source.tar.gz \
+              work/validation/out/SHA256SUMS.txt work/validation/out/reconstruction.json \
+              --repo "$GITHUB_REPOSITORY" --target "$RELEASE_SOURCE" --prerelease \
+              --title 'ReRAC Android 0.3.5 Experimental beta.8' \
+              --notes 'Reduces hidden 3D rendering, animation and shadow work beneath prerecorded FMV cutscenes. Preserves in-engine cutscene timing, controls and companion display. Launcher beta.8/code24; engine remains0.3.5. Both Android ABIs, engine and rendered-movie regressions, launcher startup, original certificate and exact signed feed verified. Hardware playback smoothness awaits owner testing. Install through the existing Development launcher update; saves and settings retained. Stable unchanged.'
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --pattern '*source.tar.gz' --dir work/verified
+          cmp "work/validation/out/$APK" "work/verified/$APK"
+          cmp work/validation/out/ReRAC-Android-0.3.5-Launcher-1.1-beta8-source.tar.gz work/verified/ReRAC-Android-0.3.5-Launcher-1.1-beta8-source.tar.gz
+          echo "$SHA256  work/verified/$APK" | sha256sum -c -
+      - name: Activate exact signed Development feed after asset verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="$(cat work/report/dev-before-sha.txt)"
+          verified_feed="$(base64 -w0 work/validation/out/beta8-development-signed-feed.json)"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/development.json" \
+            -f branch=update-channel2 -f "sha=$before" \
+            -f 'message=Offer verified beta.8 FMV fix through Development launcher' \
+            -f "content=$verified_feed" > work/report/development-write.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/report/new-dev.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          obj=json.loads(Path('work/report/new-dev.json').read_text())
+          assert base64.b64decode(obj['content'])==Path('work/validation/out/beta8-development-signed-feed.json').read_bytes()
+          PY
+          after="$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha')"
+          test "$after" = "$(cat work/report/stable-sha.txt)"
+          echo 'Verified beta.8 release and signed Development feed available. Stable unchanged.'
+      - name: Retain public publication receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta8-publication-receipt
+          path: work/report
+          retention-days: 21
+          if-no-files-found: warn
+  live-updater-test:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Download and verify released beta7 for real launcher update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/previous work/reports
+          gh release download rerac-android-0.3.5-dev.2 --repo "$GITHUB_REPOSITORY" --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk' --dir work/previous
+          echo 'e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6  work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk' | sha256sum -c -
+      - name: Enable KVM on disposable runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download and install beta8 through beta7 launcher with Android consent
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk --output work/reports --initial-code 23 --target-code 24 --target-version 1.1.0-beta.8 --target-sha256 90f188976db46a1b989ffec0ae49f109e70f15dc862ca5e4f82c85820a0ebac8
+      - name: Retain live updater proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta8-live-updater-validation
+          path: work/reports
+          retention-days: 21
+          if-no-files-found: warn
