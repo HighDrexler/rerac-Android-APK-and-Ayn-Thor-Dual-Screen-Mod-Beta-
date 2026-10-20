@@ -101,7 +101,7 @@ jobs:
           from pathlib import Path
           apk=Path('work/out/ReRAC-Android-0.3.6-Launcher-1.1-beta10-DEV.apk')
           digest=hashlib.sha256(apk.read_bytes()).hexdigest()
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('sha='+digest+'\\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('sha='+digest+'\n')
           print('Signed APK SHA256:',digest)
           PY
       - name: Verify RSA-signed Development feed and preserve Stable
