@@ -1,0 +1,153 @@
+name: Publish ReRAC Android 0.3.5+ Development APK
+on:
+  workflow_dispatch:
+    inputs:
+      native_build_run:
+        description: Successful source-built Android run ID
+        required: true
+        type: string
+      release_tag:
+        description: New tag, e.g. rerac-android-0.3.6-dev.1
+        required: true
+        type: string
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: rerac-android-development-publisher
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RERAC_KEY_B64: ${{ secrets.RERAC_035_KEYSTORE_B64 }}
+      RERAC_KEY_PASSWORD: ${{ secrets.RERAC_035_KEYSTORE_PASSWORD }}
+      NATIVE_RUN: ${{ inputs.native_build_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/native-core-035
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Require release secrets and validated native build
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "$RERAC_KEY_B64" && -n "$RERAC_KEY_PASSWORD" ]] || { echo "::error::Configure RERAC_035_KEYSTORE_B64 and RERAC_035_KEYSTORE_PASSWORD in Settings > Secrets and variables > Actions. Refusing unsigned publication."; exit 1; }
+          [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^rerac-android-[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$ ]]
+          mkdir -p work/candidate work/release
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/native-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('work/native-run.json').read_text())
+          assert r['repository']['id']==1424927008 and r['conclusion']=='success'
+          assert r['path']=='.github/workflows/android-native-build.yml'
+          assert r['head_branch']=='integration/native-core-035'
+          assert r['id']==int(os.environ['NATIVE_RUN'])
+          PY
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::Release tag already exists"; exit 1; fi
+          gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+      - name: Prepare exact source-built native candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          python3 -m pip install --user 'cryptography>=44,<48'
+          python3 - <<'PY'
+          import json,os,re,hashlib
+          from pathlib import Path
+          from zipfile import ZipFile
+          a=list(Path('work/candidate').rglob('ReRAC-Launcher-*-unsigned.apk'))
+          assert len(a)==1
+          f=a[0]
+          with ZipFile(f) as z: m=json.loads(z.read('assets/rerac-build.json'))
+          report=json.loads(f.with_suffix('.build-report.json').read_text())
+          assert m['package_id']=='org.rerac.android.uipreview'
+          assert m['core_version']!='0.3.4' and m['native_source_rebuild'] is True
+          assert int(m['version_code'])>=20
+          assert report['native_source_sha']==m['native_source_sha']
+          assert report['unsigned_sha256']==hashlib.sha256(f.read_bytes()).hexdigest()
+          assert os.environ['RELEASE_TAG'].split('-')[2]==m['core_version']
+          Path('work/candidate-path.txt').write_text(str(f))
+          PY
+          # An old or already-announced versionCode must never be republished.
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.content' | tr -d '\n' | base64 -d > work/current-envelope.json
+          python3 - <<'PY'
+          import json,base64,zipfile
+          from pathlib import Path
+          existing=json.loads(Path('work/current-envelope.json').read_text())
+          current=json.loads(base64.b64decode(existing['payload']))['release']
+          previous=0 if current is None else int(current['version_code'])
+          with zipfile.ZipFile(Path('work/candidate-path.txt').read_text()) as z:
+              new=json.loads(z.read('assets/rerac-build.json'))['version_code']
+          assert new>previous,(new,previous)
+          PY
+      - name: Assemble separate-install APK and sign with the SAME private certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          keydir="$RUNNER_TEMP/rerac-035-key"
+          mkdir -p "$keydir"
+          printf %s "$RERAC_KEY_B64" | base64 -d > "$keydir/key.p12"
+          export KEYSTORE="$keydir/key.p12"
+          keytool -list -storetype PKCS12 -keystore "$KEYSTORE" -storepass:env RERAC_KEY_PASSWORD > /dev/null
+          python3 android/release/parallel_package.py --candidate "$(cat work/candidate-path.txt)" --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" --output work/release/unsigned.apk
+          version="$(python3 - <<'PY'
+          import json,zipfile
+          with zipfile.ZipFile('work/release/unsigned.apk') as z: print(json.loads(z.read('assets/rerac-build.json'))['core_version'])
+          PY
+          )"
+          name="ReRAC-Android-$version-DEV.apk"
+          echo "$name" > work/release/name.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --alignment-preserved --ks "$KEYSTORE" --ks-type PKCS12 --ks-key-alias rerac-update --ks-pass env:RERAC_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false --out "work/release/$name" work/release/unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "work/release/$name" > work/release/signature-report.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e' work/release/signature-report.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "work/release/$name"
+          python3 android/release/sign_035_feed.py --apk "work/release/$name" --keystore "$KEYSTORE" --password-env RERAC_KEY_PASSWORD --release-tag "$RELEASE_TAG" --output work/release/development.json
+          sha256sum "work/release/$name" > work/release/SHA256SUMS
+          rm -f "$KEYSTORE"
+          rmdir "$keydir"
+          rm -f work/release/unsigned.apk
+      - name: Publish immutable GitHub Development prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="$(cat work/release/name.txt)"
+          gh release create "$RELEASE_TAG" "work/release/$name" --repo "$GITHUB_REPOSITORY" --target integration/native-core-035 --prerelease --title "ReRAC Android $RELEASE_TAG" --notes "Signed Android Development release for org.rerac.android.ui035test. Existing app data is kept when installing a higher versionCode with the same signer. Physical AYN Thor/gameplay acceptance is separate."
+          curl -fLsS --retry 3 "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$name" -o work/release/verify-download.apk
+          cmp "work/release/$name" work/release/verify-download.apk
+          rm -f work/release/verify-download.apk
+      - name: Announce update ONLY on the new app's signed Development channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/development.json" \
+            -f branch=update-channel2 -f "sha=$sha" \
+            -f "message=Stage verified $RELEASE_TAG for ReRAC Android 0.3.5+ Development" \
+            -f "content=$(base64 -w0 work/release/development.json)"
+          echo "Signed Development feed updated. Original v0.3.4 and Stable feeds remain unchanged."
+      - name: Publish signing receipt only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rerac-035plus-development-signing-receipt
+          path: |
+            work/release/SHA256SUMS
+            work/release/signature-report.txt
+            work/release/development.json
+          retention-days: 30
+          if-no-files-found: warn
