@@ -1,0 +1,208 @@
+name: Promote validated ReRAC 0.3.6 Android candidate to Stable
+on:
+  push:
+    branches: [integration/upstream-036]
+    paths: [android/release/approve-stable-036.json]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: rerac-upstream036-stable-channel
+  cancel-in-progress: false
+jobs:
+  promote-stable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      signed_sha256: ${{ steps.approval.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: rerac-android-0.3.6-dev.1
+      APK: ReRAC-Android-0.3.6-Launcher-1.1-beta10-DEV.apk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/upstream-036
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Require successful Development publication and real in-launcher upgrade
+        id: approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/release work/proof
+          python3 - <<'PY'
+          import json,re,os
+          from pathlib import Path
+          a=json.loads(Path('android/release/approve-stable-036.json').read_text())
+          assert set(a)=={'development_publish_run','release_tag','signed_sha256','purpose'}
+          assert a['release_tag']=='rerac-android-0.3.6-dev.1'
+          assert a['purpose']=='user_requested_stable_channel_test'
+          assert isinstance(a['development_publish_run'],int) and a['development_publish_run']>0
+          assert re.fullmatch('[a-f0-9]{64}',a['signed_sha256'])
+          with open(os.environ['GITHUB_ENV'],'a') as f: f.write('DEV_RUN='+str(a['development_publish_run'])+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('sha='+a['signed_sha256']+'\n')
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DEV_RUN" > work/proof/dev-publication-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('work/proof/dev-publication-run.json').read_text())
+          assert r['id']==int(os.environ['DEV_RUN']) and r['conclusion']=='success'
+          assert r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/publish-signed-036-development.yml'
+          assert r['head_branch']=='integration/upstream-036'
+          PY
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir work/release
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" > work/proof/stable-before.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/proof/dev-before.json
+      - name: Independently verify the official upstream 0.3.6 core and offline-signed Stable feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography > /dev/null
+          sdkmanager 'build-tools;36.0.0'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs --print-certs-pem "work/release/$APK" > work/proof/apksigner.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "work/release/$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "work/release/$APK" > work/proof/manifest.txt
+          python3 - <<'PY'
+          import base64,hashlib,json,re,zipfile,zlib
+          from pathlib import Path
+          from cryptography import x509
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric import padding
+          from cryptography.hazmat.primitives.serialization import Encoding
+          root=Path('work')
+          apk=root/'release/ReRAC-Android-0.3.6-Launcher-1.1-beta10-DEV.apk'
+          rec=json.loads(zlib.decompress(base64.b64decode(Path('android/release/upstream036-public-receipt.txt').read_text().strip(),validate=True)))
+          assert rec['schema']==1 and rec['release_tag']=='rerac-android-0.3.6-dev.1'
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==rec['signed_sha256']
+          assert apk.stat().st_size==rec['signed_bytes']
+          assert rec['signed_sha256']==json.loads(Path('android/release/approve-stable-036.json').read_text())['signed_sha256']
+          pin='e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e'
+          print_cert=(root/'proof/apksigner.txt').read_text()
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in print_cert
+          pems=re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----',print_cert,re.S)
+          assert pems
+          cert=x509.load_pem_x509_certificate(pems[0].encode())
+          assert hashlib.sha256(cert.public_bytes(Encoding.DER)).hexdigest()==pin
+          with zipfile.ZipFile(apk) as z:
+              metadata=json.loads(z.read('assets/rerac-build.json'))
+          assert metadata['package_id']=='org.rerac.android.ui035test'
+          assert metadata['core_version']=='0.3.6' and metadata['launcher_version']=='1.1.0-beta.10'
+          assert metadata['version_code']==26 and metadata['upstream_sha']=='89c87e98f9d8296187df2a6310c67b32144090d3'
+          assert metadata['native_source_rebuild'] is True and metadata['signer_sha256']==pin
+          stable=json.loads(rec['signed_stable_feed_text'])
+          assert stable['algorithm']=='SHA256withRSA'
+          payload=base64.b64decode(stable['payload'],validate=True)
+          cert.public_key().verify(base64.b64decode(stable['signature'],validate=True),payload,padding.PKCS1v15(),hashes.SHA256())
+          body=json.loads(payload);release=body['release']
+          assert body['schema']==1 and body['channel']=='stable'
+          assert release['core_version']=='0.3.6' and release['version_code']==26 and release['launcher_version']=='1.1.0-beta.10'
+          assert release['sha256']==rec['signed_sha256'] and release['bytes']==apk.stat().st_size
+          assert release['signer_sha256']==pin and release['apk_url'].endswith('/rerac-android-0.3.6-dev.1/'+apk.name)
+          dev_info=json.loads((root/'proof/dev-before.json').read_text())
+          dev=json.loads(base64.b64decode(json.loads(base64.b64decode(dev_info['content']))['payload']))
+          assert dev['channel']=='development' and dev['release']['sha256']==rec['signed_sha256']
+          assert dev['release']['version_code']==26
+          old=json.loads((root/'proof/stable-before.json').read_text())
+          old_body=json.loads(base64.b64decode(json.loads(base64.b64decode(old['content']))['payload']))
+          assert old_body['channel']=='stable'
+          previous=old_body['release']
+          if previous is not None:
+              assert int(previous['version_code'])<26
+              assert tuple(map(int,previous['core_version'].split('.')))<(0,3,6)
+          (root/'release/stable.json').write_text(rec['signed_stable_feed_text'])
+          (root/'proof/stable-certificate-check.json').write_text(json.dumps({
+              'status':'verified','signed_sha256':rec['signed_sha256'],
+              'launcher_version':'1.1.0-beta.10','real_native_core':'0.3.6',
+              'upstream_tag':'v0.3.6-alpha',
+              'purpose':'owner-requested Stable-channel acceptance, no physical device claim',
+              'stable_feed_rsa':'verified','same_original_android_certificate':True},indent=2)+'\n')
+          print('PASS: original signer, actual official 0.3.6 engine and RSA-signed Stable feed verified')
+          PY
+      - name: Activate the verified Stable feed only after successful Development update
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(python3 - <<'PY'
+          import json
+          print(json.load(open('work/proof/stable-before.json'))['sha'])
+          PY
+          )"
+          current="$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha')"
+          test "$current" = "$expected"
+          dev_before="$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/stable.json" \
+            -f branch=update-channel2 -f "sha=$current" \
+            -f "message=Offer real ReRAC Android 0.3.6 through Stable channel (owner-requested acceptance)" \
+            -f "content=$(base64 -w0 work/release/stable.json)" > work/proof/stable-write.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" > work/proof/stable-after.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          obj=json.loads(Path('work/proof/stable-after.json').read_text())
+          assert base64.b64decode(obj['content'])==Path('work/release/stable.json').read_bytes()
+          PY
+          test "$dev_before" = "$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          echo 'Stable signed feed staged without modifying Development.'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native036-stable-promotion-proof
+          path: work/proof
+          retention-days: 21
+          if-no-files-found: warn
+  stable-live-upgrade:
+    needs: promote-stable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ needs.promote-stable.outputs.signed_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Verify the beta9 APK installed before Stable update
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/previous work/reports
+          gh release download rerac-android-0.3.5-dev.4 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta9-DEV.apk' --dir work/previous
+          echo '626d7304c3b106d70e83b0aed158df94ca57c0fd8c3e67ed1b9d5158510b16c7  work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta9-DEV.apk' | sha256sum -c -
+      - name: Enable KVM on disposable Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise REAL beta9 to beta10 Stable-channel download, install and retained data
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta9-DEV.apk --output work/reports --initial-code 25 --target-code 26 --target-version 1.1.0-beta.10 --target-sha256 "$TARGET_SHA" --channel Stable
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native036-stable-inlauncher-acceptance
+          path: work/reports
+          retention-days: 21
+          if-no-files-found: warn
