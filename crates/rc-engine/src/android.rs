@@ -79,9 +79,27 @@ impl Plugin for AndroidPlugin {
            .add_systems(PostUpdate, companion::publish.after(crate::hud_render::HudBuild));
     }
 }
-fn sample_tick(mut pad: Option<ResMut<crate::input_map::PadFrame>>) {
+fn sample_tick(
+    mut pad: Option<ResMut<crate::input_map::PadFrame>>,
+    play: Option<Res<crate::gameplay::Play>>,
+    menu: Option<Res<crate::menu_render::MenuMode>>,
+) {
     let Some(pad)=pad.as_deref_mut() else { return };
-    let sample=input().lock().unwrap_or_else(|e| e.into_inner()).tick(Instant::now());
+    // The v16 WEAPONS overlay opens a native Java weapon wheel, but must
+    // *also* work as Triangle when the real PS2 context prompt is visible.
+    // No prompt: it remains a wheel gesture, not an unwanted weapon action.
+    let gameplay = menu.as_ref().is_some_and(|m|
+        m.state.mode == rc_game::menus::mode::Mode::Gameplay)
+        && !crate::saves::front_end_active();
+    let prompt = gameplay && play.as_ref().is_some_and(|p|p.svc.interact.prompt.shown());
+    let sample=input().lock().unwrap_or_else(|e| e.into_inner())
+        .tick(Instant::now(), gameplay, prompt);
+    const _: () = {
+        assert!(crate::touch_input::TRIANGLE == rc_game::pad::button::TRIANGLE);
+        assert!(crate::touch_input::CROSS == rc_game::pad::button::CROSS);
+        assert!(crate::touch_input::SQUARE == rc_game::pad::button::SQUARE);
+        assert!(crate::touch_input::L1 == rc_game::pad::button::L1);
+    };
     let mut p=rc_game::pad::PadInput::neutral();
     let raw=|v:f32| (127.5+127.5*(v*crate::input_map::STICK_SCALE).clamp(-1.,1.)).round() as u8;
     let axis=|i:usize| if sample.touch_axes & (if i<2 {1} else {2}) !=0 {rc_game::pad::PadInput::axis_byte(sample.axes[i])} else {raw(sample.axes[i])};
