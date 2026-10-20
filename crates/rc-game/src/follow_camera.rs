@@ -2649,7 +2649,7 @@ mod tests {
     fn camera_line_passes_the_last_surface() {
         let (coll, mut hero, pad) = setup();
         let mut cam = Camera::new(&CamInput { hero: &hero, pad: &pad, coll: &coll, mobys: None, hero_moby: None }, CameraOptions::default());
-        let mut flags = |cam: &mut Camera, hero: &crate::hero::Hero| {
+        let flags = |cam: &mut Camera, hero: &crate::hero::Hero| {
             cam.pre_flags(&CamInput { hero, pad: &pad, coll: &coll, mobys: None, hero_moby: None });
             cam.line_flags
         };

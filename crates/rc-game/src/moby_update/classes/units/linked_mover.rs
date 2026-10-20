@@ -20,7 +20,7 @@
 //! | state 2 | map flag = 1; link there and in B → sound +0x30, → 4; else position += `rows·T` (0x2215e0) at length speed-out·dt (0x221410, 0x221188), travelled −= speed-out·dt; below 0: position = home + rows·T, travelled = 0, → 3, sound +0x30 when +0x34 ≠ −1 (sic) | [`update`] |
 //! | state 3 | map flag = 1; link there and in B → travelled = 0, sound +0x30, → 4 | [`update`] |
 //! | state 4 | map flag = 0; link away or in A → sound +0x30, → 2; else position += rows·(T at length −speed-back·dt), travelled += speed-back·dt; past \|T\|: position = home, sound +0x34 when +0x30 ≠ −1 (sic), map flag = 0, → 1 | [`update`] |
-//! | | the map zone flags `0x184528[i]` (read by the in-game map's zone table, flag 0x80) | NOT ported: G-UI-001 (the map) |
+//! | | the map zone flags `0x184528[i]` (read by the in-game map's zone table, flag 0x80) | `MapState::set_zone_flag` |
 //! | | no particle, light, save flag, other moby written | n/a |
 //!
 //! **The platform variant**, classes 104, 106, 1129: level07 0x31aee0, the same code on 13 (census U263; 5 created
@@ -72,20 +72,26 @@ fn sound(w: &mut World, id: MobyId, o: usize) {
 
 fn travel(w: &World, id: MobyId, base: usize) -> V { let t = pv4(w, id, base + 0x1c); [t[0], t[1], t[2], 0.0] }
 
+/// `0x184528[+0x38]` = v: the map zone flag (−1 none).
+fn zone(w: &mut World, id: MobyId, base: usize, v: i32) {
+    let i = pi32(w, id, base + 0x38);
+    if i != -1 { w.svc.map.set_zone_flag(i, v); }
+}
+
 /// Level07 0x310df0 (module doc).
 pub fn update(w: &mut World, id: MobyId) {
     if w.m(id).pvars.len() < 0x3c { return; }
-    run(w, id, 0);
+    run_with(w, id, 0, None, true);
 }
 
 /// Level07 0x31aee0 (classes 104 / 106 / 1129, census U263; the same code on 13): the mover with its block at pvar
 /// +0xa0 and a platform block at +0x60, carrying its riders every tick by its displacement (`CarryRiders(+0x60,
 /// position − old, rot, rot)`, 0x288d88 = L01 0x2755f8). Its map zone flag is written only at the init and the two
-/// turns (+0xd8; G-UI-001 either way) (module doc).
+/// turns (+0xd8) (module doc).
 pub fn platform_update(w: &mut World, id: MobyId) {
     if w.m(id).pvars.len() < PLATFORM_BASE + 0x3c { return; }
     let old = w.m(id).position;
-    run(w, id, PLATFORM_BASE);
+    run_with(w, id, PLATFORM_BASE, None, false);
     let m = w.mm(id);
     let (d, r) = (crate::moby_update::creature::sub(m.position, old), m.rotation);
     crate::moby_update::triggers::carry_riders(&mut m.pvars, 0x60, d, r, r);
@@ -97,24 +103,29 @@ pub fn held_update(w: &mut World, id: MobyId) {
     if w.m(id).pvars.len() < 0x40 { return; }
     let mission = w.m(id).mission;
     let held = (w.missions.mission_slot(mission) == 0xff).then(|| pi32(w, id, 0x3c) != 0);
-    run_with(w, id, 0, held);
+    run_with(w, id, 0, held, false);
 }
 
-/// The state machine on the block at pvar `base` (module doc; offsets relative to `base`).
-pub fn run(w: &mut World, id: MobyId, base: usize) { run_with(w, id, base, None) }
+/// The state machine on the block at pvar `base` (module doc; offsets relative to `base`), the map flag written at the
+/// turns only (the platform's and the held variant's way).
+pub fn run(w: &mut World, id: MobyId, base: usize) { run_with(w, id, base, None, false) }
 
-/// [`run`] with the held variant's override: `Some(false)` shut, `Some(true)` open, whatever the link does.
-fn run_with(w: &mut World, id: MobyId, base: usize, held: Option<bool>) {
+/// [`run`] with the held variant's override: `Some(false)` shut, `Some(true)` open, whatever the link does; `ticked`:
+/// the map flag also written at the top of states 1..4 every tick (0x310df0's way: 0, 1, 1, 0).
+fn run_with(w: &mut World, id: MobyId, base: usize, held: Option<bool>, ticked: bool) {
     let (shut, open) = (held == Some(false), held == Some(true));
     let (mission, level) = (w.m(id).mission, w.svc.level);
     if mission != 0xff && w.mission_done(level, mission) == 0xff { set_pi32(w, id, base + 0x10, -1); }
     let (a, b) = (pi32(w, id, base + 0x14) as u32, pi32(w, id, base + 0x18) as u32);
     let link = link_state_at(w, id, base).map(u32::from);
-    let next = match w.m(id).state {
+    let st = w.m(id).state;
+    if ticked && (1..=4).contains(&st) { zone(w, id, base, i32::from(st == 2 || st == 3)); }
+    let next = match st {
         0 => {
             let p = w.m(id).position;
             set_pv4(w, id, base, p);
             set_pf(w, id, base + 0xc, 0.0);
+            zone(w, id, base, 0);
             1
         }
         1 => {
@@ -139,6 +150,7 @@ fn run_with(w: &mut World, id: MobyId, base: usize, held: Option<bool>) {
                 let home = pv4(w, id, base);
                 w.mm(id).position = add(home, d);
                 set_pf(w, id, base + 0xc, 0.0);
+                zone(w, id, base, 1);
                 w.mm(id).state = 3;
                 if pi32(w, id, base + 0x34) != -1 { sound(w, id, base + 0x30); }
                 return;
@@ -167,6 +179,7 @@ fn run_with(w: &mut World, id: MobyId, base: usize, held: Option<bool>) {
                 let home = pv4(w, id, base);
                 w.mm(id).position = home;
                 if pi32(w, id, base + 0x30) != -1 { sound(w, id, base + 0x34); }
+                zone(w, id, base, 0);
                 1
             }
         }
@@ -193,7 +206,7 @@ mod tests {
         p::set_ff(&mut m.pvars, 0x2c, 30.0);
         p::set_i32(&mut m.pvars, 0x30, 4);
         p::set_i32(&mut m.pvars, 0x34, 7);
-        p::set_i32(&mut m.pvars, 0x38, -1);
+        p::set_i32(&mut m.pvars, 0x38, 2);
         let link = Moby { state: 1, ..Moby::default() };
         let mut t = MobyTable::new(vec![m, link], 4);
         let hero = crate::hero::Hero::new();
@@ -209,12 +222,14 @@ mod tests {
         assert_eq!((w.m(0).state, pf(&w, 0, 0xc)), (2, 1.0));
         for _ in 0..3 { update(&mut w, 0); }
         assert_eq!((w.m(0).state, w.m(0).position[2]), (3, 4.0), "the far end after 1 / (30·dt) = 2 ticks + the snap");
+        assert_eq!(w.svc.map.zone_flags[2], 1, "the map zone flag while away from home");
         w.mm(1).state = 6;
         update(&mut w, 0);
         assert_eq!(w.m(0).state, 4);
         w.mm(1).state = 2;
         for _ in 0..3 { update(&mut w, 0); }
         assert_eq!((w.m(0).state, w.m(0).position[2]), (1, 3.0), "home again");
+        assert_eq!(w.svc.map.zone_flags[2], 0, "the map zone flag cleared at home");
         let s: Vec<i32> = w.svc.sounds.iter().map(|s| s.index).collect();
         assert_eq!(s, [4, 4, 4, 7]);
     }

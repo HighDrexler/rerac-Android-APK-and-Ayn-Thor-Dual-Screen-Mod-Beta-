@@ -246,7 +246,7 @@ branch and side effect of the update and its private helpers, with the file / fu
 | U268 | 21 loose-piece classes (08) | 85 | level08 0x2dba40 | `units::loose_piece` | rest (state 2) until set loose by another moby: tumble about an anchor, bounce (`coll_sphere` + reflect ×0.5), fade, delete below z 5; the mover is outside the unit |
 | U95 | 296, 652, 653 conveyors (02, 12) | 42 | level02 0x2dc6b0 | `units::conveyor` | carry riders by a heading velocity (`triggers::carry_riders`); one-way or reversing every 180 ticks |
 | U241 | 886 timed switches (07, 12) | 30 | level07 0x30bf90 | `units::timed_switch` | group state machine (`scheduler::group_state` / `group_cmd`), countdown ticks, mission done |
-| U247 | 9 mover classes (07, 13) | 28 | level07 0x310df0 | `units::linked_mover` | slides out / back on a linked moby's states; the in-game map zone flags `0x184528[i]` it writes are not ported (G-UI-001) |
+| U247 | 9 mover classes (07, 13) | 28 | level07 0x310df0 | `units::linked_mover` | slides out / back on a linked moby's states; the in-game map zone flags `0x184528[i]` it writes (`MapState::set_zone_flag`) |
 | U229 | 1512 vents (06) | 26 | level06 0x308c68 | `units::vent` | steam puffs / spark bursts (type 2), the delayed death explosion |
 | U280 | 621 rail mines (08) | 25 | level08 0x2f44c0 | `units::grind_mine` | a hit or a grinding Ratchet → `SpawnBeamExplosion`; the path mode's path pointer is taken as a spline index [L] |
 | U185 | 852, 853 rising blocks (05) | 21 | level05 0x314eb0 | `units::rising_block` | `0x270830` spring (moved from the water managers to `creature::turn::spring`: two consumers) |
@@ -472,7 +472,7 @@ unit on its side effects; the turret headless on level 14, the rest on synthetic
 | U390 | 339 animated idlers (12: 9) | level12 0x2ec1d0 | `units::anim_idler` | blends only |
 | U329 | 1015 / 1282 trip blocks (10: 9) | level10 0x2d90a8 | `units::trip_block` | the box test 0x2d9000; its global flag `0x13d3d4[i]` |
 | U162 | 1101 / 1102 / 1531 / 1532 switched movers (04: 8) | level04 0x2e17d8 | `units::switched_mover` | death bits by hand; 1101's sounds (`PlayClassSoundByClass`) |
-| U248 | 1013 / 1014 / 1064 / 1065 panels (07: 6) | level07 0x30cf90 | `units::linked_slider` | the map zone flags `0x184528[i]`: G-UI-001, as `linked_mover` |
+| U248 | 1013 / 1014 / 1064 / 1065 panels (07: 6) | level07 0x30cf90 | `units::linked_slider` | the map zone flags `0x184528[i]` (`MapState::set_zone_flag`), as `linked_mover` |
 | U487 (part 2) | 1209 pressure pads (15: 9, 17: 6) | level15 0x2e5958 | `units::pressure_pad` | the group's leader clock (sounds 0 tick / 1 solved / 2 reset / 3 press), ambient green / white blink, group states 3 / 4, the collected byte and death bits |
 | U211 (part 2) | 911 flame jets (06: 14) | level06 0x2f3ad8 | `units::flame_jet` | sweeping or timed; loop sound 0 (flags 4), two type-2 puffs a tick near Ratchet, hit lines (damage 1, 0x10001; 0x10000 with head item 6) |
 | U542 (part 2) | 669 underwater laser spinners (17: 15) | level17 0x2d77f0 / draw 0x2d7cf0 | `units::water_laser` | only while Ratchet is in the water (`help::hero_in_water`); 3 × 5 hit lines (flags 9, 0x10001), type-60 particles on the fan edges, six FX 0x28 additive quads (`Callback::UnitQuads`) |
