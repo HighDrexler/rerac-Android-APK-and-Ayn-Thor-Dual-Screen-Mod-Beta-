@@ -18,7 +18,7 @@ on:
         type: string
         default: '24'
   push:
-    branches: [experimental, 'beta8/fmv-rendering']
+    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality']
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
 permissions:
   contents: read
