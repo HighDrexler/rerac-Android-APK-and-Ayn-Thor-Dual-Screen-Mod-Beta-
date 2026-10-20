@@ -2,6 +2,7 @@
 //! JNI threads only exchange immutable snapshots or bounded commands. All game
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
+include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));
 use crate::touch_input::InputState;
 use bevy::prelude::*;
 use jni::{JNIEnv, objects::{JClass, JString}, sys::{jboolean, jfloat, jint, jintArray, jlong, jstring, JNI_TRUE, JNI_FALSE}};
