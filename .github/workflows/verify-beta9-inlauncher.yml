@@ -1,0 +1,60 @@
+name: Verify live beta8 to beta9 launcher update
+on:
+  push:
+    branches: [experimental]
+    paths: [.github/workflows/verify-beta9-inlauncher.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  live-update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Verify immutable signed beta8 and beta9 release assets before test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/previous work/next work/reports
+          gh release download rerac-android-0.3.5-dev.3 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta8-DEV.apk' --dir work/previous
+          gh release download rerac-android-0.3.5-dev.4 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta9-DEV.apk' --dir work/next
+          echo '90f188976db46a1b989ffec0ae49f109e70f15dc862ca5e4f82c85820a0ebac8  work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta8-DEV.apk' | sha256sum -c -
+          echo '626d7304c3b106d70e83b0aed158df94ca57c0fd8c3e67ed1b9d5158510b16c7  work/next/ReRAC-Android-0.3.5-Launcher-1.1-beta9-DEV.apk' | sha256sum -c -
+      - name: Enable KVM acceleration in disposable runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actually install beta9 THROUGH beta8 launcher's Development tab
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta8-DEV.apk --output work/reports --initial-code 24 --target-code 25 --target-version 1.1.0-beta.9 --target-sha256 626d7304c3b106d70e83b0aed158df94ca57c0fd8c3e67ed1b9d5158510b16c7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta9-actual-inlauncher-update-test
+          path: work/reports
+          retention-days: 21
+          if-no-files-found: warn
