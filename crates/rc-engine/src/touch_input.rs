@@ -27,6 +27,9 @@ pub struct InputState {
     pending_physical: u32,
     pending_touch: u32,
     touch_special: u32,
+    // An existing weapon-wheel hold must not turn into contextual Triangle
+    // when Ratchet walks into a prompt. Only a NEW down edge at the prompt arms it.
+    triangle_armed: bool,
     // A short tap starts one auto-chord: L1 enters the original aiming
     // stance; after its 20-tick minimum, Square throws the wrench.
     throw_ticks: Option<u8>,
@@ -39,6 +42,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self { physical: Sample::default(), touch: Sample::default(),
             pending_physical: 0, pending_touch: 0, touch_special: 0,
+            triangle_armed: false,
             throw_ticks: None, touch_at: None,
             pulses: VecDeque::new(), pulse_release: false, paused: false }
     }
@@ -63,6 +67,7 @@ impl InputState {
         // pad input, where that bit means the unrelated stick FLICK.
         self.touch_special = special;
         let buttons = buttons & 0xffff;
+        if buttons & TRIANGLE == 0 { self.triangle_armed = false; }
         self.pending_touch |= buttons & !self.touch.buttons;
         self.touch = Sample { buttons, axes: axes.map(clean), touch_axes: active & 3 };
         self.touch_at = Some(now);
@@ -87,8 +92,13 @@ impl InputState {
         if self.paused { return Sample::default(); }
         let mut out = self.physical;
         let physical_buttons = self.physical.buttons | std::mem::take(&mut self.pending_physical);
-        let mut touch_buttons = self.touch.buttons | std::mem::take(&mut self.pending_touch);
-        if !gameplay || !prompt { touch_buttons &= !TRIANGLE; }
+        let touch_edges = std::mem::take(&mut self.pending_touch);
+        // Only a fresh touch while a context prompt is actually rendered may
+        // provide Triangle; a wheel gesture begun elsewhere cannot be reused.
+        if gameplay && prompt && touch_edges & TRIANGLE != 0 { self.triangle_armed = true; }
+        if !gameplay { self.triangle_armed = false; }
+        let mut touch_buttons = self.touch.buttons | touch_edges;
+        if !gameplay || !prompt || !self.triangle_armed { touch_buttons &= !TRIANGLE; }
         // Unlike a finger hover, physical Triangle must always be retained.
         out.buttons = physical_buttons | touch_buttons;
         let fresh = self.touch_at.is_some_and(|t|
@@ -155,9 +165,24 @@ mod tests {
         let mut s=InputState::default();let n=Instant::now();
         s.touch(TRIANGLE,ZERO,0,n);
         assert_eq!(s.tick(n,true,false).buttons&TRIANGLE,0);
+        // A wheel started before the prompt cannot activate a vendor/ship.
+        assert_eq!(s.tick(n,true,true).buttons&TRIANGLE,0);
+        s.touch(0,ZERO,0,n);
+        s.touch(TRIANGLE,ZERO,0,n);
         assert_ne!(s.tick(n,true,true).buttons&TRIANGLE,0);
         s.touch(0,ZERO,0,n);
         assert_eq!(s.tick(n,true,true).buttons&TRIANGLE,0);
+    }
+    #[test] fn wheel_held_before_a_prompt_does_not_become_interaction() {
+        let mut s=InputState::default();let n=Instant::now();
+        s.touch(TRIANGLE,ZERO,0,n);
+        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,0);
+        for _ in 0..5 {assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);}
+        s.touch(0,ZERO,0,n);
+        s.touch(TRIANGLE,ZERO,0,n);
+        assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,TRIANGLE);
+        s.touch(0,ZERO,0,n);
+        assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);
     }
     #[test] fn physical_triangle_still_works_without_prompt() {
         let mut s=InputState::default();let n=Instant::now();
