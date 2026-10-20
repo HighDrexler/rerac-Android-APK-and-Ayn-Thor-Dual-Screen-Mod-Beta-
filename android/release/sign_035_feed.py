@@ -12,7 +12,8 @@ EXPECTED_CERT='e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e'
 APP='org.rerac.android.ui035test'
 REPO='HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-'
 
-def emit(apk:Path,keystore:Path,password:str,tag:str,output:Path):
+def emit(apk:Path,keystore:Path,password:str,tag:str,output:Path,channel:str='development'):
+    if channel not in ('development','stable'):raise ValueError('Unknown channel')
     if not re.fullmatch(r'rerac-android-[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+',tag):raise ValueError('Invalid unique Development release tag')
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.apk',apk.name):raise ValueError('Invalid release APK name')
     private,cert,_=pkcs12.load_key_and_certificates(keystore.read_bytes(),password.encode())
@@ -32,8 +33,8 @@ def emit(apk:Path,keystore:Path,password:str,tag:str,output:Path):
         version_code=meta['version_code'],bytes=apk.stat().st_size,min_sdk=26,
         abis=['arm64-v8a','x86_64'],sha256=hashlib.sha256(apk.read_bytes()).hexdigest(),
         apk_url=f'https://github.com/{REPO}/releases/download/{tag}/{apk.name}',
-        notes='Source-built ReRAC Android '+meta['core_version']+' Development update. Saves and settings are retained when installed over the same app.')
-    payload=json.dumps({'schema':1,'channel':'development','release':release},separators=(',',':')).encode('utf-8')
+        notes='Source-built ReRAC Android '+meta['core_version']+' '+channel.title()+' update. Saves and settings are retained when installed over the same app.')
+    payload=json.dumps({'schema':1,'channel':channel,'release':release},separators=(',',':')).encode('utf-8')
     signature=private.sign(payload,padding.PKCS1v15(),hashes.SHA256())
     cert.public_key().verify(signature,payload,padding.PKCS1v15(),hashes.SHA256())
     envelope={'algorithm':'SHA256withRSA','payload':base64.b64encode(payload).decode(),
@@ -47,7 +48,8 @@ if __name__=='__main__':
     for name in ('apk','keystore','output'):parser.add_argument('--'+name,type=Path,required=True)
     parser.add_argument('--password-env',default='RERAC_KEY_PASSWORD')
     parser.add_argument('--release-tag',required=True)
+    parser.add_argument('--channel',choices=['development','stable'],default='development')
     args=parser.parse_args()
     pw=os.environ.get(args.password_env)
     if not pw:parser.error('Missing private keystore password environment variable')
-    print(json.dumps(emit(args.apk,args.keystore,pw,args.release_tag,args.output),indent=2))
+    print(json.dumps(emit(args.apk,args.keystore,pw,args.release_tag,args.output,args.channel),indent=2))
