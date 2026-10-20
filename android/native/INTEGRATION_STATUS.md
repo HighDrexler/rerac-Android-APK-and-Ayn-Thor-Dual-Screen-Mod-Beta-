@@ -1,15 +1,21 @@
 # Actual native-core integration status
 
-Launcher 1.1.0-beta.3 is a Gadgetron-inspired presentation and update-UI release. Its actual ReRAC core remains 0.3.4/v16. Do not present this as a completed native 0.3.5 update.
+## Source-built candidate exists; release is blocked
 
-The shared/desktop source has incorporated upstream 756ff56ba0ef72b9fa94e91e7bdc3623fe286be0 (0.3.5-alpha). This does not rebuild the Android port. The recovered v16 source ZIPs contain native repair helpers/history rather than the complete customized Android source checkout. Required recovery includes crates/rc-engine/src/android.rs, touch_input.rs, modified main.rs/gameplay.rs/menu_render.rs, movie/audio integration and the actual Android native build setup. Preserve uncommitted workspace modifications; do not reset or replace them with upstream.
+The integration/native-core-035 branch now has editable Android native runtime, input, companion-display, movie/audio and build integration. Another Android source archive or APK is not a prerequisite to compiling this candidate.
 
-Existing Java requires android_main/ANativeActivity_onCreate plus JNI nativeCompanion, nativeDisplayRate, nativeDualEnabled, nativeIcon, nativeInput, nativeMapView, nativeMapVisible, nativeMenuButton, nativeMenuGesture, nativeMenuMode, nativeMenuTouch, nativePause, nativePlanetIcon, nativeSecondary, nativeSelect, nativeSetDual, nativeTouchInput, nativeTouchMode and nativeWheel. Empty compatibility stubs are not an acceptable port.
+Launcher 1.1.0-beta.4 / versionCode 20 packages actual ReRAC 0.3.5 native libraries compiled for ARM64 and x86-64 from source 5e9b1292f5cf3f2ae0e27ee85edf604047f6cd37, based on upstream 756ff56ba0ef72b9fa94e91e7bdc3623fe286be0. It is not the v16 engine relabeled. Build run 39350794010 passed, with 20 native-adapter tests and 55 launcher tests. The unsigned APK SHA-256 is 4b9c3e2924ebfdd4012c9b304b30ae0f1705f3a77bcda6842c8364346e7efcd4.
 
-Retained librc_engine.so SHA-256 values:
-- arm64-v8a: 67a8859411c621edb834e7689ff520010349161b13d0ff31a97f1ea2ee2d037f
-- x86_64: 4297a53c0fc783046fe0517789d9e52fddb78281bf3ad7cbce85d859d03e00d5
+Android 15 x86-64 preflight run 39354404118 passed: the actual NativeActivity initialized Vulkan, executed the 19 original JNI signatures, loaded all 24 packaged shader files, captured native graphics, survived background/resume, preserved private test data and launcher/mod/channel state, matched the installed APK hash and rejected downgrade. This was a diagnostic scene, not game content or gameplay. The earlier preflight run failed because its Python driver expected a raw instrumentation result while requesting Android's formatted output; raw mode was fixed and the full test rerun passed.
 
-Completion requires actual 0.3.5 Android builds from the preserved port source, matching shaders, recorded source/ABI/payload provenance, existing JNI compatibility and 16-KiB alignment, same-signer in-place installation, then real-device tests for game saves, touch/controller input, menus/quick select, mobile cutscenes/audio and the Thor companion display. Only then may the signed Development feed advertise core 0.3.5. Stable must not be promoted by this work.
+## Signing and testing boundaries
 
-The updater already carries separate launcher/core versions. Its metadata must always describe the APK being downloaded, not the Rust version present elsewhere on a GitHub branch. Never put private signing keys/passwords into source control or CI.
+The preflight used a disposable emulator-only certificate for both prior and candidate APKs. It did NOT validate the original release signer, a real user's in-place upgrade, the live updater, real saved games, gameplay, cutscenes/audio or the physical Thor companion display. Those checks remain mandatory before release acceptance. See ../release/native-preflight.json for exact runs, hashes and scope.
+
+The original private signing key corresponding to certificate SHA-256 25c5eebb05a013bf3fb84706f9ad87904b8d4d8a99ba7857d62e665d2b94e24a is not available in the current accessible workspace or inspected release/source archives. A compiled APK contains the public certificate, not that private key. Do not substitute a new signer, change package identity, bypass updater verification, or tell users to uninstall/clear data. Do not put private keys or passwords in GitHub or artifacts.
+
+Live Development remains Launcher 1.1.0-beta.3 with ReRAC 0.3.4/v16. Stable is unchanged. Native preflight is not signing approval; native-approval.json must only authorize exact original-signer APK bytes after actual signing. No 0.3.5 update has been staged for installed users.
+
+## Future upstream integration
+
+The source adapters and NDK build are now editable and reproducible inputs rather than v16 binary offsets. For later upstream versions, pin the new upstream revision, reconcile Android changes, compile both architectures with matching shaders and embedded provenance, run native and game/device regression tests, sign with the retained release identity, and stage an exact-hash signed Development feed. A source merge or a passing diagnostic alone is not a completed user update.
