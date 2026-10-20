@@ -97,8 +97,20 @@ jobs:
           rustup toolchain install 1.99.1 --profile minimal
           rustup default 1.99.1
           rustup target add '${{ matrix.target }}'
-          sdkmanager 'ndk;28.2.13676358'
           ndk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358"
+          # SDK mirror intermittently serves a truncated NDK archive. Retry
+          # only this public download; never continue on a partial toolchain.
+          for attempt in 1 2 3; do
+            if sdkmanager 'ndk;28.2.13676358' && test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::NDK r28 SDK archive/install failed after three attempts"
+              exit 1
+            fi
+            echo "::warning::NDK r28 download incomplete; retrying in $((attempt*15)) seconds"
+            sleep $((attempt*15))
+          done
           for variable in ANDROID_NDK_HOME ANDROID_NDK_ROOT ANDROID_NDK; do
             echo "$variable=$ndk" >> "$GITHUB_ENV"
           done
