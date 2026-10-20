@@ -2,7 +2,7 @@ name: Android source-built native core
 on:
   workflow_dispatch:
   push:
-    branches: [integration/native-core-035]
+    branches: [experimental]
     paths:
       - crates/**
       - Cargo.toml
@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/integration/native-core-035'
+    if: github.ref == 'refs/heads/experimental'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: integration/native-core-035
+          ref: experimental
           fetch-depth: 0
       - name: Commit reviewed Android hooks as normal editable source
         id: source
@@ -45,7 +45,7 @@ jobs:
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m 'Wire source-built Android runtime, graphics, media and diagnostic entry points'
-            git push origin HEAD:integration/native-core-035
+            git push origin HEAD:experimental
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Verify movie colour conversion and original playback timeline
