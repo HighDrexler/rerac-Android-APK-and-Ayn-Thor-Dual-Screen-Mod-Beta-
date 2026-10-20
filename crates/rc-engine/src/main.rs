@@ -36,6 +36,8 @@ mod touch_input;
 mod crash_log;
 mod asset_write;
 mod audio_out;
+mod audio_queue;
+mod movie_pipe;
 mod determinism;
 mod display;
 mod display_blend;

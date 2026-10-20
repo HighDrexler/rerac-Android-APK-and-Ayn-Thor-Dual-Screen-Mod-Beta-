@@ -53,7 +53,7 @@ use rc_game::movie_player::{MovieContext, MovieFrame, MoviePlayer, Phase, MOVIE_
 use rc_game::pad::{button, PadState};
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use crate::movie_pipe::{channel as sync_channel, Receiver, Sender as SyncSender, Empty};
 use std::sync::Mutex;
 
 /// A movie the game asked for.
@@ -170,6 +170,8 @@ struct Running {
     /// Movie-mode frames so far.
     frames: u32,
     last_phase: Option<Phase>,
+    owner: Option<crate::audio_queue::MovieOwner>,
+    media_cancelled: bool,
 }
 
 /// The movie state, published for the tick's run condition and the reports.
@@ -261,8 +263,10 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
     if tx.send(Msg::Opened { fps: (s.fps_num, s.fps_den), audio: m.audio.take(), info }).is_err() { return; }
     let mut n = 0u32;
     loop {
+        if tx.closed() { return; }
         match m.next_frame() {
             Ok(Some(f)) => {
+                if !tx.should_convert(n) { n += 1; continue; }
                 let mut rgba = Vec::new();
                 rc_video::movie::frame_to_rgba(&f, &mut rgba);
                 if tx.send(Msg::Picture(n, rgba)).is_err() { return; }
@@ -282,9 +286,9 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
 
 impl Running {
     /// Handles one worker message (blocking); false when the worker is gone.
-    fn receive(&mut self) -> bool {
+    fn receive(&mut self, blocking: bool) -> bool {
         let rx = self.rx.get_mut().unwrap_or_else(|e| e.into_inner());
-        match rx.recv() {
+        match rx.receive(blocking) {
             Ok(Msg::Opened { fps, audio, info }) => {
                 println!("movie: mpegs[{}] opened: {info}", self.req.file);
                 self.player.set_rate(fps.0, fps.1);
@@ -301,7 +305,8 @@ impl Running {
                 self.opened = true;
                 self.total = Some(self.received);
             }
-            Err(_) => {
+            Err(Empty::Pending) => return false,
+            Err(Empty::Closed) => {
                 self.opened = true;
                 self.total = Some(self.received);
                 return false;
@@ -311,9 +316,10 @@ impl Running {
     }
 
     /// Waits until picture `p` has arrived (or the stream ended before it).
-    fn fetch(&mut self, p: u32) {
-        while !self.opened { if !self.receive() { break; } }
-        while self.received <= p && self.total.is_none() { if !self.receive() { break; } }
+    fn fetch(&mut self, p: u32, blocking: bool) {
+        self.rx.get_mut().unwrap_or_else(|e| e.into_inner()).wanted(p, !blocking);
+        while !self.opened { if !self.receive(blocking) { break; } }
+        while self.received <= p && self.total.is_none() { if !self.receive(blocking) { break; } }
     }
 }
 
@@ -379,6 +385,8 @@ fn movie_frame(
             pad: PadState::default(),
             frames: 0,
             last_phase: None,
+            owner: audio.as_ref().map(|a| a.begin_movie()),
+            media_cancelled: false,
         });
     }
     let Some(rt) = st.running.as_mut() else { return };
@@ -391,11 +399,23 @@ fn movie_frame(
         println!("movie: RC_MOVIE_SKIP: Start + L1 L2 R1 R2 on movie frame {}", rt.frames);
     }
     let latency = if det.0 { 0 } else { audio.as_ref().map_or(0, |a| a.queued()) as u32 };
-    if let Some(p) = rt.player.wanted_picture(latency) { rt.fetch(p); }
+    // Keep the native event loop responsive while file/audio decoding opens.
+    // Frame-exact tooling still waits for every original picture.
+    if !rt.opened {
+        rt.fetch(0, det.0);
+        if !rt.opened { set_visible(&mut vis, st.root, true); return; }
+    }
+    if let Some(p) = rt.player.wanted_picture(latency) { rt.fetch(p, det.0); }
     let out: MovieFrame = rt.player.tick(&rt.pad, rt.total, latency);
+    if rt.player.skipped && !rt.media_cancelled {
+        rt.rx.get_mut().unwrap_or_else(|e|e.into_inner()).close();
+        if let Some(owner) = &rt.owner { owner.cancel(); }
+        rt.media_cancelled = true;
+    }
     rt.frames += 1;
     // The picture.
-    if let Some(p) = out.picture {
+    if out.picture.is_some() {
+        let p = rt.received.saturating_sub(1);
         if rt.shown != Some(p) && rt.received > 0 {
             if let Some(mut img) = images.get_mut(&st.image) { img.data = Some(rt.rgba.clone()); }
             if st.trace && p.is_multiple_of(30) { println!("movie: app frame {} (movie frame {}): picture {} of {:?}", frame_no.0, rt.frames, rt.received - 1, rt.total); }
@@ -425,7 +445,7 @@ fn movie_frame(
             _ => buf.resize(SAMPLES_PER_VSYNC as usize, [0, 0]),
         }
         a.buf = buf;
-        a.push_frame();
+        a.push_movie_frame(rt.owner.as_ref().map_or(0, |o| o.id));
     }
     // The UI.
     let playing = out.picture.is_some() && rt.shown.is_some();
