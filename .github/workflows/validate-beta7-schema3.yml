@@ -1,0 +1,98 @@
+name: Validate beta7 schema3 assembler before PR merge
+on:
+  push:
+    branches: [validation/beta7-schema3-ci]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  schema3:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/beta7-schema3-ci
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install test and Android APK verification prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-brotli python3-cryptography > /dev/null
+          sdkmanager 'build-tools;36.0.0'
+          python3 - <<'PY'
+          import brotli, cryptography
+          print('Brotli and X509/RSA signature verification present')
+          PY
+      - name: Run all 21 focused schema3 reconstruction tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/report
+          python3 -m unittest discover -s android/release/tests -p test_assemble_signed_beta7.py -v 2>&1 | tee work/report/unittests.log
+      - name: Download EXACT immutable beta7 unsigned candidate and published beta6
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/input work/previous work/output
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39377763406" > work/report/native-run.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('work/report/native-run.json').read_text())
+          assert r['conclusion']=='success' and r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/android-native-build.yml'
+          assert r['head_branch']=='experimental'
+          PY
+          gh run download 39377763406 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/input
+          gh release download rerac-android-0.3.5-dev.1 --repo "$GITHUB_REPOSITORY" --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk' --dir work/previous
+          sha256sum work/input/out/ReRAC-Launcher-1.1.0-beta.7-unsigned.apk work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk | tee work/report/inputs.sha256
+          echo "28af286d44c28a3a73b45b1a6be15cfa0c91b003aa995f1c54dd5409ed775beb  work/input/out/ReRAC-Launcher-1.1.0-beta.7-unsigned.apk" | sha256sum -c -
+          echo "c24280174fe216018c76f2353b441c8465ded1d021d7bb5c22547f154a0e6835  work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk" | sha256sum -c -
+      - name: Reconstruct EXACT previously signed beta7 and verify Android APK/signature/alignment/manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 android/release/assemble_signed_beta7.py \
+            --source work/input/out/ReRAC-Launcher-1.1.0-beta.7-unsigned.apk \
+            --previous work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk \
+            --parts android/release/beta7-detached \
+            --output work/output/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk \
+            --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" | tee work/report/reconstruction.json
+          echo "e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6  work/output/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk" | sha256sum -c -
+          test "$(stat -c%s work/output/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk)" -eq 253519332
+          sha256sum work/output/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk > work/report/beta7.sha256
+          cp work/output/beta7-development-signed-feed.json work/report/
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path('work/report/reconstruction.json').read_text())
+          assert report['status']=='RECONSTRUCTED_HASH_AND_FEED_VERIFIED'
+          assert report['sdk_checks']==dict(apk_signature='PASSED',zip_alignment_16k='PASSED',apk_manifest='PASSED')
+          assert report['upgrade_test']=='NOT_RUN' and report['physical_gameplay']=='NOT_RUN'
+          print('Exact reconstructed APK, RSA feed, native payload and Android SDK validations PASSED')
+          PY
+      - name: Preserve verification evidence and exact signed beta7 APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta7-schema3-validation
+          path: |
+            work/report
+            work/output/ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk
+          retention-days: 7
+          if-no-files-found: warn
