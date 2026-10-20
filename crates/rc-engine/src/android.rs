@@ -3,6 +3,7 @@
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
 include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));
+mod probe;
 use crate::touch_input::InputState;
 use bevy::prelude::*;
 use jni::{JNIEnv, objects::{JClass, JString}, sys::{jboolean, jfloat, jint, jintArray, jlong, jstring, JNI_TRUE, JNI_FALSE}};
@@ -85,7 +86,9 @@ fn android_main(app: bevy::android::android_activity::AndroidApp) {
     std::env::set_var("RC_SAVE_DIR",files.join("memcard"));
     std::env::set_var("RC_SETTINGS_FILE",files.join("settings.toml"));
     std::env::set_var("RC_ANDROID_FILES",&files);
+    let diagnostic=probe::requested(&files);
     let _=bevy::android::ANDROID_APP.set(app);
+    if let Some(nonce)=diagnostic { probe::run(files,nonce); return; }
     if let Err(error)=crate::main() { eprintln!("ReRAC Android engine startup failed: {error:#}"); }
 }
 

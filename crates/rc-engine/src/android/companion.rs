@@ -231,13 +231,13 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
             if *owned!=0&&!ids.contains(&(id as i32))&&q.items.icon.get(id).is_some_and(|&i|i!=0)&&rt.menu.as_ref().and_then(|m|m.items.as_ref()).and_then(|t|t.get(id as i32)).is_some_and(|i|(0..4).contains(&i.slot)){ids.push(id as i32);}
         }
         ids.resize(ids.len().max(16).div_ceil(8)*8,0);
-        if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(16,0);}
+        if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(8,0);}
         for group in ids.chunks(8){
             let mut ring=q.clone();ring.open=true;ring.command_page=play.game.hero.mode==1;ring.fade=ring.consts.steps.clamp(0,255) as u8;ring.text_fade=ring.fade;ring.sel=-1;
             let mut slots=Vec::new();
             for (i,&item) in group.iter().enumerate(){
                 ring.entries[i].item=item;ring.entries[i].icon=if item>0{ring.items.icon.get(item as usize).copied().unwrap_or(0) as i32}else{0};
-                let (x,y)=ring.slot_pos(i);slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0}));selection.push(item);
+                let (x,y)=ring.slot_pos(if play.game.hero.mode==1 {i*2}else{i});slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0&&(play.game.hero.mode!=1||play.svc.units.bot_listeners>0)}));selection.push(item);
             }
             let mut draw=Vec::new();ring.draw(&rt.assets,&gs.0.global,play.game.counter,play.svc.units.bot_listeners,&mut draw);
             let p=cache.convert(&draw,&rt.assets,hud);let draws=cache.wheel_draws(&p,hud);
