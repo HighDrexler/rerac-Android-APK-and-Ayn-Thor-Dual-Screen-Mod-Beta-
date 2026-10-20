@@ -3,7 +3,6 @@
 import argparse,base64,hashlib,json,re,subprocess,zipfile
 from pathlib import Path
 from public_signature import reconstruct,require
-from assemble_signed_beta7 import apk_certificate
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes,serialization
 from cryptography.hazmat.primitives.asymmetric import padding,rsa
@@ -25,6 +24,13 @@ NATIVE={
  "lib/x86_64/librc_extract.so":"b3ea84cd0ebe49879b542cb3d0a0a1c18a090c36ca318975cb5001615b2feecf"
 }
 def digest(data):return hashlib.sha256(data).hexdigest()
+def sdk_certificate(text):
+    blocks=re.findall(r"-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----",text)
+    require(len(blocks)==1,"Expected one SDK-verified signing certificate")
+    cert=x509.load_pem_x509_certificate(blocks[0].encode()).public_bytes(serialization.Encoding.DER)
+    require(digest(cert)==SIGNER,"SDK certificate pin mismatch")
+    public=x509.load_der_x509_certificate(cert).public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)
+    return cert,public
 def feed_check(text,certificate,public_key,signed_sha,signed_bytes):
     envelope=json.loads(text)
     require(envelope.get("algorithm")=="SHA256withRSA","Unexpected feed algorithm")
@@ -73,7 +79,7 @@ def main():
         for key,value in expected.items():require(m.get(key)==value,"APK metadata mismatch: "+key)
         require({n:digest(z.read(n)) for n in z.namelist() if n.startswith("lib/") and n.endswith(".so")}==NATIVE,"Native payload mismatch")
         require(SIGNER.encode() in z.read("classes6.dex") and b"update-channel2" in z.read("classes6.dex"),"Launcher trust pins changed")
-    verified=subprocess.check_output([str(args.tools/"apksigner"),"verify","--verbose","--print-certs",str(output)],text=True)
+    verified=subprocess.check_output([str(args.tools/"apksigner"),"verify","--verbose","--print-certs","--print-certs-pem",str(output)],text=True)
     require("Signer #1 certificate SHA-256 digest: "+SIGNER in verified,"Wrong APK signer")
     require("Verified using v2 scheme (APK Signature Scheme v2): true" in verified,"Missing APK v2 signature")
     (args.output/"apksigner.txt").write_text(verified)
@@ -82,7 +88,7 @@ def main():
     match=re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",badging,re.M)
     require(match is not None and match.groups()==(PACKAGE,str(CODE),VERSION),"Android manifest mismatch")
     (args.output/"aapt.txt").write_text(badging)
-    cert,pub=apk_certificate(output)
+    cert,pub=sdk_certificate(verified)
     require(digest(cert)==SIGNER,"Wrong certificate")
     feed=doc["signed_feed_text"]
     feed_check(feed,cert,pub,a["signed_sha256"],a["signed_bytes"])

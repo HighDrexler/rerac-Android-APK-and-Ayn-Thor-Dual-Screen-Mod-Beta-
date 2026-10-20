@@ -30,6 +30,12 @@ class FeedValidationTest(unittest.TestCase):
             signature=base64.b64encode(self.key.sign(body,padding.PKCS1v15(),hashes.SHA256())).decode()))
     def check(self,text):
         return verify.feed_check(text,self.cert,self.pub,"a"*64,123)
+    def test_sdk_public_certificate_extraction(self):
+        pem=x509.load_der_x509_certificate(self.cert).public_bytes(serialization.Encoding.PEM).decode()
+        self.assertEqual(verify.sdk_certificate(pem),(self.cert,self.pub))
+    def test_sdk_rejects_multiple_certificates(self):
+        pem=x509.load_der_x509_certificate(self.cert).public_bytes(serialization.Encoding.PEM).decode()
+        with self.assertRaisesRegex(ValueError,"one SDK"):verify.sdk_certificate(pem+pem)
     def test_valid_exact_candidate_feed(self):
         self.assertEqual(self.check(self.envelope())["release"],self.release)
     def test_rejects_wrong_release_identity(self):
