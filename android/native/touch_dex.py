@@ -33,7 +33,7 @@ def patch_touch_wheel_triangle(data: bytes) -> bytes:
         return data
     if sha256(data) != ORIGINAL_SHA256:
         raise ValueError("Unrecognized classes2.dex: refusing to change touch controls")
-    if data[:4] != b"dex\\n" or data[OFFSET:OFFSET + 4] != BEFORE:
+    if data[:4] != b"dex\n" or data[OFFSET:OFFSET + 4] != BEFORE:
         raise ValueError("Original TouchInputModel snapshot branch changed")
     result = bytearray(data)
     result[OFFSET:OFFSET + 4] = AFTER
