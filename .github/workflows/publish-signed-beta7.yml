@@ -1,0 +1,215 @@
+name: Publish verified schema3 beta7 and test live launcher update
+on:
+  push:
+    branches: [experimental]
+    paths: [.github/workflows/publish-signed-beta7.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: rerac-beta7-schema3-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: rerac-android-0.3.5-dev.2
+      APK: ReRAC-Android-0.3.5-Launcher-1.1-beta7-DEV.apk
+      SHA256: e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experimental
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Require exact successful 21-test schema3 reconstruction validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/validation work/report work/verified
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39387855039" > work/report/validation-run.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('work/report/validation-run.json').read_text())
+          assert r['id']==39387855039 and r['conclusion']=='success'
+          assert r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/validate-beta7-schema3.yml'
+          assert r['head_branch']=='validation/beta7-schema3-ci'
+          assert r['head_sha']=='c8b816fe2455764170462242b92094e351544c7a'
+          PY
+          gh run download 39387855039 --repo "$GITHUB_REPOSITORY" --name beta7-schema3-validation --dir work/validation
+          apk="$(find work/validation -type f -name "$APK")"
+          test "$(printf '%s\n' "$apk" | wc -l)" -eq 1
+          echo "$apk" > work/report/artifact-apk-path.txt
+          echo "$SHA256  $apk" | sha256sum -c -
+          test "$(stat -c%s "$apk")" -eq 253519332
+          test -f work/validation/report/unittests.log
+          grep -q 'Ran 21 tests' work/validation/report/unittests.log
+          grep -qx 'OK' work/validation/report/unittests.log
+          test -f work/validation/report/reconstruction.json
+          test -f work/validation/report/beta7-development-signed-feed.json
+      - name: Independently verify exact APK signer, app ID, version, alignment, and signed feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-cryptography > /dev/null
+          apk="$(cat work/report/artifact-apk-path.txt)"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk" > work/report/apksigner.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e' work/report/apksigner.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$apk" > work/report/aapt.txt
+          python3 - <<'PY'
+          import json,importlib.util
+          from pathlib import Path
+          from zipfile import ZipFile
+          apk=Path('work/report/artifact-apk-path.txt').read_text().strip()
+          text=Path('work/validation/report/beta7-development-signed-feed.json').read_text()
+          spec=importlib.util.spec_from_file_location('assemble_signed_beta7','android/release/assemble_signed_beta7.py')
+          asm=importlib.util.module_from_spec(spec);spec.loader.exec_module(asm)
+          assert asm.digest(Path(apk))==asm.EXPECTED_SHA256
+          cert,pub=asm.apk_certificate(Path(apk))
+          payload=asm.verify_signed_feed(text,cert,pub)
+          assert payload['release']['version_code']==23
+          with ZipFile(apk) as z:
+              m=json.loads(z.read('assets/rerac-build.json'))
+          assert m['package_id']=='org.rerac.android.ui035test'
+          assert m['version_code']==23 and m['launcher_version']=='1.1.0-beta.7'
+          assert m['core_version']=='0.3.5' and m['native_source_rebuild'] is True
+          result=json.loads(Path('work/validation/report/reconstruction.json').read_text())
+          assert result['status']=='RECONSTRUCTED_HASH_AND_FEED_VERIFIED'
+          assert result['sdk_checks']==dict(apk_signature='PASSED',zip_alignment_16k='PASSED',apk_manifest='PASSED')
+          Path('work/report/publisher-proof.json').write_text(json.dumps(dict(status='verified',sha256=asm.EXPECTED_SHA256,bytes=asm.EXPECTED_BYTES,
+             signer=asm.CERT_DIGEST,package=m['package_id'],core=m['core_version'],launcher=m['launcher_version'],
+             version_code=m['version_code'],unittests=21,live_upgrade_test='PENDING'),indent=2)+'\n')
+          PY
+      - name: Verify release-channel progression and preserve Stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/report/existing-dev.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" > work/report/existing-stable.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          dev=json.loads(Path('work/report/existing-dev.json').read_text())
+          body=json.loads(base64.b64decode(json.loads(base64.b64decode(dev['content']))['payload']))
+          assert body['schema']==1 and body['channel']=='development'
+          existing=body['release']
+          assert existing is not None and int(existing['version_code']) in (22,23)
+          if int(existing['version_code'])==22:
+              assert existing['sha256']=='c24280174fe216018c76f2353b441c8465ded1d021d7bb5c22547f154a0e6835'
+          else:
+              assert existing['sha256']=='e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6'
+          stable=json.loads(Path('work/report/existing-stable.json').read_text())
+          stable_body=json.loads(base64.b64decode(json.loads(base64.b64decode(stable['content']))['payload']))
+          assert stable_body['channel']=='stable'
+          Path('work/report/stable-sha.txt').write_text(stable['sha'])
+          PY
+      - name: Publish immutable signed experimental APK and independently download/compare it
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(cat work/report/artifact-apk-path.txt)"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing tag; verify, never overwrite, exact signed release asset"
+          else
+            gh release create "$TAG" "$apk" --repo "$GITHUB_REPOSITORY" \
+              --target experimental --prerelease \
+              --title 'ReRAC Android 0.3.5 Experimental beta.7' \
+              --notes 'Experimental in-launcher update from beta.6 (22) to beta.7 (23). Restores quick-select touch, dialogue companion view, native icons/title layout and cutscene skip. No change to Stable or ReRAC 0.3.5 core version; real-device acceptance pending.'
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir work/verified --clobber
+          cmp "$apk" "work/verified/$APK"
+          echo "$SHA256  work/verified/$APK" | sha256sum -c -
+          echo 'Signed GitHub release asset is available with exact approved SHA-256.'
+      - name: Stage RSA-signed Development update only after verified APK is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          verified_feed="$(base64 -w0 work/validation/report/beta7-development-signed-feed.json)"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/development.json" \
+            -f branch=update-channel2 -f "sha=$current_sha" \
+            -f 'message=Offer verified experimental beta.7 to installed beta.6 launcher' \
+            -f "content=$verified_feed" > work/report/development-write.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/report/new-dev.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          obj=json.loads(Path('work/report/new-dev.json').read_text())
+          assert base64.b64decode(obj['content'])==Path('work/validation/report/beta7-development-signed-feed.json').read_bytes()
+          PY
+          new_stable="$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha')"
+          test "$new_stable" = "$(cat work/report/stable-sha.txt)"
+          echo 'Development feed verified: beta.6 can discover beta.7. Stable untouched.'
+      - name: Retain public verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta7-publication-receipt
+          path: work/report
+          retention-days: 21
+          if-no-files-found: warn
+  live-updater-test:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experimental
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install released beta6 for REAL in-launcher update flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/previous work/reports
+          gh release download rerac-android-0.3.5-dev.1 --repo "$GITHUB_REPOSITORY" --pattern 'ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk' --dir work/previous
+          sha256sum work/previous/* | tee work/reports/beta6.sha256
+          echo 'c24280174fe216018c76f2353b441c8465ded1d021d7bb5c22547f154a0e6835  work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk' | sha256sum -c -
+      - name: Enable KVM on ephemeral emulator runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download and install beta7 FROM beta6 launcher with Android installer approval
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous/ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk --output work/reports --initial-code 22 --target-code 23 --target-version 1.1.0-beta.7 --target-sha256 e64cc4bde9b2d65a2684de868282903e9b1f71de7c4f2daef1219ceddc04bfb6
+      - name: Preserve live updater evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta7-live-updater-validation
+          path: work/reports
+          retention-days: 21
+          if-no-files-found: warn
