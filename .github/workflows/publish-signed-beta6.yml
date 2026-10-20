@@ -1,0 +1,156 @@
+name: Publish signed Experimental beta6 for in-launcher updates
+on:
+  push:
+    branches: [experimental]
+    paths:
+      - .github/workflows/publish-signed-beta6.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: rerac-signed-beta6-experimental
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: rerac-android-0.3.5-dev.1
+      APK: ReRAC-Android-0.3.5-Launcher-1.1-beta6-DEV.apk
+      SHA256: c24280174fe216018c76f2353b441c8465ded1d021d7bb5c22547f154a0e6835
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: experimental
+          persist-credentials: false
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+
+      - name: Download pinned successful original Android beta6 source artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidate work/release work/verified
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39366245358" > work/source-run.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          run=json.loads(Path('work/source-run.json').read_text())
+          assert run['conclusion']=='success' and run['repository']['id']==1424927008
+          assert run['path']=='.github/workflows/android-native-build.yml'
+          assert run['head_branch']=='integration/native-core-035'
+          assert run['head_sha']=='f71f9fd9de59233cda5b3807daabefb7b45297a6'
+          PY
+          gh run download 39366245358 --repo "$GITHUB_REPOSITORY" \
+            --name android-native-candidate --dir work/candidate
+          count="$(find work/candidate -name 'ReRAC-Launcher-1.1.0-beta.6-unsigned.apk' -type f | wc -l)"
+          test "$count" -eq 1
+          candidate="$(find work/candidate -name 'ReRAC-Launcher-1.1.0-beta.6-unsigned.apk' -type f)"
+          echo '523e52a1ccc6e8104f5413c77063f89d0494ca9cc982f797fcb84ee8a8f89fae  '"$candidate" | sha256sum --check -
+          echo "CANDIDATE=$candidate" >> "$GITHUB_ENV"
+
+      - name: Assemble exact, already-signed APK and verify RSA feed signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-brotli python3-cryptography > /dev/null
+          python3 -c 'import brotli,cryptography; print("Brotli and RSA verification ready")'
+          python3 android/release/assemble_signed_beta6.py \
+            --source "$CANDIDATE" \
+            --parts android/release/beta6-detached \
+            --output "work/release/$APK"
+          echo "$SHA256  work/release/$APK" | sha256sum --check -
+          test "$(stat -c%s "work/release/$APK")" -eq 253519331
+          sdkmanager 'build-tools;36.0.0'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs \
+            "work/release/$APK" > work/release/signature-verification.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e' work/release/signature-verification.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "work/release/$APK"
+
+      - name: Verify that only beta5 Experimental/Development will be updated
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/dev-info.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" > work/stable-info.json
+          python3 - <<'PY'
+          import json,base64
+          from pathlib import Path
+          for name in ('dev','stable'):
+            info=json.loads(Path('work/'+name+'-info.json').read_text())
+            Path('work/'+name+'-sha.txt').write_text(info['sha'])
+            wrapper=json.loads(base64.b64decode(info['content']))
+            body=json.loads(base64.b64decode(wrapper['payload']))
+            assert body['schema']==1
+            assert body['channel']==('development' if name=='dev' else 'stable')
+            if name=='dev' and body['release'] is not None:
+              v=body['release']
+              assert int(v['version_code'])<=22, 'Would replace a newer development update'
+              if int(v['version_code'])==22:
+                assert v['sha256']=='c24280174fe216018c76f2353b441c8465ded1d021d7bb5c22547f154a0e6835'
+          PY
+
+      - name: Publish immutable signed APK to Experimental GitHub prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release tag already exists; verifying its existing APK rather than overwriting"
+          else
+            gh release create "$TAG" "work/release/$APK" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target experimental \
+              --prerelease \
+              --title 'ReRAC Android 0.3.5 Experimental beta.6' \
+              --notes 'In-launcher beta.5 to beta.6 test. Genuine ReRAC 0.3.5 native engine with experimental FMV performance changes. Same Android package and signer, higher versionCode. Stable is unchanged. Physical cutscene results are pending.'
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$APK" --dir work/verified --clobber
+          cmp "work/release/$APK" "work/verified/$APK"
+          echo "$SHA256  work/verified/$APK" | sha256sum --check -
+
+      - name: Activate the RSA-signed Development feed only after APK verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq '.sha')"
+          new_feed="$(base64 -w0 work/release/beta6-development-signed-feed.json)"
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/development.json" \
+            -f branch=update-channel2 \
+            -f "sha=$current_sha" \
+            -f 'message=Offer source-verified ReRAC beta6 in installed beta5 Development updater' \
+            -f "content=$new_feed" > work/development-update-response.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" > work/updated-dev-info.json
+          python3 - <<'PY'
+          import base64,json
+          from pathlib import Path
+          obj=json.loads(Path('work/updated-dev-info.json').read_text())
+          exact=base64.b64decode(obj['content'])
+          assert exact == Path('work/release/beta6-development-signed-feed.json').read_bytes()
+          print("Verified published signed Development feed matches exact approved bytes")
+          PY
+          stable_after="$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq '.sha')"
+          test "$stable_after" = "$(cat work/stable-sha.txt)"
+          echo 'SUCCESS: Installed Launcher beta.5 can now use Updates > Development > Check for Updates.'
+          echo 'Stable channel remains unchanged.'
+
+      - name: Retain public release verification only, never signing keys
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beta6-publish-verification
+          path: |
+            work/release/signature-verification.txt
+            work/development-update-response.json
+            work/updated-dev-info.json
+          if-no-files-found: warn
+          retention-days: 14
