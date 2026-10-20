@@ -257,5 +257,16 @@ second Qwark); the camera dips under Aridia's quicksand (image).
   only triples a landed mine's seek reach toward enemies); the hover troopers' 638 shots 49 (hidden mobys, the type-2
   trail puffs 0x8000c070 / 0x4000c0c0 with the 0x44 blend); Giant Clank's pilot (sequence 0x81 of the level's table at
   joint list 5, `0x2061f0`).
+- Third pass (2026-10-20): the Goodies' In-Level Movies show the level's own NPC beside the scene's (d11b98b:
+  `MenuSetPostAction` case 6 keeps the item's hook slot +6, `0x179638[slot]` in 0x1ba25c, hidden by `DialogStreamStart`);
+  the camera line passes through the surface Ratchet was last in (066cb53: `0x20eb40`'s 0x167350, quicksand 0x3b4 —
+  a faithful port; whether it is what Spoober's quicksand shot shows needs a PS2 capture of that spot). Checked and as
+  the original: Blarg's self-destruct music (the escape's (6, 9) switches in a headless run and in a test with scene
+  pauses at any point of an earlier transition: f6d8b57; the report is from 0.3.4; confirmed by ear on main); the
+  Quartu jet robots' shots 819 against Giant Clank (level 15's copy `0x2dd730`: damage 1.0, flags 0x10003, body 2
+  accepts 0x2; his class has collision; 1 of 200 energy a shot — which "missiles" roxas means needs the spot); the
+  Thruster-Pack smoke (type-23 puffs, grey 0x808080, blend 0x44 as `0x2c98b8`; its texture `def[23]` is dark grey (≈80,
+  alpha to 160), so the GS draws dark puffs: needs a PS2 clip to compare density and length). Giant Clank's red △ tint:
+  needs every moby's draws late while the tint is up (a renderer task, see §1.20).
 - Still open: the audio crackle (the ring's fill, drops at the cap and underruns are now in the 600-tick audio line; none
   seen in a 45 s Kerwan run here); what roxas means by "not facing straight" on the rail.
