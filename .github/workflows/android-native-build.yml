@@ -14,7 +14,8 @@ permissions:
   contents: read
 concurrency:
   group: native-core-${{ github.ref }}
-  cancel-in-progress: false
+  # Only the newest Development source revision should consume native build runners.
+  cancel-in-progress: true
 jobs:
   prepare:
     if: github.ref == 'refs/heads/integration/native-core-035'
