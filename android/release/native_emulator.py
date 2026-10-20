@@ -24,7 +24,7 @@ def main():
         # Explicitly retain the user's original v16 setting representation.
         if adb('exec-out','cat',private+'dual-screen.setting',binary=True)!=b'\1':click(out,'AYN Thor Dual-Screen Mod',True)
         sh('input keyevent 4');time.sleep(1);click(out,'Updates',True);click(out,'Development')
-        require('Success' in adb('install','-r',a.candidate),'Original-certificate in-place native update failed')
+        require('Success' in adb('install','-r',a.candidate),'Same-certificate in-place native update failed')
         for path,value in [('native-upgrade-canary','private-data-retained'),('memcard/native-test-canary','save-folder-retained'),('gamedata/native-test-canary','import-folder-retained')]:
             require(sh('cat '+private+path)==value,'Update lost '+path)
         require(adb('exec-out','cat',private+'dual-screen.setting',binary=True)==b'\1','Update reset the dual-screen choice')
@@ -41,12 +41,16 @@ def main():
         checks.append('Themed launcher, dual-version footer, bundled mod control and update-channel preference work after the core update')
         require('Success' in adb('install',a.probe),'Same-signer instrumentation did not install')
         adb('shell','am','force-stop',PKG)
-        cmd=['adb','shell','am','instrument','-w','-e','core',build['core_version'],'-e','source',build['native_source_sha'],'org.rerac.tests.nativeprobe/org.rerac.tests.NativeRuntimeInstrumentation']
+        # Default am instrument output prints only the stream when one is supplied.
+        # Raw mode retains INSTRUMENTATION_CODE; never infer success from prose.
+        cmd=['adb','shell','am','instrument','-w','-r','-e','core',build['core_version'],'-e','source',build['native_source_sha'],'org.rerac.tests.nativeprobe/org.rerac.tests.NativeRuntimeInstrumentation']
         run=subprocess.run(cmd,capture_output=True,text=True,timeout=300)
         (out/'native-instrumentation-output.txt').write_text(run.stdout+run.stderr)
-        require(run.returncode==0 and 'INSTRUMENTATION_CODE: -1' in run.stdout,'Native instrumentation failed: '+(run.stdout+run.stderr)[-4000:])
+        result_codes=re.findall(r'^INSTRUMENTATION_CODE:\s*(-?\d+)\s*$',run.stdout,re.MULTILINE)
+        require(run.returncode==0 and result_codes==['-1'],'Native instrumentation failed: '+(run.stdout+run.stderr)[-4000:])
         native=json.loads(sh('cat '+private+'native-instrumentation.json'))
         require(native['status']=='passed' and native['original_jni_methods']==19 and native['pause_resume'] is True,'Native execution checks did not pass')
+        require(native['core']['core_version']==build['core_version'] and native['core']['source_sha']==build['native_source_sha'],'Executed native result differs from packaged source')
         (out/'native-instrumentation.json').write_text(json.dumps(native,indent=2)+'\n')
         (out/'native-render.png').write_bytes(adb('exec-out','cat',private+'native-probe.png',binary=True))
         (out/'native-probe-report.json').write_text(sh('cat '+private+'native-probe.report.json'))
@@ -55,7 +59,7 @@ def main():
         path=sh('pm path '+PKG).splitlines()[0].removeprefix('package:')
         installed=sh('sha256sum '+path).split()[0]
         expected=hashlib.sha256(a.candidate.read_bytes()).hexdigest()
-        require(installed==expected,'Installed APK differs from the offline-approved signed bytes')
+        require(installed==expected,'Installed APK differs from the supplied signed bytes')
         require('VERSION_DOWNGRADE' in adb('install','-r',a.previous,check=False),'Android accepted a native update downgrade')
         checks.append('Installed APK hash matches the signed candidate; Android rejects downgrade')
         report=dict(schema=1,status='passed',checks=checks,apk_sha256=expected,launcher_version=build['launcher_version'],version_code=build['version_code'],core_version=build['core_version'],native_source_sha=build['native_source_sha'],upstream_sha=build['upstream_sha'],android_release=sh('getprop ro.build.version.release'),abi=sh('getprop ro.product.cpu.abi'),native_runtime_tested=True,tested_native_gameplay=False,tested_real_saved_game=False,tested_physical_dual_screen=False,tested_system_installer_update=False)
