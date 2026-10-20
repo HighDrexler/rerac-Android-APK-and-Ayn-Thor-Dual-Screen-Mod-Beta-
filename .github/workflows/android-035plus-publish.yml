@@ -10,6 +10,14 @@ on:
         description: New tag, e.g. rerac-android-0.3.6-dev.1
         required: true
         type: string
+      launcher_version:
+        description: Android launcher version (e.g. 1.1.0-beta.5)
+        required: true
+        type: string
+      version_code:
+        description: Android version code (strictly newer than current signed update)
+        required: true
+        type: number
 permissions:
   contents: write
   actions: read
@@ -26,6 +34,8 @@ jobs:
       RERAC_KEY_PASSWORD: ${{ secrets.RERAC_035_KEYSTORE_PASSWORD }}
       NATIVE_RUN: ${{ inputs.native_build_run }}
       RELEASE_TAG: ${{ inputs.release_tag }}
+      LAUNCHER_VERSION: ${{ inputs.launcher_version }}
+      VERSION_CODE: ${{ inputs.version_code }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +56,8 @@ jobs:
           [[ -n "$RERAC_KEY_B64" && -n "$RERAC_KEY_PASSWORD" ]] || { echo "::error::Configure RERAC_035_KEYSTORE_B64 and RERAC_035_KEYSTORE_PASSWORD in Settings > Secrets and variables > Actions. Refusing unsigned publication."; exit 1; }
           [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
           [[ "$RELEASE_TAG" =~ ^rerac-android-[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$ ]]
+          [[ "$LAUNCHER_VERSION" =~ ^1\.1\.0-beta\.[0-9]+$ ]]
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
           mkdir -p work/candidate work/release
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/native-run.json
           python3 - <<'PY'
@@ -63,8 +75,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager 'build-tools;36.0.0'
-          python3 -m pip install --user 'cryptography>=44,<48'
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography > /dev/null
           python3 - <<'PY'
           import json,os,re,hashlib
           from pathlib import Path
@@ -92,7 +104,8 @@ jobs:
           previous=0 if current is None else int(current['version_code'])
           with zipfile.ZipFile(Path('work/candidate-path.txt').read_text()) as z:
               new=json.loads(z.read('assets/rerac-build.json'))['version_code']
-          assert new>previous,(new,previous)
+          expected=int(__import__('os').environ['VERSION_CODE'])
+          assert expected>previous and expected>=new,(expected,previous,new)
           PY
       - name: Assemble separate-install APK and sign with the SAME private certificate
         shell: bash
@@ -104,7 +117,7 @@ jobs:
           printf %s "$RERAC_KEY_B64" | base64 -d > "$keydir/key.p12"
           export KEYSTORE="$keydir/key.p12"
           keytool -list -storetype PKCS12 -keystore "$KEYSTORE" -storepass:env RERAC_KEY_PASSWORD > /dev/null
-          python3 android/release/parallel_package.py --candidate "$(cat work/candidate-path.txt)" --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" --output work/release/unsigned.apk
+          python3 android/release/parallel_package.py --candidate "$(cat work/candidate-path.txt)" --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" --launcher-version "$LAUNCHER_VERSION" --version-code "$VERSION_CODE" --output work/release/unsigned.apk
           version="$(python3 - <<'PY'
           import json,zipfile
           with zipfile.ZipFile('work/release/unsigned.apk') as z: print(json.loads(z.read('assets/rerac-build.json'))['core_version'])
@@ -116,6 +129,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "work/release/$name" > work/release/signature-report.txt
           grep -qi 'Signer #1 certificate SHA-256 digest: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e' work/release/signature-report.txt
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 4 "work/release/$name"
+          test "$(stat -c%s "work/release/$name")" -lt 300000000 || { echo 'APK too large. Native symbols were not stripped.' >&2; exit 1; }
           python3 android/release/sign_035_feed.py --apk "work/release/$name" --keystore "$KEYSTORE" --password-env RERAC_KEY_PASSWORD --release-tag "$RELEASE_TAG" --output work/release/development.json
           sha256sum "work/release/$name" > work/release/SHA256SUMS
           rm -f "$KEYSTORE"
