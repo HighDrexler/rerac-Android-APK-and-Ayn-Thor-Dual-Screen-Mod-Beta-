@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: integration/native-core-035
+          ref: experimental
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -98,7 +98,7 @@ jobs:
           r=json.loads(Path('work/native-run.json').read_text())
           assert r['repository']['id']==1424927008 and r['conclusion']=='success'
           assert r['path']=='.github/workflows/android-native-build.yml'
-          assert r['head_branch']=='integration/native-core-035'
+          assert r['head_branch'] in ('experimental','integration/native-core-035')
           assert r['id']==int(os.environ['NATIVE_RUN'])
           PY
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::Release tag already exists"; exit 1; fi
@@ -110,7 +110,7 @@ jobs:
           r=json.loads(Path('work/smoke-run.json').read_text())
           assert r['conclusion']=='success' and r['repository']['id']==1424927008
           assert r['path']=='.github/workflows/android-parallel-smoke.yml'
-          assert r['head_branch']=='integration/native-core-035'
+          assert r['head_branch'] in ('experimental','integration/native-core-035')
           assert r['id']==int(os.environ['SMOKE_RUN'])
           PY
           mkdir -p work/smoke
@@ -193,7 +193,7 @@ jobs:
         run: |
           set -euo pipefail
           name="$(cat work/release/name.txt)"
-          gh release create "$RELEASE_TAG" "work/release/$name" --repo "$GITHUB_REPOSITORY" --target integration/native-core-035 --prerelease --title "ReRAC Android $RELEASE_TAG" --notes "Signed Android Development release for org.rerac.android.ui035test. Existing app data is kept when installing a higher versionCode with the same signer. Physical AYN Thor/gameplay acceptance is separate."
+          gh release create "$RELEASE_TAG" "work/release/$name" --repo "$GITHUB_REPOSITORY" --target experimental --prerelease --title "ReRAC Android $RELEASE_TAG" --notes "Signed Android Development release for org.rerac.android.ui035test. Existing app data is kept when installing a higher versionCode with the same signer. Physical AYN Thor/gameplay acceptance is separate."
           curl -fLsS --retry 3 "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$name" -o work/release/verify-download.apk
           cmp "work/release/$name" work/release/verify-download.apk
           rm -f work/release/verify-download.apk
