@@ -114,6 +114,10 @@ jobs:
             rustc --edition=2021 --test "crates/rc-engine/src/$module.rs" -o "/tmp/$module-tests"
             "/tmp/$module-tests" --nocapture | tee "out/$module-tests.txt"
           done
+          for policy in companion_policy skip_policy; do
+            rustc --edition=2021 --test "crates/rc-engine/src/android/$policy.rs" -o "/tmp/rerac-$policy-tests"
+            "/tmp/rerac-$policy-tests" --nocapture | tee "out/$policy-tests.txt"
+          done
       - name: Install pinned Android Cargo adapter
         run: cargo install cargo-ndk --version 4.1.2 --locked
       - name: Compile native game engine from source
