@@ -57,12 +57,10 @@ impl InputState {
         if special & THROW_REQUEST != 0 && self.touch_special & THROW_REQUEST == 0 {
             self.throw_ticks = Some(0);
         }
-        // PACK is the v16 single-tap / held backpack-jump action. It maps
-        // to X/Cross rather than ever escaping into libpad2 as bit 0x10000
-        // (which the PS2 uses internally for stick FLICK).
-        if special & PACK_REQUEST != 0 && self.touch_special & PACK_REQUEST == 0 {
-            self.pending_touch |= CROSS;
-        }
+        // PACK is a distinct Java-only shortcut (0x10000), NOT a normal
+        // Cross press. Don't guess at gameplay behavior while repairing the
+        // requested THROW and WEAPONS paths; never leak 0x10000 into PS2
+        // pad input, where that bit means the unrelated stick FLICK.
         self.touch_special = special;
         let buttons = buttons & 0xffff;
         self.pending_touch |= buttons & !self.touch.buttons;
@@ -190,10 +188,9 @@ mod tests {
         s.touch(THROW_REQUEST,ZERO,0,n);
         assert_eq!(s.tick(n,true,false).buttons,0);
     }
-    #[test] fn pack_special_bit_becomes_cross_without_polluting_ps2_buttons() {
+    #[test] fn pack_does_not_fake_cross_or_ps2_flick() {
         let mut s=InputState::default();let n=Instant::now();
         s.touch(PACK_REQUEST,ZERO,0,n);s.touch(0,ZERO,0,n);
-        assert_eq!(tick(&mut s,n).buttons,CROSS);
         assert_eq!(tick(&mut s,n).buttons,0);
     }
 }
