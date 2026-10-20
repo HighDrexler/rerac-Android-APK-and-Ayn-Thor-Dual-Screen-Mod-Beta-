@@ -15,7 +15,7 @@
 //!   level 0), from the first movie vsync.
 //! * **Decoding.** A worker thread reads the file, demuxes it, decodes the audio channel of the game language
 //!   (channel 0 when the file has no such channel) and then the pictures in display order, converted to RGBA,
-//!   through a 4-deep channel. The frame that needs picture p waits for it: frame-exact runs are identical, and a
+//!   through a 4-deep channel. Realtime playback polls without blocking; deterministic captures wait for picture p: frame-exact runs are identical, and a
 //!   live run only waits when decoding falls behind (it runs at 20–30× real time in a dev build).
 //! * **Audio.** `StartPssMovie` / `MovieModeUpdate` stop all sounds and the music (`AudioSystem::movie_stop`);
 //!   each movie vsync outputs the next 800 samples of the movie's 48 kHz audio through `AudioSystem::mix_movie`
@@ -43,6 +43,9 @@ use crate::fly_cam::FlyCam;
 use crate::gameplay::{GameTick, Persistent, Play};
 use crate::input_map::PadFrame;
 use bevy::asset::RenderAssetUsages;
+use bevy::camera::{ClearColorConfig, visibility::RenderLayers};
+use bevy::core_pipeline::tonemapping::{DebandDither, Tonemapping};
+use bevy::render::view::Msaa;
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -181,6 +184,10 @@ struct Running {
     started: Instant,
     presented: u32,
     initial_underruns: u64,
+    present_updates: u32,
+    first_present_update: Option<Instant>,
+    last_present_update: Option<Instant>,
+    max_present_gap: std::time::Duration,
 }
 
 /// The movie state, published for the tick's run condition and the reports.
@@ -199,15 +206,40 @@ pub struct MovieState {
     pub finished: Vec<(u32, bool)>,
     /// The mode the running movie interrupted (restored by a [`MovieExit::FrontEnd`] exit).
     interrupted: Option<Mode>,
+    /// Original camera activation, restored on every movie exit (including errors).
+    suspended_cameras: Vec<(Entity, bool)>,
 }
 
 impl MovieState {
     /// A movie is queued or playing (the title waits for its attract movie with this).
     pub fn busy(&self) -> bool { blocking(self) }
+
+    /// Keep the world for the entry fade; it is redundant once the movie
+    /// owns the whole image. In-engine scenes never enter this path.
+    fn covers_world(&self) -> bool {
+        self.running.as_ref().is_some_and(|r| opaque_movie_frame(r.last_phase, r.black))
+    }
+}
+
+fn opaque_movie_frame(phase: Option<Phase>, black: f32) -> bool {
+    match phase {
+        Some(Phase::Playing(_) | Phase::FadeOut(_)) => true,
+        Some(Phase::FadeIn(_)) => black >= 1.0,
+        _ => false,
+    }
+}
+
+/// Expensive world-only work can stop while an opaque prerecorded movie is up.
+/// Optional state also lets standalone diagnostics use these plugins.
+pub(crate) fn world_visible(state: Option<Res<MovieState>>) -> bool {
+    !state.is_some_and(|s| s.covers_world())
 }
 
 #[derive(Component)]
 struct MovieUi;
+
+#[derive(Component)]
+struct MovieCamera;
 
 pub struct MovieRenderPlugin;
 
@@ -221,12 +253,23 @@ impl Plugin for MovieRenderPlugin {
             // Mode 1 runs MovieModeUpdate instead of the game tick.
             .configure_sets(FixedUpdate, GameTick.run_if(|s: Res<MovieState>| !blocking(&s)))
             .add_systems(Startup, setup)
-            .add_systems(Update, (target_main_camera, movie_present))
+            .add_systems(Update, (movie_present, movie_view).chain())
             .add_systems(FixedUpdate, (movie_exit.before(GameTick), movie_frame.after(GameTick)));
     }
 }
 
 fn setup(mut commands: Commands, mut state: ResMut<MovieState>, mut images: ResMut<Assets<Image>>) {
+    // This 2D view replaces both world views only while the movie is opaque.
+    // DisplayPlugin redirects it to GameFrame; PresentCamera and the Android
+    // companion continue to consume that same frame. No 3D/postprocess pass
+    // is needed to display a decoded movie picture.
+    commands.spawn((
+        Camera2d,
+        Camera { order: 900, is_active: false, clear_color: ClearColorConfig::Custom(Color::BLACK), ..default() },
+        Msaa::Off, Tonemapping::None, DebandDither::Disabled,
+        RenderLayers::none(), MovieCamera, crate::level_switch::KeepAcrossLevels,
+        Name::new("movie camera (no hidden world)"),
+    ));
     let size = Extent3d { width: 512, height: 416, depth_or_array_layers: 1 };
     let mut img = Image::new_fill(size, TextureDimension::D2, &[0, 0, 0, 255], TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
     img.sampler = ImageSampler::nearest();
@@ -240,15 +283,85 @@ fn setup(mut commands: Commands, mut state: ResMut<MovieState>, mut images: ResM
     (state.root, state.picture, state.fade) = (Some(root), Some(picture), Some(fade));
 }
 
-fn target_main_camera(mut commands: Commands, nodes: Query<Entity, (With<MovieUi>, Without<UiTargetCamera>)>, cams: Query<Entity, With<FlyCam>>) {
-    let Some(cam) = cams.iter().next() else { return };
-    for n in &nodes { commands.entity(n).insert(UiTargetCamera(cam)); }
+type MovieViews<'w, 's> = Query<'w, 's, (Entity, &'static mut Camera, Option<&'static crate::render_settings::WorldCamera>, Option<&'static MovieCamera>)>;
+
+fn movie_view(
+    mut commands: Commands,
+    mut state: ResMut<MovieState>,
+    main: Query<Entity, With<FlyCam>>,
+    mut cams: MovieViews,
+    nodes: Query<(Entity, Option<&UiTargetCamera>), With<MovieUi>>,
+) {
+    let covered = state.covers_world();
+    route_movie_view(covered, &mut state.suspended_cameras, &mut cams);
+    let target = if covered {
+        cams.iter().find_map(|(e, _, _, movie)| movie.map(|_| e))
+    } else {
+        main.iter().next()
+    };
+    if let Some(target) = target {
+        for (entity, current) in &nodes {
+            if current.is_none_or(|c| c.0 != target) {
+                commands.entity(entity).insert(UiTargetCamera(target));
+            }
+        }
+    }
+}
+
+/// Save activation once, including initially inactive cameras. A camera
+/// created during playback is suspended too; deleted cameras are harmless.
+fn route_movie_view(covered: bool, saved: &mut Vec<(Entity, bool)>, cams: &mut MovieViews) {
+    if !covered {
+        for (entity, active) in saved.drain(..) {
+            if let Ok((_, mut camera, _, _)) = cams.get_mut(entity) { camera.is_active = active; }
+        }
+    }
+    for (entity, mut camera, world, movie) in cams.iter_mut() {
+        if movie.is_some() {
+            if camera.is_active != covered { camera.is_active = covered; }
+        } else if covered && world.is_some() {
+            if !saved.iter().any(|(e, _)| *e == entity) { saved.push((entity, camera.is_active)); }
+            if camera.is_active { camera.is_active = false; }
+        }
+    }
 }
 
 fn movie_path(file: u32) -> PathBuf { crate::level_load::extracted_root().join(format!("global/mpegs/{file:03}.bin")) }
 
+/// Decoder/conversion elapsed work and app updates are separate diagnostics:
+/// decoder mailbox waits are excluded. App updates are not GPU presentations. Drop reports cancellation/error as well as normal EOF.
+struct DecodePerf {
+    file: String,
+    started: Instant,
+    open: std::time::Duration,
+    decode: std::time::Duration,
+    convert: std::time::Duration,
+    decoded: u32,
+    converted: u32,
+    skipped_conversion: u32,
+}
+impl Default for DecodePerf {
+    fn default() -> Self {
+        Self { file: String::new(), started: Instant::now(), open: Default::default(),
+            decode: Default::default(), convert: Default::default(),
+            decoded: 0, converted: 0, skipped_conversion: 0 }
+    }
+}
+impl Drop for DecodePerf {
+    fn drop(&mut self) {
+        println!(
+            "movie-decode-perf: {} wall={:.3}s open_ms={:.1} decoded={} decode_ms_per_picture={:.3} converted={} convert_ms_per_picture={:.3} skipped_conversion={}",
+            self.file, self.started.elapsed().as_secs_f64(), self.open.as_secs_f64() * 1000.0,
+            self.decoded, self.decode.as_secs_f64() * 1000.0 / self.decoded.max(1) as f64,
+            self.converted, self.convert.as_secs_f64() * 1000.0 / self.converted.max(1) as f64,
+            self.skipped_conversion,
+        );
+    }
+}
+
 /// The worker: open, send the audio, then every picture as RGBA in display order.
 fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
+    let mut perf = DecodePerf { file: path.display().to_string(), ..default() };
     let file = match std::fs::read(&path) {
         Ok(f) => f,
         Err(e) => {
@@ -264,6 +377,7 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
         }
     };
     drop(file);
+    perf.open = perf.started.elapsed();
     let s = m.sequence;
     let info = format!(
         "{}×{} at {:.3} fps, audio channel {:?} of {:?} at {} Hz ({:.2} s), {} packs",
@@ -273,11 +387,18 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
     let mut n = 0u32;
     loop {
         if tx.closed() { return; }
-        match m.next_frame() {
+        let start = Instant::now();
+        let frame = m.next_frame();
+        perf.decode += start.elapsed();
+        match frame {
             Ok(Some(f)) => {
-                if !tx.should_convert(n) { n += 1; continue; }
+                perf.decoded += 1;
+                if !tx.should_convert(n) { perf.skipped_conversion += 1; n += 1; continue; }
+                let start = Instant::now();
                 let mut rgba = Vec::new();
                 rc_video::movie::frame_to_rgba(&f, &mut rgba);
+                perf.convert += start.elapsed();
+                perf.converted += 1;
                 if tx.send(Msg::Picture(n, rgba)).is_err() { return; }
                 n += 1;
             }
@@ -398,6 +519,10 @@ fn movie_frame(
             started: Instant::now(),
             presented: 0,
             initial_underruns: audio.as_ref().map_or(0, |a| a.underruns()),
+            present_updates: 0,
+            first_present_update: None,
+            last_present_update: None,
+            max_present_gap: std::time::Duration::ZERO,
         });
     }
     let Some(rt) = st.running.as_mut() else { return };
@@ -473,6 +598,14 @@ fn movie_present(
 ) {
     let st = &mut *state;
     let Some(rt) = st.running.as_mut() else { return };
+    if matches!(rt.last_phase, Some(Phase::Playing(_))) {
+        let now = Instant::now();
+        rt.first_present_update.get_or_insert(now);
+        if let Some(last) = rt.last_present_update.replace(now) {
+            rt.max_present_gap = rt.max_present_gap.max(now - last);
+        }
+        rt.present_updates += 1;
+    }
     if rt.wants_picture && rt.received > 0 {
         let index = rt.received - 1;
         if rt.shown != Some(index) && !rt.rgba.is_empty() {
@@ -485,6 +618,12 @@ fn movie_present(
                 }
             }
         }
+    }
+    // Fade over the world on entry, then keep black bars and decoder-wait
+    // frames opaque while the world cameras are suspended.
+    if let Some(mut color) = st.root.and_then(|e| bg.get_mut(e).ok()) {
+        let want = BackgroundColor(if opaque_movie_frame(rt.last_phase, rt.black) { Color::BLACK } else { Color::NONE });
+        if *color != want { *color = want; }
     }
     set_visible(&mut vis, st.root, true);
     set_visible(&mut vis, st.picture, rt.wants_picture && rt.shown.is_some());
@@ -523,6 +662,14 @@ fn movie_exit(
         let elapsed = rt.started.elapsed().as_secs_f64();
         let ticks_per_second = rt.frames as f64 / elapsed.max(0.001);
         let underruns = audio.as_ref().map_or(0, |a| a.underruns());
+        let presenting = rt.first_present_update.zip(rt.last_present_update)
+            .map_or(0.0, |(a,b)| (b-a).as_secs_f64());
+        println!(
+            "movie-update-perf: mpegs[{}] updates={} wall={presenting:.3}s update_hz={:.1} max_gap_ms={:.1} opaque_world_views=disabled",
+            rt.req.file, rt.present_updates,
+            rt.present_updates.saturating_sub(1) as f64 / presenting.max(0.001),
+            rt.max_present_gap.as_secs_f64() * 1000.0,
+        );
         println!(
             "movie-perf: mpegs[{}] wall={elapsed:.2}s fixed_ticks={} tick_hz={ticks_per_second:.1} decoded_through={} uploaded={} audio_underruns={} skipped={}",
             rt.req.file, rt.frames, rt.received, rt.presented,
@@ -562,6 +709,78 @@ fn movie_exit(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn world_is_kept_until_the_entry_fade_is_opaque() {
+        assert!(!opaque_movie_frame(None, 0.0)); // opening
+        assert!(!opaque_movie_frame(Some(Phase::FadeIn(0)), 0.25));
+        assert!(opaque_movie_frame(Some(Phase::FadeIn(3)), 1.0));
+        assert!(opaque_movie_frame(Some(Phase::Playing(0)), 0.0));
+        assert!(opaque_movie_frame(Some(Phase::FadeOut(0)), 0.25));
+        assert!(!opaque_movie_frame(Some(Phase::Done), 0.0));
+    }
+
+    #[test]
+    fn movie_view_restores_cameras_and_leaves_other_targets_alone() {
+        use bevy::ecs::system::SystemState;
+        use crate::render_settings::WorldCamera;
+        let mut world = World::new();
+        let main = world.spawn((Camera::default(), WorldCamera)).id();
+        let sky = world.spawn((Camera::default(), WorldCamera)).id();
+        let inactive = world.spawn((Camera { is_active: false, ..default() }, WorldCamera)).id();
+        let movie = world.spawn((Camera { is_active: false, ..default() }, MovieCamera)).id();
+        let present = world.spawn(Camera::default()).id();
+        let companion = world.spawn(Camera::default()).id();
+        let mut saved = Vec::new();
+        let mut query: SystemState<MovieViews> = SystemState::new(&mut world);
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        // Repeated frames must not overwrite the original active states.
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        let active = |world: &World, e| world.get::<Camera>(e).unwrap().is_active;
+        assert!(!active(&world, main));
+        assert!(!active(&world, sky));
+        assert!(!active(&world, inactive));
+        assert!(active(&world, movie));
+        assert!(active(&world, present));
+        assert!(active(&world, companion));
+        assert_eq!(saved.len(), 3);
+        let late = world.spawn((Camera::default(), WorldCamera)).id();
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        assert!(!active(&world, late));
+        world.despawn(sky);
+        route_movie_view(false, &mut saved, &mut query.get_mut(&mut world));
+        assert!(saved.is_empty());
+        assert!(active(&world, main));
+        assert!(active(&world, late));
+        assert!(!active(&world, inactive));
+        assert!(!active(&world, movie));
+        assert!(active(&world, companion));
+    }
+
+    #[test]
+    fn end_skip_and_empty_or_failed_stream_all_release_movie_view() {
+        for (pictures, skip) in [(Some(3), false), (None, true), (Some(0), false)] {
+            let mut player = MoviePlayer::new(MovieContext { level: 1, ..default() });
+            let mut covered = false;
+            let mut saw_movie_view = false;
+            for _ in 0..40 {
+                if player.done() {
+                    // movie_exit drops Running on this tick, before gameplay resumes.
+                    covered = opaque_movie_frame(None, 0.0);
+                    break;
+                }
+                let pad = if skip && matches!(player.phase(), Phase::Playing(_)) {
+                    PadState { held: button::START | button::L1 | button::L2 | button::R1 | button::R2, pressed: button::START, ..default() }
+                } else { PadState::default() };
+                let out = player.tick(&pad, pictures, 0);
+                covered = opaque_movie_frame(Some(out.phase), out.black);
+                saw_movie_view |= covered;
+            }
+            assert!(player.done());
+            assert!(saw_movie_view);
+            assert!(!covered, "movie view leaked after end/skip/error");
+        }
+    }
 
     #[test]
     fn fade_alpha_matches_display_bytes() {

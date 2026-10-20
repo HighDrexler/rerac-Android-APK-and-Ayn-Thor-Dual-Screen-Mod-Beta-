@@ -68,7 +68,7 @@ impl Plugin for FramePacePlugin {
 }
 
 /// This frame's ticks (module docs).
-fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>, movies: Res<crate::movie_render::MovieState>) {
+fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>, movies: Option<Res<crate::movie_render::MovieState>>) {
     let now = Instant::now();
     #[cfg(target_os = "android")]
     if crate::android::paused() {
@@ -91,7 +91,7 @@ fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>, movie
     // Never change ordinary gameplay pacing. While a movie is active the
     // audio producer must catch up if rendering falls below 15 FPS.
     // movie_present uploads only once in Update, outside this tick loop.
-    let n = n.min(tick_cap(movies.busy()) as f64);
+    let n = n.min(tick_cap(movies.is_some_and(|m| m.busy())) as f64);
     pace.acc -= n;
     pace.acc = if pace.limit { pace.acc.clamp(-0.5, 0.5) } else { pace.acc.clamp(0.0, 1.0) };
     *strategy = TimeUpdateStrategy::FixedTimesteps(n as u32);
@@ -135,6 +135,16 @@ fn wait(mut pace: ResMut<Pace>, monitors: Query<&Monitor, With<PrimaryMonitor>>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diagnostic_app_does_not_require_a_movie_player() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, FramePacePlugin));
+        app.update();
+        app.update();
+        assert!(app.world().resource::<Pace>().last.is_some());
+        assert!(!app.world().contains_resource::<crate::movie_render::MovieState>());
+    }
 
     #[test]
     fn movie_catchup_keeps_audio_at_slow_render_rates() {
