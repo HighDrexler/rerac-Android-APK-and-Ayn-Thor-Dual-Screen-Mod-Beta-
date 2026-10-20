@@ -741,6 +741,12 @@ fn enter_mode2(rt: &mut SceneRuntime, p: &mut Play) {
         }
     }
     rt.hid.clear();
+    // DialogStreamStart: the In-Level Movies replay's level moby 0x1ba25c hidden too (FUN_002ac608 shows it again and
+    // clears the word): the level's own Big Al or Qwark beside the scene's.
+    if let Some(id) = p.svc.cinematic.replay_hide.take().filter(|&n| n < p.game.mobys.mobys.len()) {
+        p.game.mobys.mobys[id].mode |= 1;
+        rt.hid.push((id, 1));
+    }
     if let Some(npc) = rt.talker.filter(|&n| n < p.game.mobys.mobys.len()) {
         let m = &mut p.game.mobys.mobys[npc];
         if m.mode & 1 == 0 { m.mode |= 1; rt.hid.push((npc, 1)); }

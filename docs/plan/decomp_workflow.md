@@ -36,7 +36,7 @@ Conventions:
   it contains the game's code.
 
 Ground truth beyond Ghidra: `~/Globals/Lombyte` (matching decomp of this exact
-ELF; `src/` has 1335 reconstructed C files) and `~/Globals/rac1-decomp` (PAL
+ELF; `src/` has 1844 reconstructed C files as of 2026-10-20 — pull it: it moves fast) and `~/Globals/rac1-decomp` (PAL
 v2.00, addresses differ).
 
 ## Rust toolchain note
