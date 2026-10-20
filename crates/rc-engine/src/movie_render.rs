@@ -15,8 +15,9 @@
 //!   level 0), from the first movie vsync.
 //! * **Decoding.** A worker thread reads the file, demuxes it, decodes the audio channel of the game language
 //!   (channel 0 when the file has no such channel) and then the pictures in display order, converted to RGBA,
-//!   through a 4-deep channel. Realtime playback polls without blocking; deterministic captures wait for picture p: frame-exact runs are identical, and a
-//!   live run only waits when decoding falls behind (it runs at 20–30× real time in a dev build).
+//!   through a 4-deep channel. Realtime playback polls without blocking and skips late colour conversions;
+//!   deterministic captures wait for each requested picture. Decoder work and app-update timing are logged
+//!   separately; upload counts and app-update rates are not physical display FPS.
 //! * **Audio.** `StartPssMovie` / `MovieModeUpdate` stop all sounds and the music (`AudioSystem::movie_stop`);
 //!   each movie vsync outputs the next 800 samples of the movie's 48 kHz audio through `AudioSystem::mix_movie`
 //!   (the two SPU movie voices, group 5 at the sfx option), the fades output silence; the exit restarts the level
@@ -24,8 +25,8 @@
 //!   runs, so their PNGs and WAVs do not depend on the device).
 //! * **Picture.** The movie is 512×416, the size of the GS draw buffer, and `setImageTag` 0x31b0b8 uploads it at
 //!   (0, 0) of the display buffer: it fills exactly the picture the game's frames fill. The port shows it as a UI
-//!   image over the main camera's letterboxed 512:416 viewport (the same place as the game frame and the HUD,
-//!   `game_camera::letterbox`), nearest-sampled, above the HUD; the black fade is a UI quad whose alpha makes the
+//!   image in the game frame's 4:3 box, nearest-sampled, above the HUD. The main view draws the entry fade;
+//!   an opaque movie uses its own 2D view with the hidden world views suspended. The black fade's alpha makes the
 //!   linear-light blend give `C·(1 − coverage)` in display bytes, like the GS's black quad.
 //!
 //! * **Other callers** (docs/plan/progression.md `## media`): [`request`] with [`MovieRequest::movie_b`] (`PlayMovieB`:
@@ -802,3 +803,6 @@ mod tests {
         assert!(queue().is_empty());
     }
 }
+
+#[cfg(test)]
+mod rendered_tests;

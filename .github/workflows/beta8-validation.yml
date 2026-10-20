@@ -12,6 +12,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   signing-readiness:
+    # The initial gate already failed with missing fields. Retry only after a
+    # confirmed setup change, via an explicitly marked commit.
+    if: contains(github.event.head_commit.message, '[check-signing]')
     runs-on: ubuntu-24.04
     steps:
       - name: Check presence only of the established beta7 signing secrets
@@ -42,7 +45,7 @@ jobs:
       - name: Prepare the existing CI compiler and engine prerequisites
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev clang lld pkg-config
+          sudo apt-get install -y -qq libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev clang lld pkg-config mesa-vulkan-drivers vulkan-tools
           rustup toolchain install 1.99.1 --profile minimal
           rustup default 1.99.1
       - uses: Swatinem/rust-cache@v2
@@ -59,6 +62,19 @@ jobs:
           cargo test --locked -p rc-engine --lib frame_pace::tests -- --nocapture 2>&1 | tee out/frame-pace-tests.log
           git diff --check
           git rev-parse HEAD > out/source-commit.txt
+      - name: Render generated movie frames through the actual display and UI path
+        shell: bash
+        env:
+          RC_SETTINGS_FILE: '0'
+          RC_MOVIE_TEST_OUTPUT: ${{ github.workspace }}/out/movie-smoke
+          WGPU_BACKEND: vulkan
+        run: |
+          set -euo pipefail
+          export VK_ICD_FILENAMES="$(find /usr/share/vulkan/icd.d -name '*lvp*.json' -print -quit)"
+          test -n "$VK_ICD_FILENAMES"
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/rerac-movie-test"
+          mkdir -p "$XDG_RUNTIME_DIR"
+          cargo test --locked -p rc-engine --lib movie_render::rendered_tests -- --ignored --nocapture --test-threads=1 2>&1 | tee out/rendered-movie-tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
