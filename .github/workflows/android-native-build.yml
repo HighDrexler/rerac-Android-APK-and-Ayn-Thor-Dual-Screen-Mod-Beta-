@@ -26,20 +26,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: integration/native-core-035
-          fetch-depth: 1
+          fetch-depth: 0
       - name: Commit reviewed Android hooks as normal editable source
         id: source
         shell: bash
         run: |
           set -euo pipefail
+          upstream="$(sed -n 's/^commit=//p' android/native/upstream.lock)"
+          git merge-base --is-ancestor "$upstream" HEAD
           python3 android/native/apply_engine_hooks.py
           python3 android/native/apply_media_hooks.py
           git diff --check
-          git add crates/rc-engine/Cargo.toml crates/rc-engine/src/main.rs crates/rc-engine/src/input_map.rs crates/rc-engine/src/frame_pace.rs crates/rc-engine/src/menu_render.rs crates/rc-engine/src/audio_out.rs crates/rc-engine/src/movie_render.rs
+          git add -- crates/rc-engine
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Wire source-built Android runtime and media ownership into engine'
+            git commit -m 'Wire source-built Android runtime, graphics and media ownership into engine'
             git push origin HEAD:integration/native-core-035
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -60,6 +62,7 @@ jobs:
       CARGO_BUILD_JOBS: 2
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
       CARGO_PROFILE_RELEASE_DEBUG: 0
+      RERAC_SOURCE_REVISION: ${{ needs.prepare.outputs.source }}
       RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384
     steps:
       - uses: actions/checkout@v4
@@ -105,11 +108,13 @@ jobs:
         run: |
           set -euo pipefail
           cargo ndk -t '${{ matrix.abi }}' --platform 26 -o out/jniLibs build -p rc-engine --lib --release 2>&1 | tee out/native-build.log
-          cp Cargo.lock out/Cargo.lock
           readelf -lW out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-segments.txt
           readelf --dyn-syms --wide out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-exports.txt
           sha256sum out/jniLibs/${{ matrix.abi }}/* > out/SHA256SUMS
           git archive --format=tar HEAD | gzip > out/source.tar.gz
+      - name: Retain resolved dependency lock
+        if: always()
+        run: mkdir -p out && cp Cargo.lock out/Resolved-Cargo.lock
       - name: Retain compiler output and native artifacts
         if: always()
         uses: actions/upload-artifact@v4
