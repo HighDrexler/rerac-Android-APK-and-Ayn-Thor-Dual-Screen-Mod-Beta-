@@ -1,4 +1,3 @@
-# The exact official ReRAC revision integrated into the source-built Android core.
-# Update these together when merging the next upstream release.
-version=0.3.5
-commit=756ff56ba0ef72b9fa94e91e7bdc3623fe286be0
+# Exact official re-rac/rerac v0.3.6-alpha commit. Integrated after the Android beta.9 fixes.
+version=0.3.6
+commit=89c87e98f9d8296187df2a6310c67b32144090d3
