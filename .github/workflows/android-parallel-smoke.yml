@@ -6,17 +6,17 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39368970993'
+        default: '39377763406'
       launcher_version:
         description: Candidate launcher version
         required: false
         type: string
-        default: '1.1.0-beta.6'
+        default: '1.1.0-beta.7'
       version_code:
         description: Candidate Android versionCode
         required: false
         type: string
-        default: '22'
+        default: '23'
   push:
     branches: [experimental]
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39368970993' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.6' }}
-      REQUEST_CODE: ${{ inputs.version_code || '22' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39377763406' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.7' }}
+      REQUEST_CODE: ${{ inputs.version_code || '23' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '22'
+          java-version: '23'
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
