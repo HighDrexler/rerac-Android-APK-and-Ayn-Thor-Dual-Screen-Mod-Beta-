@@ -96,7 +96,9 @@ impl InputState {
         // Only a fresh touch while a context prompt is actually rendered may
         // provide Triangle; a wheel gesture begun elsewhere cannot be reused.
         if gameplay && prompt && touch_edges & TRIANGLE != 0 { self.triangle_armed = true; }
-        if !gameplay { self.triangle_armed = false; }
+        // A disappearing interaction prompt consumes the old gesture. It must
+        // never reactivate if a vendor or ship prompt reappears while held.
+        if !gameplay || !prompt { self.triangle_armed = false; }
         let mut touch_buttons = self.touch.buttons | touch_edges;
         if !gameplay || !prompt || !self.triangle_armed { touch_buttons &= !TRIANGLE; }
         // Unlike a finger hover, physical Triangle must always be retained.
@@ -183,6 +185,16 @@ mod tests {
         assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,TRIANGLE);
         s.touch(0,ZERO,0,n);
         assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);
+    }
+    #[test] fn hidden_then_returned_prompt_needs_fresh_triangle_down_edge() {
+        let mut s=InputState::default();let n=Instant::now();
+        s.touch(TRIANGLE,ZERO,0,n);
+        assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,TRIANGLE);
+        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,0);
+        assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);
+        s.touch(0,ZERO,0,n);s.tick(n,true,true);
+        s.touch(TRIANGLE,ZERO,0,n);
+        assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,TRIANGLE);
     }
     #[test] fn physical_triangle_still_works_without_prompt() {
         let mut s=InputState::default();let n=Instant::now();
