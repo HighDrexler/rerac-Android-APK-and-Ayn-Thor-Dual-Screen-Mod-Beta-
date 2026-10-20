@@ -18,6 +18,7 @@ Fixes from the v0.3.5 bug reports on Discord and from the community's pull reque
 - Giant Clank no longer turns red during his beam attack: only the world flashes red.
 - The hover troopers' and dropships' shots are bright again, and so are a few effects on Hoven and Gemlik.
 - The mouse cursor hides while the game window is in focus.
+- Port Options changed from the main menu now take effect, as they do from the pause menu.
 
 ## v0.3.5-alpha
 
