@@ -545,6 +545,10 @@ fn scene_frame(
 
     // One frame of the player.
     if let Some(p) = &pad { rt.pad.update(Some(&p.0.bytes()), false); }
+    // Android's dual-screen/touch Start button is a full cutscene skip.
+    // Retain the original PS2 skip gates and transition/fade handling.
+    #[cfg(target_os = "android")]
+    crate::android::cinematic_skip_pad(&mut rt.pad);
     let Some(mut player) = rt.player.take() else { return };
     // What this frame's moby loop reads (it runs before the scene advances): the scene id, tick and actors as the
     // last frame left them, and the scene camera 0x167240 / rows of the last scene tick.
