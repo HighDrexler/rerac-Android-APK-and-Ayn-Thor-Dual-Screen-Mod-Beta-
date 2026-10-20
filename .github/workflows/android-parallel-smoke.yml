@@ -75,32 +75,7 @@ jobs:
           disable-animations: true
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
-          script: |
-            mkdir -p work/reports
-            adb shell wm size 1280x720
-            adb shell wm density 160
-            adb logcat -c
-            adb install work/test/sidecar.apk
-            adb shell am start -W -n org.rerac.android.ui035test/org.rerac.android.LauncherActivity > work/reports/launch.txt 2>&1
-            sleep 8
-            adb shell pidof org.rerac.android.ui035test > work/reports/pid.txt || true
-            adb exec-out screencap -p > work/reports/launcher.png
-            adb shell uiautomator dump /sdcard/sidecar-ui.xml || true
-            adb exec-out cat /sdcard/sidecar-ui.xml > work/reports/ui.xml || true
-            adb logcat -d > work/reports/logcat.txt
-            python3 - <<'PY'
-            from pathlib import Path
-            s=Path('work/reports/logcat.txt').read_text(errors='replace')
-            xml=Path('work/reports/ui.xml').read_text(errors='replace')
-            pid=Path('work/reports/pid.txt').read_text().strip()
-            print('PID:',pid)
-            print('Footer found:', 'ReRAC 0.3.5' in xml)
-            errors=[x for x in s.splitlines() if 'FATAL EXCEPTION' in x or 'Fatal signal' in x or 'Process: org.rerac.android.ui035test' in x]
-            for e in errors[-30:]:print(e)
-            assert pid, 'SIDECAR CRASH: process died during launcher startup'
-            assert 'ReRAC 0.3.5' in xml, 'SIDECAR CRASH: launcher never reached version footer'
-            assert not errors,'FATAL ERROR in sidecar launcher'
-            PY
+          script: bash android/release/sidecar-smoke.sh
       - name: Collect evidence, including failure cases
         if: always()
         uses: actions/upload-artifact@v4
