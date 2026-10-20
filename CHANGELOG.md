@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.3.6-alpha
+
+Fixes from the v0.3.5 bug reports on Discord and from the community's pull requests.
+
+- The game no longer speeds up on screens where vsync doesn't hold it to 60 frames a second, so music, speech and movement keep their pace.
+- The pause menu no longer leaves stray panels behind when it opens on a slow frame.
+- The Skill Points page ticks the skill points you've earned, and the wrench reticle is see-through again.
+- In-Level Movies no longer show a character twice.
+- The Mine Glove, Glove of Doom and Decoy Glove hold their mine, canister and decoy inside the glove.
+- The wrench combo lunges toward the enemy or crate you're aiming at.
+- On ice, weapons are held level, jumps keep the slide, and throwing and catching the wrench pushes Ratchet along.
+- The Persuader, Map-o-Matic and Bolt Grabber show on Ratchet in cutscenes and at the ship's take-offs and landings, and they glow and spin as they should; Clank's scenes no longer show a second antenna light.
+- Music plays during the ending credits, and Clank on Orxon has his own track.
+- The map fills in as you explore Umbris, Gemlik's base and Quartu.
+- Gemlik: the force-field towers no longer take over the Heli-Pack's sound.
+- Giant Clank no longer turns red during his beam attack: only the world flashes red.
+- The hover troopers' and dropships' shots are bright again, and so are a few effects on Hoven and Gemlik.
+- The mouse cursor hides while the game window is in focus.
+
 ## v0.3.5-alpha
 
 Fixes from playing v0.3.4, from the bug reports on Discord and from the community's pull requests.
