@@ -223,6 +223,14 @@ impl SoundSink for ClassSoundSink<'_> {
             s.pos = pos;
         }
     }
+    /// `0x2982e8(slot, offset)`: flag 0x40 and the offset (+0x30) on the slot, its owner kept (the follow does not
+    /// turn the offset yet: crate::audio::voices).
+    fn set_offset(&mut self, slot: i32, offset: [f32; 3]) {
+        if let Some(s) = usize::try_from(slot).ok().and_then(|i| self.audio.slots.slots.get_mut(i)) {
+            s.flags |= crate::audio::voices::flags::ROTATED_OFFSET;
+            s.offset = offset;
+        }
+    }
 }
 
 /// The trigger check at the end of `RatchetAnimAdvance` (0x247d48): when key A and key B were the same

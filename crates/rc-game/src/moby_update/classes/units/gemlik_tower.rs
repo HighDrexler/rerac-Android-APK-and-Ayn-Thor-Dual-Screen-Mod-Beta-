@@ -211,15 +211,14 @@ pub fn update(w: &mut World, id: MobyId) {
         }
         1 => {
             mark(w, id, 0);
+            // The hum's slot: played when −1; whenever not alive, `0x2982e8(slot, (0, 0, 8.7))` sets its offset, even
+            // on a slot that now plays another owner's sound (the game's; the owner stays, so the sound stays theirs).
             let v = c::pi32(w, id, o::HUM);
             let alive = v != -1 && w.sound_alive(v, id);
             if !alive {
                 let v = if v == -1 { w.play_sound(0, 4, id) } else { v };
                 c::set_pi32(w, id, o::HUM, v);
-                if v != -1 {
-                    let p = c::pos(w, id);
-                    w.hand_over_sound(v, id, [p[0], p[1], p[2] + 8.7]);
-                }
+                if v != -1 { w.set_sound_offset(v, [0.0, 0.0, 8.7]); }
             }
             if w.m(id).visible != 0 && w.rng.randi(9) == 0 {
                 let r = w.rng.rand();
