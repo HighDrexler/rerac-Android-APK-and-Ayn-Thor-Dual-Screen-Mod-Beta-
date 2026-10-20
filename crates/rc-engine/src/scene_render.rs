@@ -430,7 +430,7 @@ fn scene_frame(
     pad: Option<Res<PadFrame>>,
     frame: Res<crate::determinism::FrameNumber>,
     hero: HeroEntities,
-    items: Query<Entity, With<AttachedTo>>,
+    items: Query<(Entity, &AttachedTo)>,
     hidden: Query<(Entity, Has<crate::gameplay::RatchetMesh>), With<SceneHidden>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
@@ -538,7 +538,11 @@ fn scene_frame(
         for (e, name) in &hero {
             if name.as_str().starts_with("Ratchet (play)") { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
         }
-        for e in &items { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        // The always-on extras (item slots 4 / 5) are shown on the scene's Ratchet instead (`FUN_0024a0e8`,
+        // crate::moby_attach).
+        for (e, at) in &items {
+            if at.slot != crate::moby_attach::Slot::Extra { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        }
         active.running = true;
         if let Some(p) = play.as_mut() { enter_mode2(rt, p); }
     }

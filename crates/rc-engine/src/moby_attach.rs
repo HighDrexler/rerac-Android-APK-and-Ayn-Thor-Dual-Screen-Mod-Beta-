@@ -527,7 +527,7 @@ fn place(a: &mut MobyAttach, host_class: &MobyAnimClass, host: &AnimState, snap:
 /// tick running, the hand item is the game's (`rc_game::hero::items`: which item, its animation, rows and
 /// position as `HeroItemsAttach` placed them) and the back items' animation is the hero's (`Hero::back`: pack
 /// and Clank, with Clank's fidgets); the back items are placed here.
-fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level: Res<crate::Level>, play: Option<Res<crate::gameplay::Play>>) {
+fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level: Res<crate::Level>, play: Option<Res<crate::gameplay::Play>>, scene: Option<Res<crate::scene_render::ActiveScene>>) {
     let (Some(mut a), Some(anim)) = (attach, anim) else { return };
     // `FUN_0022fec0`: every item copies Ratchet's +0x38..0x3f (light sets, cross-fade, ambient) every frame, so they
     // follow `HeroEnvLighting`.
@@ -586,9 +586,20 @@ fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level
     // flag (0x13d4e1 / 0x13d4e2 / 0x13d4e3) is set and Ratchet is drawn, its own sequence advanced every tick
     // (`HeroItemsAttach`'s `MobyAnimAdvance`; [`place`] put it at its attach list).
     let owned = play.as_ref().map(|p| p.game.hero.owned);
+    // In a scene (modes 2 / 6) `FUN_0024a1d0` → `FUN_0024a0e8` runs on the scene's Ratchet (class 0):
+    // `HeroComputeAttachMatrices(actor)` and `HeroItemsAttach` place Ratchet's items on the actor's pose, and the item
+    // slots 4 / 5 (0x140520 / 0x140524 / 0x140570: the always-on extras) lose their hidden bit. Without an actor of class
+    // 0 they stay hidden with Ratchet (`FUN_002486c0`).
+    let actor_ws = play.as_ref().and_then(|p| scene_ratchet_lists(p, scene.as_deref(), &a.chains));
     for item in a.items.iter_mut().filter(|i| i.attach.slot == Slot::Extra) {
         let on = extra_owned(item.extra_item, owned.as_ref());
-        item.visible = on && !fp;
+        item.visible = on && (!fp || actor_ws.is_some());
+        if let Some(w) = actor_ws.as_ref().and_then(|ws| ws.iter().find(|(l, _)| *l == item.attach.joint_list).map(|(_, w)| *w)) {
+            item.position = [w[3][0], w[3][1], w[3][2]];
+            let mut rows: [V4; 3] = [0, 1, 2].map(|i| w[i].map(f32::to_bits));
+            if item.attach.normalise { moby_anim::normalise_columns(&mut rows); }
+            item.rows = rows;
+        }
         if on { moby_anim::advance(&mut item.state, &item.anim); }
     }
     // The worn items (item slots 1 and 2, rc_game::hero::worn): the class of the slot's item shows while the slot
@@ -668,6 +679,22 @@ fn update(attach: Option<ResMut<MobyAttach>>, anim: Option<Res<MobyAnim>>, level
         }
     }
     a.ticks += 1;
+}
+
+/// The attach matrices of `chains` (Ratchet's lists) on the running scene's Ratchet actor (class 0, modes 2 / 6), from its
+/// table moby's pose, rows, position and scale (`HeroComputeAttachMatrices(actor)`); None outside a scene or without one.
+fn scene_ratchet_lists(p: &crate::gameplay::Play, scene: Option<&crate::scene_render::ActiveScene>, chains: &[(usize, Vec<u8>)]) -> Option<Vec<(usize, Rows)>> {
+    let actor = match p.svc.game_mode {
+        2 => p.svc.cinematic.scene.as_ref()?.actors.iter().find(|x| x.o_class == 0).and_then(|x| Some((x.moby?, x.anim.clone()))),
+        6 => scene?.space_actors.iter().find(|(id, _)| p.game.mobys.mobys.get(*id).is_some_and(|m| m.o_class == 0)).cloned(),
+        _ => None,
+    }?;
+    let m = p.game.mobys.mobys.get(actor.0)?;
+    let rows: [V4; 3] = [0, 1, 2].map(|i| m.rows[i].map(f32::to_bits));
+    let lists: Vec<&[u8]> = chains.iter().map(|c| c.1.as_slice()).collect();
+    let ps = moby_anim::evaluate_chains_posed(&actor.1, &m.anim, None, &lists, &[], &[]);
+    let pos = [m.position[0], m.position[1], m.position[2]];
+    Some(chains.iter().zip(&ps).map(|(c, pm)| (c.0, moby_anim::attach_matrix(pm, &rows, pos, m.scale))).collect())
 }
 
 /// Whether the hand entity set of class `o_class` shows: only the class of the slot's item moby (the game has no
