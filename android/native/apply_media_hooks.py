@@ -5,6 +5,11 @@ ROOT=Path(__file__).resolve().parents[2]
 def change(name,old,new):
     p=ROOT/name
     s=p.read_text()
+    # The source-built movie presenter supersedes the old inline upload and
+    # live-decode hook snippets. Do not reapply the legacy anchors to it.
+    # Fresh upstream merges without movie_present still receive the hooks.
+    if name == 'crates/rc-engine/src/movie_render.rs' and 'fn movie_present(' in s:
+        return
     if new in s: return
     if s.count(old)!=1: raise RuntimeError(f"Changed Android media integration anchor: {name}: {old[:60]!r}")
     p.write_text(s.replace(old,new,1))
