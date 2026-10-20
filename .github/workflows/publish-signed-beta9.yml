@@ -183,6 +183,9 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
       - name: Download working original-signed beta8
         run: |
           set -euo pipefail
