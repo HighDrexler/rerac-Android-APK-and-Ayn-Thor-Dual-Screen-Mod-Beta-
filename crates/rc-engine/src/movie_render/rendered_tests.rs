@@ -154,8 +154,15 @@ fn rendered_movie_entry_picture_fade_exit_skip_and_failure() {
             let pad = &mut state.running.as_mut().unwrap().pad;
             pad.held = button::START | button::L1 | button::L2 | button::R1 | button::R2;
             pad.pressed = button::START;
+            drop(state);
+            tick(&mut app);
+            let state = app.world().resource::<MovieState>();
+            let running = state.running.as_ref().unwrap();
+            assert!(running.player.skipped, "skip input must end playback before natural EOF");
+            assert!(running.media_cancelled, "skip must cancel queued movie media");
         }
         finish_movie(&mut app);
+        assert_eq!(app.world().resource::<MovieState>().finished.last().map(|(_, skipped)| *skipped), Some(!failed));
         check_image(&mut app, label, blue);
         assert!(app.world().get::<Camera>(main).unwrap().is_active);
         assert!(!app.world().get::<Camera>(movie_camera).unwrap().is_active);

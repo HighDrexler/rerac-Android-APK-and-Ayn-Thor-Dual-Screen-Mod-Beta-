@@ -734,9 +734,9 @@ mod tests {
         let companion = world.spawn(Camera::default()).id();
         let mut saved = Vec::new();
         let mut query: SystemState<MovieViews> = SystemState::new(&mut world);
-        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world).unwrap());
         // Repeated frames must not overwrite the original active states.
-        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world).unwrap());
         let active = |world: &World, e| world.get::<Camera>(e).unwrap().is_active;
         assert!(!active(&world, main));
         assert!(!active(&world, sky));
@@ -746,10 +746,10 @@ mod tests {
         assert!(active(&world, companion));
         assert_eq!(saved.len(), 3);
         let late = world.spawn((Camera::default(), WorldCamera)).id();
-        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world));
+        route_movie_view(true, &mut saved, &mut query.get_mut(&mut world).unwrap());
         assert!(!active(&world, late));
         world.despawn(sky);
-        route_movie_view(false, &mut saved, &mut query.get_mut(&mut world));
+        route_movie_view(false, &mut saved, &mut query.get_mut(&mut world).unwrap());
         assert!(saved.is_empty());
         assert!(active(&world, main));
         assert!(active(&world, late));
