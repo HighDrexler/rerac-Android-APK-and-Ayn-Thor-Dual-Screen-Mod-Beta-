@@ -25,7 +25,7 @@ NATIVE={
 }
 def digest(data):return hashlib.sha256(data).hexdigest()
 def sdk_certificate(text):
-    blocks=re.findall(r"-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----",text)
+    blocks=re.findall(r"-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----",text)
     require(len(blocks)==1,"Expected one SDK-verified signing certificate")
     cert=x509.load_pem_x509_certificate(blocks[0].encode()).public_bytes(serialization.Encoding.DER)
     require(digest(cert)==SIGNER,"SDK certificate pin mismatch")
