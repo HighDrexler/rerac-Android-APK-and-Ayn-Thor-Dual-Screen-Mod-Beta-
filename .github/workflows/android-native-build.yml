@@ -59,7 +59,7 @@ jobs:
           rustup default 1.99.1
           cargo test --locked -p rc-video --lib -- --nocapture
           cargo test --locked -p rc-game --lib movie_player::tests
-          python3 -m unittest discover -s android/native/tests -p 'test_touch_dex.py' -v
+          python3 -m unittest discover -s android/native/tests -p 'test_*.py' -v
   native:
     needs: prepare
     runs-on: ubuntu-24.04
