@@ -2,7 +2,7 @@ name: Android source-built native core
 on:
   workflow_dispatch:
   push:
-    branches: [experimental, 'beta8/**']
+    branches: [experimental, 'beta8/**', 'beta9/**']
     paths:
       - crates/**
       - Cargo.toml
