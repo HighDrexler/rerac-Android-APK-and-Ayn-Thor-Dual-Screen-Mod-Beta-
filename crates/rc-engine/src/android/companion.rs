@@ -277,7 +277,7 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         scene.as_ref().map_or_else(Vec::new, |layer|cache.prims(&layer.prims,hud))
     }else{
         let p=cache.convert(&rt.draws,&rt.assets,hud);
-        let p=p.into_iter().filter(|p|super::companion_policy::native_frontend_primitive(frontend,matches!(p.tex,Tex::Fx(_)))).collect::<Vec<_>>();
+        let p=p.into_iter().filter(|p|super::companion_policy::native_frontend_primitive(frontend,matches!(p.tex,Tex::Fx(1..=3)))).collect::<Vec<_>>();
         cache.prims(&p,hud)
     };
     let panels:Vec<_>=rt.draws.iter().filter_map(|d|if let MenuDraw::PanelBegin{x,y,w,h,..}=d {Some([*x,*y,*w,*h])}else{None}).collect();
