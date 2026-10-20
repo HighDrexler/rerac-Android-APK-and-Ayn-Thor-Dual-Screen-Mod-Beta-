@@ -68,7 +68,7 @@ use crate::game_camera::CameraSource;
 use crate::gameplay::{GameTick, Persistent, Play};
 use crate::hud_render::{Hud2d, Prim, SceneLayer};
 use crate::input_map::PadFrame;
-use crate::moby_attach::AttachedTo;
+use crate::moby_attach::{AttachedTo, Slot};
 use crate::moby_render::{self, ExtraMobys, MobyMaterial};
 use crate::tfrag_render::game_to_bevy;
 use anyhow::{Context, Result};
@@ -430,7 +430,7 @@ fn scene_frame(
     pad: Option<Res<PadFrame>>,
     frame: Res<crate::determinism::FrameNumber>,
     hero: HeroEntities,
-    items: Query<Entity, With<AttachedTo>>,
+    items: Query<(Entity, &AttachedTo)>,
     hidden: Query<(Entity, Has<crate::gameplay::RatchetMesh>), With<SceneHidden>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
@@ -534,11 +534,15 @@ fn scene_frame(
         rt.player = Some(player);
         rt.frames = 0;
         if let Some(m) = menu.as_mut() { m.state.set(Mode::Cutscene); }
-        // FUN_002486c0: the hero and his items are hidden.
+        // FUN_002486c0: the hero and his items are hidden. The always-on extras stay drawn on the scene's Ratchet
+        // actor (`FUN_0024a0e8` → `HeroItemsAttach`, which attaches only item slots 4 / 5 in mode 2): crate::moby_attach
+        // places them on the actor, and the game clears their hidden bit every tick.
         for (e, name) in &hero {
             if name.as_str().starts_with("Ratchet (play)") { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
         }
-        for e in &items { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        for (e, at) in &items {
+            if at.slot != Slot::Extra { commands.entity(e).insert((SceneHidden, Visibility::Hidden)); }
+        }
         active.running = true;
         if let Some(p) = play.as_mut() { enter_mode2(rt, p); }
     }
