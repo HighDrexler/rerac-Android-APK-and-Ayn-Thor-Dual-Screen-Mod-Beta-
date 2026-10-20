@@ -2,6 +2,16 @@
 
 The independently installable Android package is **org.rerac.android.ui035test**, not the original **org.rerac.android.uipreview** application. Existing original-app data is never overwritten by the new package.
 
+## Experimental beta.6 update verification
+
+**Beta.5 is the installed release candidate.** Beta.6 is a Development/Experimental-only update using the same Android package ID and signing certificate, with versionCode **22** (beta.5 is 21). It retains ReRAC **0.3.5** and tests cutscene-performance improvements. Beta.6 must be available through **Updates > Development > Check for updates** in beta.5 rather than requiring manual installation.
+
+The source improvements and Android production-ABI tests are on the `experimental` Git branch. The `update-channel2/development.json` RSA-signed release feed is separate from `update-channel2/stable.json` and from the original 0.3.4 application's updater. GitHub Releases must actually host the signed beta.6 APK before changing the Development feed: announcing an absent asset causes update downloads to fail.
+
+A matching signed beta.6 APK exists, plus a locally signed, exact-hash manifest. The publishing script `Publish-ReRAC-beta6-InLauncher.ps1` verifies the approved APK and private signer, creates the immutable GitHub Development prerelease, downloads it back and compares hashes, and only then updates the signed Development feed. The script also configures encrypted GitHub Actions signing secrets for future 0.3.6 and later releases. The GitHub connection in this chat cannot upload binary release assets or set those protected secrets, so owner-side publication is a real remaining step, not another game-engine rebuild.
+
+Do not promote experimental FMV changes to Stable merely because the launcher starts in an emulator. Stable should follow **tested official ReRAC core-version updates**, after real Android and AYN Thor acceptance.
+
 ## Required one-time owner setup
 
 All future APKs must use the **identical private signing certificate** used for the initial 0.3.5 Test beta.4 and corrected beta.5. The verified certificate SHA-256 is **e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e**. Do not upload private key material to repository files or public releases. The GitHub publishing workflow expects the following private GitHub Actions secrets:
