@@ -375,6 +375,8 @@ fn run_audio(
         out.last_report = out.done;
         let s = &out.system;
         let underruns = out.ring.underruns();
+        let dropped = out.ring.dropped();
+        let fill = out.ring.queued();
         println!(
             "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns, {} frames dropped, ring {} frames{}",
             out.done,
