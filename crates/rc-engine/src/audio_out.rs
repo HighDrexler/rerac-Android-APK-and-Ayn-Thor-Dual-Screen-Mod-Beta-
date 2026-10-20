@@ -192,6 +192,9 @@ impl AudioOut {
     /// Frames rendered but not yet taken by the audio device (the output latency the movie clock subtracts).
     pub fn queued(&self) -> usize { self.ring.queued() }
 
+    /// Aggregate device audio underruns for low-overhead FMV diagnostics.
+    pub fn underruns(&self) -> u64 { self.ring.underruns() }
+
     pub fn begin_movie(&self) -> MovieOwner { MovieOwner::new(&self.ring) }
 
     /// 800-sample frames output so far (one per 60 Hz tick).
