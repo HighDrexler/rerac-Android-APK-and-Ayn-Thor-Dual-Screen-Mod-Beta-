@@ -1,7 +1,84 @@
 # Forum triage (bugs-and-qa)
 
-Status: **2026-10-19.** The open posts of the Discord forum, sorted by what fixing them needs. Players are on runtime
-0.3.4; items fixed on main since then and items with an open PR are listed at the end and not repeated above.
+Status: **2026-10-20, evening.** Section 0 is the current state of every open post (56), read in full on 2026-10-20 after
+the 0.3.5 retest round. Sections 1–4 are the earlier rounds (history: their numbering is what older commits cite).
+Players are on runtime 0.3.5 (launcher 0.2.1); "main" means fixed after 0.3.5, not released yet.
+
+## 0. Every open post (2026-10-20)
+
+Closed today (reporter confirmed in the post): footprints in Hoven's snow, plants / trees moving, the O2 mask at the
+ship, Orxon's bombs, the Mirror World cheat, grind-rail weapons, the Mine Glove smoke, the indestructible mines,
+Ratchet's head in the pause menu, Can't Start New Game (keymapping), the Xbox pad (keyboard joystick add-on). The
+"Older posts" section of the forum (closed earlier, e.g. the reverb after the Pokitaru teleport) is not listed.
+
+**New posts (not triaged before)**
+
+| post | reporter | what | status / next |
+|---|---|---|---|
+| 1562010718641987654 | HMDSOLO | Visibomb: the green visor looks wrong; the firing animation is missing | new; 3 attachments, not downloaded |
+| 1562008926613151774 | HMDSOLO | Hoven: the clouds below move with the camera (480p video) | new; sky / cloud layer parallax |
+| 1562001348088561664 | HMDSOLO | Teleporters miss part of their sound | new; 6 attachments |
+| 1561992729980837898 | HMDSOLO | Hoven water (Hydrodisplacer area) broken, "like the HD Collection"; PS2 and PS3 references posted | new; compare with the PS2 shots |
+| 1561982401914339379 | HMDSOLO | The Glove of Doom does not hold the eggs inside | new; the glove hand offset (be6e72f, the Mine Glove's fix, shared by every glove) may already cover it: check |
+| 1561920636593643580 | Kristian | Launcher (Windows 11): "Could not move build into … os error 5" on every install, with or without admin, any folder | new; same family as 1561546349793648701 (launcher) |
+| 1561918614456504340 | idunnomate | Gemlik base: the first force-field tower becomes a Heli-Pack sound source (sometimes mutes the player's), by gliding off the start platform | new; a voice owner / position bug (the slot hand-over?) |
+| 1561896146421686282 | Gengear | SteamOS: changing the volume with the controller (Steam + analog up/down) crashes the game ("GAME STOPPED"); keyboard is fine | new; crash in the options slider with a pad |
+| 1561815960825102416 | everfeel | Sounds keep playing into the vendor; the crosshair shows in the vendor (roxas: the PS2 shows it too, Veldin 2 with the R.Y.N.O.); the yellow hydrant clips into the vendor menu on several planets | new; sounds and hydrant to check |
+
+**Older posts with replies since the retest request (2026-10-19)**
+
+| post | reporter | what was said | status / next |
+|---|---|---|---|
+| 1561295602464325733 | HMDSOLO | Wrench auto-aim: □ combos still miss enemies and crates; Hyper-Strike better but not right; the throw much better | the combo lunge 3b798b6 on main; ask again after the release |
+| 1561116145958920253 | idunnomate, HMDSOLO | Ice: momentum good (idunnomate); weapons point at the ground; the wrench throw / catch do not push Ratchet | weapons 5ad9698, throw / catch 785eb3f, the jump lock 56f541c, all on main |
+| 1560410178598211727 | HMDSOLO | Map star right on the current planet, in the corner or missing on others (PS2 shows it at each pad); Umbris does not fill yellow when completed | star: as designed since c3ee600 (each planet needs one visit on 0.3.5); Umbris fill: new, to look at |
+| 1560406898736631849 | HMDSOLO | Mine Glove: the mine is in place now, but passes through the glove ("apart from that, it's fixed") | be6e72f on main |
+| 1560484892951715910 | HMDSOLO | Gaspar turrets: no longer inverted | the reticle and the tilt still open |
+| 1561090803533619351 | idunnomate | FOV: fixed after the dogfight; crashing the jet while boosting keeps it at the respawn | as the original (no FOV writer in the death path) |
+| 1561170710410563624 | idunnomate, zshrocks | Persuader etc.: fine in gameplay and menus, missing in scenes / ship travel; zshrocks PR #43 (scenes, ship travel, glows) | bdc0fa4 on main covers the scenes; reconcile with PR #43 |
+| 1561197235453169734 | idunnomate | Glove of Doom glow: an image, no text | fixed fc51251 (0.3.5); ask for a word before closing |
+| 1560477029915168810 | HMDSOLO | Self-destruct music (0.3.4 videos); also the camera slides a little when it focuses on Ratchet | switches on main (test f6d8b57, heard by ear); asked to retest; the camera slide not looked at |
+| 1560402964324155393 | roxas, HMDSOLO | Got more bug: O2 mask, Clank's antenna, hoverboard water and HUD, Magician, timers, cheats fixed; still audio crackle and speed-ups, Giant Clank pose (HMDSOLO posted a PS2 frame), skill point checks, mine hit box and Taunter, commando shots | skill checks a870581 and speed-ups 9336a71 on main; Giant Clank pose unresolved (§4 fourth pass); asked roxas which missiles pass through Giant Clank |
+| 1560523101438222357 | Spoober, roxas | Big list: Codebot fixed, Swingshot fixed, Clank's light and Heli-Pack sound fixed; pause panels when spamming Start (more on Kerwan); Goodies movies show the NPC twice; camera under the quicksand; roxas: ice jump lock, speed-ups, not facing straight on the rail / Glove of Doom | pause 6cb39c3, movies d11b98b, ice 56f541c, speed-ups 9336a71, quicksand camera 066cb53 (faithful port, unverified), all on main; asked roxas for rail / Glove of Doom footage |
+| 1561237746012524634, 1561391266959204382, 1561445647494938655 | HMDSOLO, idunnomate | Clank's Heli-Pack sound, Kalebo III water, the Codebot softlock: no reply in the posts | confirmed in the big threads (Spoober, roxas); close once the reporters confirm or on your word |
+
+**Older posts with no reply since (state unchanged)**
+
+| post | reporter | what | status |
+|---|---|---|---|
+| 1561035410677702737 | funee monkee | No ship to leave Oltanis Orbit | needs the save (§2.3) |
+| 1560482718779703296 | HMDSOLO | Space too close during travel | to capture 4:3 vs 16:9 (§3) |
+| 1560528077749227520 | HMDSOLO | Wrench reticle opaque | fixed 99ab08a on main |
+| 1561617528063655988 | HMDSOLO | Blarg soldiers do not notice Ratchet | as the original (§3) |
+| 1561621141335056394 | HMDSOLO | Metal Detector rings | no description (§2.8) |
+| 1560400854425542717 | HMDSOLO | Helmets bigger, animation glitches | needs the PS2 side (§2.10) |
+| 1561609406565851196 | HMDSOLO | Aerial turret HUD blurry | HUD High resolution option (§3) |
+| 1561607428439547965 | HMDSOLO | Batalia textures | needs PS2 captures (§2.12) |
+| 1561546349793648701 | Glitch master | Launcher: "Could not move the build into" | launcher log (§2.15); see 1561920636593643580 |
+| 1560533067838390333 | HMDSOLO | Hydrodisplacer: camera dips under the floor (Rilgar, Pokitaru sewers) | open (§1.17); 066cb53 may touch it |
+| 1561292714690224178 | HMDSOLO | Pokitaru sewers textures | §2.12 |
+| 1561285436104642710 | HMDSOLO | Pokitaru waterfalls | §2.12 |
+| 1561283743984132266 | HMDSOLO | Thruster-Pack turbo (dark trails) | the smoke's texture is dark in the data (§4 third pass); needs a PS2 clip |
+| 1561282673308213278 | HMDSOLO | Jet fighter: no reticle, no missile HUD | keepcount: fixed in his upcoming batch |
+| 1561274678180315166 | HMDSOLO | Decoy Glove: no reticle on the ground | not triaged before (the index had it as "Pokitaru sand rings") |
+| 1561272266459709460 | HMDSOLO | Decoy Glove: the decoy not held inside the glove | not triaged before (indexed as "Pokitaru deck"); likely the glove hand offset be6e72f |
+| 1561271052456296448 | HMDSOLO | Decoys do not stay on Pokitaru's boats | not triaged before (indexed as "mines riding the boat") |
+| 1561266123788255302 | HMDSOLO | Clank's second antenna in mission scenes | fixed ac0f9a3 on main |
+| 1561261776539226182 | HMDSOLO | Orxon Clank-area textures | missing objects / layer (§3) |
+| 1561236934947512401 | HMDSOLO | Orxon sky seam | §2.12 |
+| 1561235689503203388 | HMDSOLO | Clank on Orxon plays Ratchet's track | fixed eca1c6b on main |
+| 1561231247613763677 | HMDSOLO | Platinum Zoomerator: no turbo bar | keepcount: upcoming batch |
+| 1561207360028934234 | HMDSOLO | Floating mine in the pause menu's Mine Glove animation | likely the glove fixes (PR #24, be6e72f); check |
+| 1561203514447765584 | HMDSOLO | Weapon sound during the ship landing | needs a PS2 capture (§3) |
+| 1561185074936811600 | idunnomate | Blarg helicopter audio crackle (Hoven turret) | needs an audio trace (§3) |
+| 1561178470468427836 | MayaMachina | PS4 pad not detected (DS4Windows?) | not triaged before; controllers (§2.17) |
+| 1560403211960057896 | HMDSOLO | Gaspar lava white structures | needs a PS2 capture (§2.9) |
+| 1561085489359102032 | idunnomate | Purple water on Pokitaru | needs a PS2 reference (§2.11) |
+| 1561126327271161906 | idunnomate | Heli / Thruster sound after the ice-cube death | probably the original (§2.18) |
+| 1561109192507654224 | pederado | PS5 pad over Bluetooth on macOS | controllers (§2.17) |
+| 1560907753696788541 | Marco | Black screen on Windows (Vulkan; DX12 works) | needs GPU and driver (§2.16) |
+| 1560471128638623857 | HMDSOLO | Walloper effects | the glow is depth-tested as the original (§4 fourth pass); needs a PS2 clip |
+| 1560847982658719765 | idunnomate | Wrench throw trail hides geometry | needs a PS2 capture (§3) |
 
 ## 1. Doable from the posts and Ghidra alone
 
