@@ -268,7 +268,25 @@ impl GsPass {
         // Effect draws: the display-encoded target and its blend (crate::display_blend).
         if s.display { crate::display_blend::specialize(descriptor); }
     }
+
+    /// [`Self::specialize`] for the world's draws (the sky, tfrags, ties, shrubs): the colour as there, the frame's
+    /// alpha cleared to 0 where they cover (opaque: 0; blended: dst·(1 − As)). Every later draw (mobys, effects,
+    /// water) raises it again by its own coverage (`OVER`, opaque As = 1), so after the 3-D passes the alpha is how
+    /// much of the pixel was drawn after the shrubs: crate::screen_tint tints only the rest, as the game's world-pass
+    /// tints, and writes alpha 1 back.
+    pub fn specialize_world(self, descriptor: &mut RenderPipelineDescriptor) {
+        self.specialize(descriptor);
+        if let Some(f) = descriptor.fragment.as_mut() {
+            for t in f.targets.iter_mut().flatten() {
+                let color = t.blend.map_or(BlendComponent::REPLACE, |b| b.color);
+                t.blend = Some(BlendState { color, alpha: WORLD_ALPHA });
+            }
+        }
+    }
 }
+
+/// The world draws' alpha: `dst·(1 − As)` (0 under an opaque draw, whose blend is `REPLACE` on the colour).
+pub const WORLD_ALPHA: BlendComponent = BlendComponent { src_factor: BlendFactor::Zero, dst_factor: BlendFactor::OneMinusSrcAlpha, operation: BlendOperation::Add };
 
 /// Range of GS alpha values (0..0xff, 0x80 = 1.0) a texture or a vertex colour set can produce.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

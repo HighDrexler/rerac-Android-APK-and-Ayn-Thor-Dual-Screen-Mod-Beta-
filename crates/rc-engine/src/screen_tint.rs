@@ -4,9 +4,13 @@
 //! the display bytes with A / B / D from the low byte of its ALPHA_1 (0x44: Cs, Cd, Cd; 0x42: 0, Cs, Cd),
 //! `assets/shaders/screen_tint.wgsl`.
 //!
-//! [L] The game draws them inside the world pass (the list-2 callbacks after the ties, the beam's sprite after the
-//! shrubs), so the mobys, particles and effects drawn later are not tinted; the pass runs after the 3-D passes and before
-//! the HUD, so they are.
+//! The game draws them inside the world pass (the list-2 callbacks after the ties, the beam's sprite after the shrubs),
+//! so the mobys, particles and effects drawn later are not tinted. The pass runs after the 3-D passes, so the world
+//! draws leave the frame's alpha at 0 and every later draw raises it by its coverage (crate::gs_state
+//! `specialize_world`): each tint is mixed in by 1 − alpha. [L] A translucent effect over the world takes the tint
+//! in proportion (the game tints the world under it and blends the effect over that). The pass runs every frame on the
+//! main camera (no tint: a copy) and writes alpha 1, so the frame's alpha is whole again for the present sprite, the
+//! menu snapshot and the screenshots.
 
 use bevy::core_pipeline::fullscreen_material::FullscreenMaterial;
 use bevy::ecs::schedule::ScheduleConfigs;
@@ -46,19 +50,19 @@ impl Plugin for ScreenTintPlugin {
 fn update(mut commands: Commands, play: Option<Res<crate::gameplay::Play>>, cams: Query<(Entity, Option<&ScreenTint>), With<FlyCam>>) {
     let Some((entity, have)) = cams.iter().next() else { return };
     let tints = play.as_deref().map(|p| rc_game::moby_update::classes::draw_callbacks::screen_tints(&p.game.mobys, &p.svc, p.game.counter)).unwrap_or_default();
-    let want = (!tints.is_empty()).then(|| {
-        let mut t = ScreenTint::default();
-        for (k, s) in tints.iter().take(4).enumerate() {
-            t.rgba[k] = UVec4::new(s.rgba & 0xff, (s.rgba >> 8) & 0xff, (s.rgba >> 16) & 0xff, s.rgba >> 24);
-            t.alpha[k] = s.alpha as u32;
-        }
-        t.count.x = tints.len().min(4) as u32;
-        t
+    // `RC_SCREEN_TINT=<rgba hex>:<ALPHA_1 low byte hex>` (dev only): one more tint every frame, to check the pass on
+    // any level (e.g. `00ffff00:42` with alpha 0xff is Giant Clank's beam flash).
+    let forced = std::env::var("RC_SCREEN_TINT").ok().and_then(|v| {
+        let (c, a) = v.split_once(':')?;
+        Some(rc_game::moby_update::classes::draw_callbacks::ScreenTint { rgba: u32::from_str_radix(c, 16).ok()?, alpha: u8::from_str_radix(a, 16).ok()? })
     });
-    match (want, have) {
-        (Some(w), Some(h)) if *h == w => {}
-        (Some(w), _) => { commands.entity(entity).insert(w); }
-        (None, Some(_)) => { commands.entity(entity).remove::<ScreenTint>(); }
-        (None, None) => {}
+    let tints: Vec<_> = tints.into_iter().chain(forced).collect();
+    // Always present: with no tint the pass only writes the frame's alpha back to 1 (module doc).
+    let mut want = ScreenTint::default();
+    for (k, s) in tints.iter().take(4).enumerate() {
+        want.rgba[k] = UVec4::new(s.rgba & 0xff, (s.rgba >> 8) & 0xff, (s.rgba >> 16) & 0xff, s.rgba >> 24);
+        want.alpha[k] = s.alpha as u32;
     }
+    want.count.x = tints.len().min(4) as u32;
+    if have != Some(&want) { commands.entity(entity).insert(want); }
 }
