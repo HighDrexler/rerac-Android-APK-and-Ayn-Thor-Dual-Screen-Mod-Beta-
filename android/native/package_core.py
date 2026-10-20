@@ -97,6 +97,11 @@ def package(baseline:Path,tools:Path,arm64:Path,x86:Path,output:Path,version:str
         replacements={f'lib/{abi}/librc_engine.so':data for abi,data in libraries.items()}
         replacements.update(shaders)
         with zipfile.ZipFile(launcher) as z:
+            # V16's touch-wheel kind2 suppresses Triangle before JNI.
+            # Reconstruct the single bytecode branch with exact source/output
+            # hashes, preserving the whole Java UI, joystick and dual screen.
+            from touch_dex import patch_touch_wheel_triangle
+            replacements['classes2.dex']=patch_touch_wheel_triangle(z.read('classes2.dex'))
             metadata=json.loads(z.read('assets/rerac-build.json'))
             metadata.update(core_version=core,core_provenance=f'Source-built Android core {core}; upstream {first["upstream_sha"][:12]}',native_source_rebuild=True,native_source_sha=first['source_sha'],upstream_sha=first['upstream_sha'],adapter_api=first['adapter_api'])
             for abi,data in libraries.items():metadata['native_sha256'][f'lib/{abi}/librc_engine.so']=digest(data)
@@ -122,6 +127,9 @@ def package(baseline:Path,tools:Path,arm64:Path,x86:Path,output:Path,version:str
             require(len(new.namelist())==len(set(new.namelist())),'Duplicate APK entries')
             for entry in old.infolist():
                 name=entry.filename
+                if name == 'classes2.dex':
+                    require(new.read(name)==patch_touch_wheel_triangle(old.read(name)),'Unexpected DEX patch or touch/dual-screen modification')
+                    continue
                 if name in ('AndroidManifest.xml','classes6.dex') or name.startswith(('META-INF/','assets/shaders/')) or name in {f'lib/{abi}/librc_engine.so' for abi in TARGETS}:continue
                 require(old.read(name)==new.read(name),'Unrelated original payload changed: '+name);preserved.append(name)
             for abi in TARGETS:require(core_stamp(new.read(f'lib/{abi}/librc_engine.so'))==infos[abi],'Final native bytes changed')
