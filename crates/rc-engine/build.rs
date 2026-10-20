@@ -20,13 +20,14 @@ fn main() {
     assert!(sha(&source),"full source SHA required");
     let target=env::var("TARGET").unwrap();
     assert!(matches!(target.as_str(),"aarch64-linux-android"|"x86_64-linux-android"));
-    let sdk=env::var("CARGO_NDK_ANDROID_PLATFORM").expect("build with the pinned cargo-ndk tool").parse::<u32>().unwrap();
+    let platform=env::var("CARGO_NDK_ANDROID_PLATFORM").expect("build with the pinned cargo-ndk tool");
+    let platform=platform.trim();
+    let sdk=platform.strip_prefix("android-").unwrap_or(platform).parse::<u32>().expect("invalid Android platform level");
     assert_eq!(sdk,26,"preserve the original Android 8.0 compatibility contract");
     assert!(version.bytes().all(|b|b.is_ascii_alphanumeric()||b".-+".contains(&b)));
     let json=format!(r#"{{"schema":1,"core_version":"{version}","upstream_sha":"{upstream}","source_sha":"{source}","target":"{target}","min_sdk":{sdk},"adapter_api":1}}"#);
     let marker=format!("RERAC_ANDROID_CORE_JSON:{json}\0");
     let offset = "RERAC_ANDROID_CORE_JSON:".len();
     let code=format!("#[used]\nstatic CORE_STAMP: &[u8] = b{marker:?};\n#[no_mangle]\npub extern \"C\" fn rerac_android_core_info_v1() -> *const std::ffi::c_char {{ CORE_STAMP.as_ptr().wrapping_add({offset}).cast() }}\n");
-    // Offset is the length of the marker prefix, not a layout-dependent ELF address.
     fs::write(PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("android_core_build.rs"),code).unwrap();
 }
