@@ -100,7 +100,11 @@ impl InputState {
         // never reactivate if a vendor or ship prompt reappears while held.
         if !gameplay || !prompt { self.triangle_armed = false; }
         let mut touch_buttons = self.touch.buttons | touch_edges;
-        if !gameplay || !prompt || !self.triangle_armed { touch_buttons &= !TRIANGLE; }
+        // The built-in Java quick-select wheel forwards Triangle/axes to
+        // native even without a contextual prompt; dropping that bit breaks
+        // the wheel. Only suppress a pre-existing gesture *while* a prompt
+        // is displayed. Contextual Triangle still requires a fresh DOWN.
+        if !gameplay || (prompt && !self.triangle_armed) { touch_buttons &= !TRIANGLE; }
         // Unlike a finger hover, physical Triangle must always be retained.
         out.buttons = physical_buttons | touch_buttons;
         let fresh = self.touch_at.is_some_and(|t|
@@ -166,8 +170,9 @@ mod tests {
     #[test] fn wheel_triangle_only_acts_on_real_prompts() {
         let mut s=InputState::default();let n=Instant::now();
         s.touch(TRIANGLE,ZERO,0,n);
-        assert_eq!(s.tick(n,true,false).buttons&TRIANGLE,0);
-        // A wheel started before the prompt cannot activate a vendor/ship.
+        assert_eq!(s.tick(n,true,false).buttons&TRIANGLE,TRIANGLE);
+        // Preserve native wheel opening outside prompts. An old wheel hold
+        // cannot activate the vendor or ship when a prompt appears.
         assert_eq!(s.tick(n,true,true).buttons&TRIANGLE,0);
         s.touch(0,ZERO,0,n);
         s.touch(TRIANGLE,ZERO,0,n);
@@ -178,7 +183,7 @@ mod tests {
     #[test] fn wheel_held_before_a_prompt_does_not_become_interaction() {
         let mut s=InputState::default();let n=Instant::now();
         s.touch(TRIANGLE,ZERO,0,n);
-        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,0);
+        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,TRIANGLE);
         for _ in 0..5 {assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);}
         s.touch(0,ZERO,0,n);
         s.touch(TRIANGLE,ZERO,0,n);
@@ -190,7 +195,7 @@ mod tests {
         let mut s=InputState::default();let n=Instant::now();
         s.touch(TRIANGLE,ZERO,0,n);
         assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,TRIANGLE);
-        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,0);
+        assert_eq!(s.tick(n,true,false).buttons & TRIANGLE,TRIANGLE);
         assert_eq!(s.tick(n,true,true).buttons & TRIANGLE,0);
         s.touch(0,ZERO,0,n);s.tick(n,true,true);
         s.touch(TRIANGLE,ZERO,0,n);
