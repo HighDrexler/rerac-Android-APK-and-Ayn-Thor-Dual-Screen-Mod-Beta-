@@ -244,8 +244,18 @@ second Qwark); the camera dips under Aridia's quicksand (image).
   the crash and the respawn (`LoadLevelCoreData`'s death path, the loader pass, `entry`'s death branch on levels 01 / 11);
   the map's ship star on other planets — the landmark is captured at every save since c3ee600, so a 0.3.4 save keeps its
   (0, 0) until each planet is left once in 0.3.5.
-- Need a reference or a repro: guns held low while sliding on ice (the slide 0x2f has no arm rule of its own: same in
-  the code), the occasional freeze in an ice jump, Ratchet's pose on Giant Clank (joint list 5 and sequence 0x81 are the
-  original's), the mines' wrench hit box and the Taunter (the lure triples their reach, as ported), the commandos' shots,
-  the audio crackle and speed-ups, the pause menu's stray panels after spamming Start (the input script cannot drive the
-  menu: its ticks are gameplay ticks).
+- Second pass (2026-10-20, decomp-driven): guns held level in the ice slide (5ad9698: `0x22e660` pitches joint records
+  8 / 9 to the special poses' angle, −55° in 0x37); the ice jumps keep the slide's momentum (56f541c: L00 `0x214658`'s
+  slippery air rates; the stick had stopped Ratchet in mid-air: the "locked in place"); the pause menu's stray panels
+  (6cb39c3: a frame that runs several ticks opened the menu and ran its first tick, so the snapshot held the panels;
+  reproduced with `RC_DUMP_TICKS=2,1,3,1` on Kerwan — the script is indexed by loop frames and drives the menu); the
+  game running fast (9336a71: on a ~60 Hz display whose vsync does not pace the loop the tick rule ran up to a tick per
+  frame — movement, music and speech up to a quarter fast; the 1/60 s limiter now latches on).
+- Checked and as the original (no change): the grind-rail aim (the Blaster's barrel follows the rail, records 1..3 twist
+  the chest 84°); the Glove of Doom's throw (state 0x23 and sequence 0x2c as ported); the wrench's reach on mines (the
+  wrench class's swing sequences stretch joint list 1 to 1.8–2.6: the smear, the game's data); the Taunter on mines (it
+  only triples a landed mine's seek reach toward enemies); the hover troopers' 638 shots 49 (hidden mobys, the type-2
+  trail puffs 0x8000c070 / 0x4000c0c0 with the 0x44 blend); Giant Clank's pilot (sequence 0x81 of the level's table at
+  joint list 5, `0x2061f0`).
+- Still open: the audio crackle (the ring's fill, drops at the cap and underruns are now in the 600-tick audio line; none
+  seen in a 45 s Kerwan run here); what roxas means by "not facing straight" on the rail.
