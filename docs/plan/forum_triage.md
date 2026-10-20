@@ -199,3 +199,37 @@ glow on the ship's take-off and landing (#29); always-on items such as the Persu
 Glove's mine in hand and its smoke (#24, likely also the pause-menu floating mine); Clank's hover and Heli-Pack sounds
 (#23); momentum on slippery surfaces (#21); Port Options in the main menu (#30, duplicates 9fb4c40). keepcount reports
 the jet fighter's reticle and missile HUD and the Platinum Zoomerator's turbo bar fixed in an upcoming batch.
+
+## 4. Retest replies on 0.3.5 (read 2026-10-20; new attachments in `work/forum`, `urls.tsv`)
+
+**Confirmed fixed:** footprints in Hoven's snow, trees sway, the O2 mask at the ship's landings, Orxon's bombs, the
+Mirror World / cheats (and the Cheats page shows them), grind-rail firing (idunnomate's clip), the Mine Glove smoke, the
+mines set off by the wrench, Ratchet's head in the pause menu, Gaspar's turret pitch, ice jump momentum (idunnomate),
+the Swingshot claws, the Morph-o-Ray while moving, Clank's antenna light, Clank's Heli-Pack sound, the Kalebo III race
+water and HUD, the Magician skill point, the timers over the pause menu, the Glove of Doom glow (one colour on two
+planets, image only).
+
+**Partly fixed / still open (new detail):**
+- Wrench auto-aim: the swing combos (□) on enemies and crates still miss; the Hyper-Strike is better but not right; the
+  throw is much better (HMDSOLO).
+- Always-on items (Persuader, Map-o-Matic, Bolt Grabber): fine in gameplay and the menus, missing on Ratchet in the
+  scenes, the ship's included (PCSX2 comparison posted).
+- FOV after the dogfight: fixed for the scene; crashing the jet while boosting keeps the FOV at the respawn (clip).
+- The map's ship star: right on the current planet; on other planets' maps it sits in the corner or is missing (PCSX2
+  shows it at each planet's pad). Also: Umbris's map does not fill yellow on completion.
+- Mine Glove in hand: in place now, but the mine pokes through the glove (PCSX2 comparison).
+- Ice: weapons still point at the ground while moving; the wrench throw and catch do not push Ratchet across the ice
+  (VP44, VP45); roxas still gets stuck in place on some ice jumps (Oltanis, Hoven).
+- Grind rail / Glove of Doom: roxas says Ratchet still does not face straight when firing (images).
+- Giant Clank: Ratchet rides on Clank's back now but not in the holding pose.
+- Skill points page: no check marks on earned skill points.
+- Mines: odd hit box for the wrench; the Taunter does not set them off.
+- The Blarg Elite Commandos' shots too transparent (image).
+- Audio crackling and music / speech speed-ups (roxas).
+- The pause menu still shows stray panels when Start is pressed repeatedly, more often on Kerwan (Spoober suspects the
+  frame rate).
+
+**New:** in-level movies replayed from the Goodies show the level's own NPC next to the scene's actor (two Big Als, a
+second Qwark); the camera dips under Aridia's quicksand (image).
+
+**No reply yet:** the Codebot softlock, Spoober's other items (he is replaying; has reached Blarg Station).
