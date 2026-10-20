@@ -3,6 +3,16 @@
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
 mod companion_policy;
+mod skip_policy;
+
+/// Android-only accessibility skip for both in-engine scenes and PSS movies.
+/// It supplies the standard original shoulder combination on a Start edge,
+/// so all existing scene/movie safety gates and fade-out logic still execute.
+pub(crate) fn cinematic_skip_pad(pad:&mut rc_game::pad::PadState) {
+    use rc_game::pad::button;
+    let shoulders=button::L1|button::L2|button::R1|button::R2;
+    pad.held=skip_policy::shoulder_chord(pad.held,pad.pressed,button::START,shoulders);
+}
 include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));
 mod probe;
 use crate::touch_input::InputState;
