@@ -1,0 +1,67 @@
+name: Integrate upstream ReRAC v0.3.6-alpha on Android
+on:
+  push:
+    branches: [integration/upstream-036]
+    paths: [.github/workflows/upstream-036-merge.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: rerac-upstream036-source-integration
+  cancel-in-progress: false
+jobs:
+  merge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/upstream-036
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge exact official upstream release into isolated staging branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add re-rac-upstream https://github.com/re-rac/rerac.git
+          git fetch --no-tags re-rac-upstream 89c87e98f9d8296187df2a6310c67b32144090d3
+          test "$(git rev-parse FETCH_HEAD)" = "89c87e98f9d8296187df2a6310c67b32144090d3"
+          git merge-base --is-ancestor 756ff56ba0ef72b9fa94e91e7bdc3623fe286be0 HEAD
+          git merge-base --is-ancestor 756ff56ba0ef72b9fa94e91e7bdc3623fe286be0 FETCH_HEAD
+          # Work from the existing Android beta.9 source, preserving the
+          # Android layer on overlapping hunks. All other upstream patches
+          # merge normally. Overlaps are recorded for manual review below.
+          git merge -X ours --no-ff --no-edit FETCH_HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/native/upstream.lock')
+          p.write_text(
+            '# Exact official re-rac/rerac v0.3.6-alpha commit. '+ \
+            'Integrated after the Android beta.9 fixes.\n'
+            'version=0.3.6\n'
+            'commit=89c87e98f9d8296187df2a6310c67b32144090d3\n'
+          )
+          marker=Path('android/native/candidate.json')
+          import json
+          meta=json.loads(marker.read_text())
+          meta.update(launcher_version='1.1.0-beta.10',version_code=26,channel='development')
+          marker.write_text(json.dumps(meta,indent=2)+'\n')
+          PY
+          git add -- android/native/upstream.lock android/native/candidate.json
+          git diff --cached --check
+          git commit -m "Pin real ReRAC v0.3.6-alpha for Android beta.10 and Stable acceptance"
+          # Fail when this cannot be represented as a genuine upstream-parent merge.
+          git merge-base --is-ancestor 89c87e98f9d8296187df2a6310c67b32144090d3 HEAD
+          git log -1 --format='%H %P' > upstream036-integrated-parents.txt
+          git log --oneline --max-count=4
+          git push origin HEAD:integration/upstream-036
+      - name: Retain merge ancestry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream036-merge-provenance
+          path: upstream036-integrated-parents.txt
+          retention-days: 14
+          if-no-files-found: warn

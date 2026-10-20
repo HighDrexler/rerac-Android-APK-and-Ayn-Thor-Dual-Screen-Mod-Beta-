@@ -440,3 +440,19 @@ fn novalis_running_throw_uses_the_arm_layer() {
     let (again, _) = run(&lv, &s, &input, 200);
     assert_eq!(rows, again, "deterministic");
 }
+
+/// The wrench's auto-aim (`0x2351d0` with its target search `0x22e238`): Ratchet 3.6 units from the bolt crate, turned
+/// 0.6 rad (34°) away from it, one □. The combo's entry finds the crate in its 5-unit, 45° cone and aims at it, the
+/// physics turn him toward it (the target branch of 0x239780 also raises the step's speed factor from the distance),
+/// and the first swing breaks the crate.
+#[test]
+fn novalis_wrench_swing_aims_and_lunges_at_a_crate() {
+    let Some(lv) = load() else { eprintln!("skipped: no extracted/"); return };
+    let (p, yaw) = facing(&lv, BOLT_CRATE, 3.6, WEST);
+    let s = Setup { at: (p, yaw + 0.6), hand: 8, watch: BOLT_CRATE, health: 4, ammo: 10, hit_at: None };
+    let input = |t: u32| if (20..=21).contains(&t) { PadInput::neutral().press(button::SQUARE) } else { PadInput::neutral() };
+    let (rows, _) = run(&lv, &s, &input, 90);
+    dump(&rows);
+    let swing = rows.iter().position(|r| r.state == 0x13).expect("the combo");
+    assert!(rows[swing..].iter().any(|r| r.crate_state >= 0xfd || r.crate_state == 3), "the swing broke the crate");
+}

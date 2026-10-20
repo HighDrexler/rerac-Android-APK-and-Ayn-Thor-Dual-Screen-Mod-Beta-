@@ -186,7 +186,6 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
     // (`MobyAttachToJoint(glove, 0)`): the held mine's frame (`0x2bfe40`) is it turned by π about x.
     {
         let it = hero.items.slot.item.as_ref().unwrap();
-        let rows: [[f32; 3]; 3] = [0, 1, 2].map(|i| [0, 1, 2].map(|k| f32::from_bits(it.rows[i][k])));
         let j0 = class.chains.first().filter(|c| !c.is_empty())
             .map(|chain| moby_anim::evaluate_chains(&class.anim, &it.anim, it.snapshot.as_ref(), &[chain.as_slice()])[0]);
         let base = j0.map_or(from_f32x3(it.position), |j| super::melee::list_point(&j, &it.rows, it.position, it.scale));
@@ -199,8 +198,10 @@ pub fn update(hero: &mut Hero, table: &mut MobyTable, _anim: &dyn super::anim::A
             },
             |j| moby_anim::attach_matrix(&j, &it.rows, it.position, it.scale),
         );
+        // `fun_0020cca8(glove, 0, M)` (`MobyAttachToJoint`) then `fun_001f9d20(o, M)` = M0·o.x + M1·o.y + M2·o.z (o.w = 0):
+        // the offset turns with joint 0's frame, not the glove moby's rows (the mine stuck out of the glove's front).
         let o = row.hand;
-        let off: [f32; 3] = std::array::from_fn(|k| rows[0][k] * o[0] + rows[1][k] * o[1] + rows[2][k] * o[2]);
+        let off: [f32; 3] = std::array::from_fn(|k| mtx[0][k] * o[0] + mtx[1][k] * o[1] + mtx[2][k] * o[2]);
         let g = &mut hero.weapons.glove;
         g.hand = add3(to_f32x3(base), off);
         g.hand_mtx = mtx;

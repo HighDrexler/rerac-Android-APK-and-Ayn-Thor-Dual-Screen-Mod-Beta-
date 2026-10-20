@@ -137,7 +137,7 @@ fn ring_sparks(w: &mut World, id: MobyId) {
         let q = ring_pt(w, id, j);
         let k = w.rng.randf(0.0, 1.0);
         let at = c::add(q, c::scale(c::sub(q, q), k));
-        fx::part02(w, &crate::particles::type02::Spawn { pos: at, v1, v2, c1: 0x8000_40ff, c2: 0x4000_cc80, t: [t1, t2, t3], def: -1 });
+        fx::part02(w, &crate::particles::type02::Spawn { pos: at, v1, v2, c1: 0x8000_40ff, c2: 0x4000_cc80, t: [t1, t2, t3], def: 0x18 }); // gp−0x4d14: def[0x18]
     }
 }
 

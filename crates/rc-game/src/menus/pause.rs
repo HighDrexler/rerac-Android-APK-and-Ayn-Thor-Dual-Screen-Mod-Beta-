@@ -496,6 +496,9 @@ pub struct PageMenu {
     pub arg: u32,
     pub return_page: u32,
     pub return_kind: i32,
+    /// The hook slot (item +6) whose moby 0x1ba25c (`0x179638[slot]`) an In-Level Movies scene hides while it is replayed
+    /// (the level's own copy of a scene actor: Big Al, Qwark …); 0: none. Taken by the engine with the scene.
+    pub replay_hook: i16,
     /// 0x184894: the destination / selected planet.
     pub dest: i32,
     /// 0x1ba310[14]: each frame moby's (seq, playing backwards) as last set by the menu.
@@ -574,6 +577,7 @@ impl PageMenu {
             arg: 0,
             return_page: 0,
             return_kind: 0,
+            replay_hook: 0,
             dest: 0,
             mobys: [(0, false); 14],
             stub_calls: BTreeMap::new(),
@@ -1036,6 +1040,8 @@ impl PageMenu {
                             10 => 6,
                             _ => 7,
                         };
+                        // A scene (6): the hook slot at +6 names the level moby 0x1ba25c the replay hides (kept when 0).
+                        if it.action == 6 && (it.arg >> 16) as i16 != 0 { self.replay_hook = (it.arg >> 16) as i16; }
                         if it.action != 11 {
                             self.return_kind = if it.action == 6 { 0 } else { 2 };
                             self.arg = if it.action == 6 { it.arg & 0xffff } else { it.arg };
@@ -1160,7 +1166,7 @@ impl PageMenu {
             func::CAMERA_DRAW => options::camera_draw(self, w, a, gs, out),
             func::SOUND_DRAW => options::sound_draw(self, w, a, gs, out),
             func::QUIT_DRAW => options::quit_draw(self, w, a, out),
-            func::PLANET_LIST_DRAW => planet_select::list_draw(self, w, a, out),
+            func::PLANET_LIST_DRAW => planet_select::list_draw(self, w, a, gs, out),
             func::GALAXY_DRAW => planet_select::galaxy_draw(self, w, a, gs, env, out),
             port::DRAW => port::draw(self, w, a, out),
             gadgets::func::GRID_DRAW => gadgets::grid_draw(self, w, a, gs, env.vsync, out),

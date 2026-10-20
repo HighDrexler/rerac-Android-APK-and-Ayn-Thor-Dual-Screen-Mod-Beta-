@@ -197,7 +197,7 @@ impl Material for SkyMaterial {
         descriptor.primitive.cull_mode = None;
         // Depth compare Always, depth write for gouraud shells only, the GS blend (crate::gs_state).
         let pass = if textured { GsPass::SkyTextured } else { GsPass::SkyDome };
-        pass.specialize(descriptor);
+        pass.specialize_world(descriptor);
         if textured {
             descriptor.vertex.shader_defs.push("SKY_TEXTURED".into());
             if let Some(f) = descriptor.fragment.as_mut() { f.shader_defs.push("SKY_TEXTURED".into()); }

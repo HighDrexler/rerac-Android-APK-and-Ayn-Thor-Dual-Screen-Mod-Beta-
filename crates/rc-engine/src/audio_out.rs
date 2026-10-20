@@ -375,8 +375,10 @@ fn run_audio(
         out.last_report = out.done;
         let s = &out.system;
         let underruns = out.ring.underruns();
+        let dropped = out.ring.dropped();
+        let fill = out.ring.queued();
         println!(
-            "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns{}",
+            "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns, {} frames dropped, ring {} frames{}",
             out.done,
             s.slots.slots.iter().filter(|x| x.state != audio::voices::state::FREE).count(),
             s.spu.voices.iter().filter(|v| v.active()).count(),
@@ -385,6 +387,8 @@ fn run_audio(
             s.stats.class_slots,
             s.stats.class_sounds,
             underruns,
+            dropped,
+            fill,
             if s.snd.unimplemented.is_empty() { String::new() } else { format!(", unported grains {:?}", s.snd.unimplemented) }
         );
     }

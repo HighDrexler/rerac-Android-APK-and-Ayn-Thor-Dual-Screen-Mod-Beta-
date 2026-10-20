@@ -6,19 +6,19 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39472968413'
+        default: '39482945087'
       launcher_version:
         description: Candidate launcher version
         required: false
         type: string
-        default: '1.1.0-beta.9'
+        default: '1.1.0-beta.10'
       version_code:
         description: Candidate Android versionCode
         required: false
         type: string
-        default: '25'
+        default: '26'
   push:
-    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality']
+    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality','integration/upstream-036']
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
 permissions:
   contents: read
@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39472968413' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.9' }}
-      REQUEST_CODE: ${{ inputs.version_code || '25' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39482945087' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.10' }}
+      REQUEST_CODE: ${{ inputs.version_code || '26' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: '26'
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
@@ -58,7 +58,7 @@ jobs:
           run=json.loads(Path('work/native-run.json').read_text())
           assert run['conclusion']=='success' and run['repository']['id']==1424927008
           assert run['path']=='.github/workflows/android-native-build.yml'
-          assert run['head_branch'] in ('experimental','beta8/fmv-rendering','beta9/fmv-quality')
+          assert run['head_branch'] in ('experimental','beta8/fmv-rendering','beta9/fmv-quality','integration/upstream-036')
           assert run['id']==int(os.environ['NATIVE_RUN'])
           PY
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate

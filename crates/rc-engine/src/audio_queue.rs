@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}};
 
 #[derive(Clone, Copy)]
 struct Frame { pcm: [i16; 2], owner: u64 }
-struct State { frames: VecDeque<Frame>, running: bool, underruns: u64 }
+struct State { frames: VecDeque<Frame>, running: bool, underruns: u64, dropped: u64 }
 pub struct Ring { state: Mutex<State>, active: AtomicU64, next: AtomicU64, prefill: usize, capacity: usize }
 impl Default for Ring { fn default() -> Self { Self::new(2400, 12_000) } }
 impl Ring {
     fn new(prefill: usize, capacity: usize) -> Self {
         assert!(prefill > 0 && capacity >= prefill);
-        Self { state: Mutex::new(State { frames: VecDeque::with_capacity(capacity), running: false, underruns: 0 }), active: AtomicU64::new(0), next: AtomicU64::new(1), prefill, capacity }
+        Self { state: Mutex::new(State { frames: VecDeque::with_capacity(capacity), running: false, underruns: 0, dropped: 0 }), active: AtomicU64::new(0), next: AtomicU64::new(1), prefill, capacity }
     }
     fn valid(&self, owner: u64) -> bool { owner == 0 || self.active.load(Ordering::Acquire) == owner }
     pub fn begin_movie(&self) -> u64 {
@@ -36,10 +36,14 @@ impl Ring {
         let frames = &frames[frames.len().saturating_sub(self.capacity)..];
         let over = (s.frames.len() + frames.len()).saturating_sub(self.capacity);
         s.frames.drain(..over);
+        // Upstream v0.3.6 accounts for samples discarded when the producer
+        // outpaces the device. Preserve that metric in Android's tagged ring.
+        s.dropped = s.dropped.saturating_add(over as u64);
         s.frames.extend(frames.iter().map(|&pcm| Frame { pcm, owner }));
     }
     pub fn queued(&self) -> usize { self.state.lock().unwrap_or_else(|e|e.into_inner()).frames.len() }
     pub fn underruns(&self) -> u64 { self.state.lock().unwrap_or_else(|e|e.into_inner()).underruns }
+    pub fn dropped(&self) -> u64 { self.state.lock().unwrap_or_else(|e|e.into_inner()).dropped }
     fn pop(&self) -> Frame {
         let mut s = self.state.lock().unwrap_or_else(|e|e.into_inner());
         let silence = Frame { pcm: [0, 0], owner: 0 };

@@ -304,7 +304,8 @@ position, +0x71 = 0xff, `MobyBuildMatrix`, `FUN_0026f0e0` shadow probe if +0x7f,
   mode |= 6 (bit 2: skipped by the moby loop, so no `MobyAnimAdvance` and no class update; bit 4: the loop keeps its
   matrix), +0x32 = 0x1ff, +0x72 = 0xff, +0x94 = 0, lights +0x38 from Ratchet; the streamed sequence is a new class slot
   (class+0xc++). Deleted at the end (`FUN_002ac608`). Existing level mobys are **not** bound: a scene's Ratchet, Clank,
-  Plumber are separate actor mobys; the game hides the real ones: Ratchet and his items (`FUN_002486c0`), the talker
+  Plumber are separate actor mobys; the game hides the real ones: Ratchet and his items (`FUN_002486c0`; the always-on
+  extras 33 / 34 / 35 excepted: `FUN_0024a0e8` clears their hidden bit each tick so they ride the actor), the talker
   0x179588 and 0x1ba25c (mode |= 1), every moby of classes 74 / 203 (mode |= 0x80). Nothing is streamed but the chunks:
   every actor class must be in the level (or a spaceship class).
 * **Visibility / spawn / despawn**: none in the data; actors exist for the whole scene (parked out of view when not

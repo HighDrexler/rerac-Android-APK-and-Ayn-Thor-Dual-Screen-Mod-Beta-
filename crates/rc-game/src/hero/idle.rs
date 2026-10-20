@@ -201,18 +201,22 @@ pub mod joint {
     /// Records 6 / 7 (lists 7 / 8): the legs' slope tilt (`0x22c5c0`).
     pub const LEG_L: usize = 6;
     pub const LEG_R: usize = 7;
-    /// Record 9 (list 12, the weapon arm): raised at a wall (`0x22b700`, [`super::Hero::arm_at_wall`]).
-    pub const ARM: usize = 8;
+    /// Record 8 (list 13, the other arm): the holding layers' arm angle in the special poses (`0x22e660`,
+    /// [`crate::hero::weapons::hold_update`]).
+    pub const ARM_L: usize = 8;
+    /// Record 9 (list 12, the weapon arm): raised at a wall (`0x22b700`, [`super::Hero::arm_at_wall`]); the holding
+    /// layers' arm angle in the special poses (`0x22e660`).
+    pub const ARM: usize = 9;
     /// Record 12 (list 21): follows the head look (/2.8, ×0.25).
-    pub const REC12: usize = 9;
+    pub const REC12: usize = 10;
     /// Records 13..16 (lists 25..28): the idle secondaries; the lean's y / z.
-    pub const SECONDARY: usize = 10;
+    pub const SECONDARY: usize = 11;
     /// Record 17 (list 24): scale from 0x15ee14.
-    pub const REC17: usize = 14;
+    pub const REC17: usize = 15;
     /// Record 18 (kind 1: Clank's list 0): the walk's sway of Clank on the back (`0x235e60`).
-    pub const CLANK0: usize = 15;
+    pub const CLANK0: usize = 16;
     /// The records the port models.
-    pub const COUNT: usize = 16;
+    pub const COUNT: usize = 17;
 }
 
 /// A node of Ratchet's joint-modifier list (moby `+0x64`) in the order the game links them (`AttachManipulator`
@@ -292,7 +296,7 @@ pub struct Idle {
     pub clank_fidget_timer: i32,
     /// 0x15ee14: record 17's scale source (approaches 0.92 by ≤ 0.05 per tick).
     pub rec17_scale: f32,
-    /// Records 0..7, 12..18 of the joint block 0x17ab00 (the others have no writer in the port).
+    /// Records 0..9, 12..18 of the joint block 0x17ab00 (the others have no writer in the port).
     pub joints: [JointRec; joint::COUNT],
     /// Ratchet's joint-modifier list (moby `+0x64`), head first: the attached joint records and eyelid nodes.
     pub manips: Vec<Manip>,
@@ -340,6 +344,7 @@ impl Idle {
                 JointRec::new(5, 23, 0x3dcc_cccd, 0x3e99_999a),
                 JointRec::new(6, 7, 0x3dcc_cccd, 0x3e99_999a),
                 JointRec::new(7, 8, 0x3dcc_cccd, 0x3e99_999a),
+                JointRec::new(8, 13, 0, 0),
                 JointRec::new(9, 12, 0, 0),
                 JointRec::new(12, 21, 0x3df5_c28f, 0x3e99_999a),
                 JointRec::new(13, 25, 0x3c75_c28f, 0x3e99_999a),

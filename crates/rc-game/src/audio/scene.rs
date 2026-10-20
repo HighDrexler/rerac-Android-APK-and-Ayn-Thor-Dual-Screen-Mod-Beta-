@@ -199,9 +199,15 @@ impl AudioSystem {
         self.render(super::SAMPLES_PER_FRAME, out);
     }
 
-    /// Per EE frame, before `sound_update`: the inbox and the resume countdown.
+    /// Per EE frame, before `sound_update`: the inbox.
     pub(super) fn scene_frame(&mut self) {
         self.scene_inbox();
+    }
+
+    /// The resume countdown: `music_UpdateStream` 0x27a4a0's `FastDecTimer(+0xe)` on a paused player (state & 0x8000)
+    /// inside `music_Update`, so every frame that runs `sound_update` counts it: gameplay, the page menus and the
+    /// credits slideshow (mode 7), which the end of the game enters within the 30 ticks after its last scene.
+    pub(super) fn music_resume_countdown(&mut self) {
         if let Some(t) = self.scene.resume_in {
             if t <= 0 {
                 self.scene.resume_in = None;
@@ -382,6 +388,52 @@ mod tests {
             assert_eq!(sys.music_voices(), (1, 0));
         }
         assert!(sys.music.main.state == 4 && sys.music.main.handle != 0, "{:?}", sys.music.main);
+    }
+
+    /// The end of the game: the last scene (Veldin's boss, scene 5) ends with `FUN_0027a460(ticks(30))` and the boss enters
+    /// the credits slideshow (mode 7) at once, whose frames run only `sound_update`. The resume delay counts down there
+    /// (`music_UpdateStream`'s `FastDecTimer(+0xe)`), so the music comes back 30 frames in; it did not (silent credits).
+    #[test]
+    fn music_resumes_during_slideshow_frames() {
+        use super::super::{FrameInput, LevelAudio};
+        let _lock = TEST_INBOX.lock().unwrap_or_else(|e| e.into_inner());
+        let root = rc_formats::test_data::root().join("levels/01");
+        let Ok(bank) = std::fs::read(root.join("sound_bank.bin")) else { eprintln!("skipped: no extracted/"); return };
+        let rd = |n: &str| std::fs::read(root.join(n)).unwrap();
+        let idx = rd("core_index.bin");
+        let data = rc_formats::test_data::core_data(1).unwrap();
+        let core = rc_formats::level::parse_level_core(&idx, data.len()).unwrap();
+        let music: [Option<Vec<u8>>; 15] = std::array::from_fn(|k| std::fs::read(root.join(format!("music/{k:03}.bin"))).ok());
+        let audio = LevelAudio::from_parts(&bank, &idx, &core, &data, &rc_formats::test_data::gameplay(1).unwrap(), &rd("level_header.bin"), &music, None).unwrap();
+        let input = FrameInput { hero_pos: [162.5, 136.4, 60.5], ..Default::default() };
+        let mut sys = AudioSystem::new(audio);
+        let mut rng = crate::rng::Rng::new();
+        rng.srand(crate::rng::LEVEL_SEED);
+        let mut out = Vec::new();
+        let mut counter = 1u32;
+        take();
+        sys.tick_with(&input, counter, &mut rng, &|_| None, &mut out);
+        counter += 1;
+        assert_eq!(sys.music_voices(), (1, 0));
+        // The scene: the music held, then its end arms the resume.
+        for cmd in [SceneAudioCmd::PauseMusic, SceneAudioCmd::ResumeMusic { after: 30 }] {
+            post(cmd);
+            sys.scene_frame_with(false, &input, counter, &mut rng, &|_| None, &mut Vec::new());
+        }
+        assert_eq!(sys.music_voices(), (0, 1));
+        // Slideshow frames: `sound_update` and the samples, no gameplay frame.
+        let slide = |sys: &mut AudioSystem, rng: &mut crate::rng::Rng| {
+            let mut buf = Vec::new();
+            sys.sound_update_with(&input, counter, rng, &|_| None);
+            sys.render(crate::audio::SAMPLES_PER_FRAME, &mut buf);
+        };
+        for _ in 0..30 {
+            slide(&mut sys, &mut rng);
+            assert_eq!(sys.music_voices(), (0, 1));
+        }
+        slide(&mut sys, &mut rng);
+        assert!(!sys.scene.music_paused);
+        assert_eq!(sys.music_voices(), (1, 0));
     }
 
     /// The page menu's audio (`EnterMenuMode` 0x28bf50 / `PageMenuUpdate` 0x28c990's close) on Novalis: the open holds the

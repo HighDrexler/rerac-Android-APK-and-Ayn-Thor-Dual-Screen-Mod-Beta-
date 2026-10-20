@@ -4,7 +4,7 @@
 //!
 //! | address | what | port |
 //! |---|---|---|
-//! | `FUN_0024a1d0` | Ratchet's head: s = 0x15ee14 (his head scale, at most 1.33 in game mode 6); the record 0x17c7c0 not attached → `AttachManipulator(actor, 0x18, 0x17c7c0)`, its scale s; on levels 2, 9, 11, 13 every actor of class 0x1b1 / 0x50a / 0x509 takes its class scale · s; then `FUN_0024a0e8` (the worn items on the actor: NOT ported, G-CUT-009) | [`ratchet`] |
+//! | `FUN_0024a1d0` | Ratchet's head: s = 0x15ee14 (his head scale, at most 1.33 in game mode 6); the record 0x17c7c0 not attached → `AttachManipulator(actor, 0x18, 0x17c7c0)`, its scale s; on levels 2, 9, 11, 13 every actor of class 0x1b1 / 0x50a / 0x509 takes its class scale · s; then `FUN_0024a0e8` (the actor's items: the always-on extras and their glow pulses `FUN_00249ea0` are the engine's, `rc-engine` `moby_attach`'s `cutscene_host` / `pulse_extras`; the head / hand / feet items are NOT ported, G-CUT-009) | [`ratchet`] |
 //! | `FUN_00228bc0` | mode \|= 0x10, the glow word +0x90 = `fast_sin(2π·(0x15f5cc % ticks(100))/ticks(100) − π)` → `(0x4c + 24s) << 16 \| 0x80000000 \| (0xa2 + 52s) << 8 \| (0x44 + 24s)`; the glow sprite `FUN_00229738`: class 0x1a3 at joint list 6 − 0.07 z when it is more than 2 above the actor (0.25, 0.15), else at joint list 1 − 0.007 z (0.047, 0.15), colour 0x200000c0; the cheat 0x15edb3: the noggin record (0x1a3: 0x17c840 on list 1; 0x555: 0x17c880; else 0x17c800, on list 2) attached once, scale 0x15ee18 | [`clank`] |
 //!
 //! `FUN_00229738` adds to the hero's glow list 0x141120 and registers the hero's draw callback (`0x229400`); the port
@@ -60,7 +60,8 @@ fn attach(w: &mut World, id: MobyId, list: u8, key: u32, scale: f32) {
     m.joint_mod_keys.insert(0, key);
 }
 
-/// `FUN_0024a1d0(actor)` (module doc) without its `FUN_0024a0e8`; `actors` = 0x16ce58[0..0x16cd24].
+/// `FUN_0024a1d0(actor)` (module doc); its `FUN_0024a0e8` part — the items that follow the actor — is the engine's
+/// (`rc-engine` `moby_attach` places the always-on extras on it and runs their glow pulses). `actors` = 0x16ce58[0..0x16cd24].
 pub fn ratchet(w: &mut World, id: MobyId, actors: &[Option<MobyId>]) {
     let mut s = w.hero.idle.rec17_scale;
     if w.svc.game_mode == 6 && 1.33 < s { s = 1.33; }

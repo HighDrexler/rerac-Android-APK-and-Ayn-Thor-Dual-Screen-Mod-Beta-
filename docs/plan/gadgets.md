@@ -181,7 +181,10 @@ by the player; the Hologuise's hand swap 0x1f is the hand slot's).
   `moby_attach.rs` draws the boots and head items (`Slot::Feet` / `Slot::Head`, shown only while the slot holds their
   class — the same "absent stays hidden" rule as the hand and back); it also draws the **always-on extras** (items 33
   Map-o-Matic, 34 Bolt Grabber, 35 Persuader: `Slot::Extra`, created while their owned flag is set, at Ratchet's
-  attach lists 29 / 30 — §1); `menu_render.rs` gives the page the item definitions and applies the close's requests to
+  attach lists 29 / 30 — §1); in a scene or the mode-6 take-off / landing they follow the scene's Ratchet actor
+  (`HeroItemsAttach`'s slots 4 / 5 there, `moby_attach::cutscene_host`), and their glow pulses (`FUN_00249ea0`,
+  `pulse_extras`) also run in gameplay, not only in scenes (G-CUT-009);
+  `menu_render.rs` gives the page the item definitions and applies the close's requests to
   the session; `menu_models.rs` fills the two 3D widgets (which mobys,
   their poses, records and palettes) and draws each on a `crate::screen_canvas` canvas composed **over** the HUD
   (`Canvases::create_over_hud`; view = the panel's rectangle, the game projection's tangents given exactly with

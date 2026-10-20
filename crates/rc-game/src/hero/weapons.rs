@@ -330,15 +330,20 @@ pub fn swap_commit(h: &mut Hero) {
 }
 
 /// `0x22df10(seq)`: Ratchet's key-B sequences in which the glove-holding layers leave his arms to a fixed pose (the
-/// holding class's sequence 0): 0x1c / 0x1d / 0x1f, 0x31 / 0x32, 0x37, 0x4a / 0x4b, 0x50, 0x60, 0x6d / 0x6e. (The
-/// function also returns an arm angle for 0x1c..0x1f past key time 25 (−75°) and 0x37 (−55°), which `0x22e660` writes
-/// to the joint records 8 / 9: not ported, gaps.md G-WPN-011.)
+/// holding class's sequence 0): 0x1c / 0x1d / 0x1f, 0x31 / 0x32, 0x37, 0x4a / 0x4b, 0x50, 0x60, 0x6d / 0x6e, with the
+/// arm angle the pose wants (`Some(0.0)`: none): −75° in 0x1c..0x1f past key time 25 (`frame`, 0x13fdf8) and −55° in
+/// the ice slide 0x37 (the gun held level instead of the pose's lowered arm).
 ///
 /// The board levels' copies (level05 `0x23b378`, level16 `0x20afa0`) first answer yes on the board (group 0x16) with
 /// board weapons held (0x13fc1e) and Ratchet's key B in 0x69..0x6c (Kalebo III's board weapon; 0 elsewhere).
-pub fn hold_special(h: &Hero, seq: u8) -> bool {
-    if h.group == super::hoverboard::GROUP && h.board.weapons != 0 && (0x69..=0x6c).contains(&seq) { return true; }
-    matches!(seq, 0x1c | 0x1d | 0x1f | 0x31 | 0x32 | 0x37 | 0x4a | 0x4b | 0x50 | 0x60 | 0x6d | 0x6e)
+pub fn hold_special(h: &Hero, seq: u8, frame: f32) -> Option<f32> {
+    if h.group == super::hoverboard::GROUP && h.board.weapons != 0 && (0x69..=0x6c).contains(&seq) { return Some(0.0); }
+    match seq {
+        0x1c | 0x1d | 0x1f => Some(if 25.0 < frame { f32::from_bits(0xbfa7_8d36) } else { 0.0 }),
+        0x37 => Some(f32::from_bits(0xbf75_be0b)),
+        0x31 | 0x32 | 0x4a | 0x4b | 0x50 | 0x60 | 0x6d | 0x6e => Some(0.0),
+        _ => None,
+    }
 }
 
 /// **The glove-holding layers** `0x22e660` (first in the items' upkeep `0x22f390`, before `0x22f068`): while the hand
@@ -355,7 +360,8 @@ pub fn hold_special(h: &Hero, seq: u8) -> bool {
 ///   not blending): a new sequence while he blends is taken as key B over his blend's t from the layer's last key;
 ///   when the layer is itself between two sequences it first finishes that blend at 0.15 a tick (+0x30);
 /// * in the special poses of [`hold_special`] it blends to the holding class's sequence 0 over `ticks(15)` and plays
-///   it (speed 1), and on the way out blends back to his sequence at 0.1 a tick (+0x32 / +0x33);
+///   it (speed 1), and on the way out blends back to his sequence at 0.1 a tick (+0x32 / +0x33); a pose's arm angle
+///   is the pitch target of the joint records 8 and 9 (0x17b0e4 / 0x17b194, both arms);
 /// * its advance (`FUN_00263f70`, speed 0 outside the special poses: no key steps of its own).
 ///
 /// `FUN_0022def8`'s 0xff → Ratchet +0xa5 mapping never applies: the layer copies key A only when Ratchet is not
@@ -402,7 +408,16 @@ pub fn hold_update(h: &mut Hero, anim: &dyn AnimCtl) {
         // +0x30: Ratchet blending (0x13fdec) into another sequence than the layer's key B while the layer is itself
         // between two sequences.
         l.own_blend = !steady && v.blending() && l.seq_b != v.seq_b && l.seq_a != l.seq_b;
-        let special = hold_special(h, v.seq_b);
+        let angle = hold_special(h, v.seq_b, v.frame);
+        let special = angle.is_some();
+        // The pose's arm angle: records 8 / 9 (lists 13 / 12) pitch to it (springs 0.05 / 0.3).
+        if let Some(a) = angle.filter(|&a| a != 0.0) {
+            for r in [super::idle::joint::ARM_L, super::idle::joint::ARM] {
+                let j = &mut h.idle.joints[r];
+                (j.k, j.d) = (0.05, 0.3);
+                j.target[1] = a;
+            }
+        }
         if !special && !l.special {
             if !l.own_blend {
                 if steady { l.seq_a = v.seq_a; }
@@ -879,6 +894,16 @@ mod tests {
         hold_update(&mut r.hero, &r.anim);
         let l = r.hero.weapons.layers[HOLD].unwrap();
         assert!(l.special && l.seq_b == 0 && l.speed == 1.0 && (l.rate - 1.0 / 15.0).abs() < 1e-6, "{l:?}");
+        use super::super::idle::joint::{ARM, ARM_L};
+        assert!([ARM_L, ARM].iter().all(|&j| r.hero.idle.joints[j].target[1] == 0.0), "the swing has no arm angle");
+        // The ice slide 0x37: both arms pitched to −55° (records 8 / 9).
+        r.anim.set_anim(Pf::ONE, 0x37, 0);
+        r.anim.advance(Pf::ONE);
+        hold_update(&mut r.hero, &r.anim);
+        for j in [ARM_L, ARM] {
+            let rec = r.hero.idle.joints[j];
+            assert!((rec.target[1] + 55f32.to_radians()).abs() < 1e-5 && rec.k == 0.05 && rec.d == 0.3, "{rec:?}");
+        }
         // The hand hidden (0x1413ff): faded out and freed, not remade while it stays hidden.
         r.hero.f13ff = 1;
         for _ in 0..12 { hold_update(&mut r.hero, &r.anim); }

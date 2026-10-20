@@ -1147,14 +1147,18 @@ fn force_hidden(
     mut commands: Commands,
     t: Res<Travel>,
     hero: Query<(Entity, &Name), (With<MeshMaterial3d<MobyMaterial>>, Without<AttachedTo>, Without<TravelHidden>)>,
-    items: Query<Entity, (With<AttachedTo>, Without<TravelHidden>)>,
+    items: Query<(Entity, &AttachedTo), Without<TravelHidden>>,
     mut hidden: Query<(Entity, &mut Visibility, Has<crate::gameplay::RatchetMesh>), With<TravelHidden>>,
 ) {
     if t.hero_hidden {
         for (e, name) in &hero {
             if name.as_str().starts_with("Ratchet (play)") { commands.entity(e).insert((TravelHidden, Visibility::Hidden)); }
         }
-        for e in &items { commands.entity(e).insert((TravelHidden, Visibility::Hidden)); }
+        // The always-on extras stay drawn on the mode-6 Ratchet actor (`FUN_0024a0e8` → `HeroItemsAttach` attaches only
+        // item slots 4 / 5 in mode 6): crate::moby_attach places them on the actor.
+        for (e, at) in &items {
+            if at.slot != crate::moby_attach::Slot::Extra { commands.entity(e).insert((TravelHidden, Visibility::Hidden)); }
+        }
         for (_, mut v, _) in &mut hidden { if *v != Visibility::Hidden { *v = Visibility::Hidden; } }
     } else {
         // Ratchet's own meshes go back to crate::gameplay's visibility sync; his items are shown again.

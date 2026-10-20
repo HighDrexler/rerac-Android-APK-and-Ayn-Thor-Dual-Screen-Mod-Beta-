@@ -579,6 +579,9 @@ pub trait SoundSink {
     /// (`0x13e5c0 + slot·0x70` +0x18 owner, +0x20 position), by which one looping voice moves between the emitters of a
     /// class (the laser fences 838, the spouts 855 on Rilgar). Default: nothing.
     fn hand_over(&mut self, _slot: i32, _moby: MobyId, _pos: [f32; 3]) {}
+    /// `0x2982e8(slot, offset)`: the slot's flag 0x40 (follow the owner at a rotated local offset) and its offset
+    /// (+0x30); the owner is not touched (no owner or state test, as the game). Default: nothing.
+    fn set_offset(&mut self, _slot: i32, _offset: [f32; 3]) {}
 }
 
 /// One glint (0x16eec0 + i·0x20): the sparkle drawn on idle bolts.
@@ -1790,6 +1793,12 @@ impl<'a> World<'a> {
     pub fn hand_over_sound(&mut self, slot: i32, id: MobyId, pos: [f32; 3]) {
         if slot < 0 { return; }
         if let Some(s) = self.sound.as_deref_mut() { s.hand_over(slot, id, pos); }
+    }
+
+    /// `0x2982e8(slot, offset)`: the slot follows its owner at `offset` ([`SoundSink::set_offset`]; the owner stays).
+    pub fn set_sound_offset(&mut self, slot: i32, offset: [f32; 3]) {
+        if slot < 0 { return; }
+        if let Some(s) = self.sound.as_deref_mut() { s.set_offset(slot, offset); }
     }
 
     /// `SoundSetPitchBend(slot, pb)` 0x2a1988 ([`SoundSink::set_pitch_bend`]; the game writes slot −1's field too:

@@ -429,8 +429,12 @@ impl Hero {
     /// 0x233850(0.7, 0), momentum = push, then with a stick target ≥ 0.2·5.7·dt AirAccel(20·dt²); below
     /// that AirAccel(2·dt²) (6·dt² with 0x13f65a), except in the fall group, where |vel.xy| approaches 0 by
     /// 0x13fc94 instead.
+    ///
+    /// The superset build's copy (L00 `0x214658`, the slippery levels) adds the ice: over a slippery floor
+    /// (0x140632) the fall group's decay is 0.17·dt², and a jump that left a slippery floor (0x13f7f8) accelerates
+    /// by 0.17·dt² only, so the slide's momentum carries through the air (0xf: StickTarget(2.5·dt) and 3·dt²; on a
+    /// slope over 15° (0x13f630) no target speed and slope·9·dt²/45°).
     pub fn air_control(&mut self, env: &Env) {
-        let _ = env;
         if self.state == state::LONG_JUMP {
             self.long_jump_air();
             return;
@@ -442,13 +446,25 @@ impl Hero {
         if self.target_speed < (SPEED_TABLE[1][2] * DT) * Pf::b(0x3e4c_cccd) {
             if self.group == 2 {
                 // Fall group, small stick: no air control, the horizontal speed decays by 0x13fc94 per tick
-                // (0x235150; the decompiler drops this branch).
+                // (0x235150; the decompiler drops this branch), over a slippery floor by 0.17·dt².
+                let k = if self.f0632 != 0 { DT2 * Pf::b(0x3e2e_147b) } else { self.fc94 };
                 let mut l = len2(self.vel);
-                approach(Pf::ZERO, self.fc94, &mut l);
+                approach(Pf::ZERO, k, &mut l);
                 self.vel = set_len2(self.vel, l);
                 return;
             }
             a = if self.f65a == 0 { DT2 + DT2 } else { DT2 * Pf::b(0x40c0_0000) };
+        }
+        if self.jump.keep_speed != 0 && self.f0632 != 0 {
+            a = DT2 * Pf::b(0x3e2e_147b);
+            if self.state == 0xf {
+                self.stick_target(env, DT * Pf::b(0x4020_0000));
+                a = DT2 * Pf::b(0x4040_0000);
+            }
+            if Pf::b(0x3e86_0a92) < self.slope {
+                self.target_speed = Pf::ZERO;
+                a = ((self.slope * DT2) * Pf::b(0x4110_0000)) / Pf::b(0x3f49_0fdb);
+            }
         }
         self.air_accel(a);
     }

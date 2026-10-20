@@ -44,6 +44,7 @@ fn menu() -> PageMenu {
         arg: 0,
         return_page: 0,
         return_kind: 0,
+        replay_hook: 0,
         dest: 0,
         mobys: [(0, false); 14],
         stub_calls: BTreeMap::new(),
@@ -237,6 +238,29 @@ fn highlight_timer_and_focus_moves() {
     assert_eq!(m.pages[&page::ROOT].focus, ROOT_W[0]);
     m.tick(&press(button::UP), &mut g, &MenuEnv::default());
     assert_eq!(m.pages[&page::ROOT].focus, ROOT_W[5]);
+}
+
+/// `MenuSetPostAction` case 6 (an In-Level Movies scene): the scene from the item's +4, the hook slot from its +6 (the level
+/// moby 0x1ba25c the replay hides: Kerwan's Big Al items carry 20 / 21 / 24); a slot of 0 keeps the last one.
+#[test]
+fn in_level_scene_item_names_the_moby_its_replay_hides() {
+    let (mut m, mut g) = (menu(), gs());
+    if let Some(Data::List(l)) = m.widgets.get_mut(&ROOT_W[3]).map(|w| &mut w.data) {
+        l.items = vec![item(20527, 6, 20 << 16 | 3), item(20531, 6, 4)];
+    }
+    open(&mut m, &mut g, 0);
+    m.pages.get_mut(&page::ROOT).unwrap().focus = ROOT_W[3];
+    m.tick(&NONE, &mut g, &MenuEnv::default());
+    m.tick(&press(button::CROSS), &mut g, &MenuEnv::default());
+    assert_eq!((m.post, m.arg, m.replay_hook), (5, 3, 20));
+    let (mut m, mut g) = (menu(), gs());
+    if let Some(Data::List(l)) = m.widgets.get_mut(&ROOT_W[3]).map(|w| &mut w.data) { l.items = vec![item(20531, 6, 4)]; }
+    open(&mut m, &mut g, 0);
+    m.pages.get_mut(&page::ROOT).unwrap().focus = ROOT_W[3];
+    m.tick(&NONE, &mut g, &MenuEnv::default());
+    m.replay_hook = 7;
+    m.tick(&press(button::CROSS), &mut g, &MenuEnv::default());
+    assert_eq!((m.post, m.arg, m.replay_hook), (5, 4, 7), "a zero slot leaves 0x1ba25c as it was");
 }
 
 #[test]

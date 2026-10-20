@@ -201,7 +201,10 @@ impl SoundSink for ClassSoundSink<'_> {
     /// `HeroTeleport`'s env sample point ([`AudioSystem::hero_teleported`]).
     fn hero_teleported(&mut self, pos: [f32; 3]) { self.audio.hero_teleported(pos); }
     /// `MusicRequestTrack(track, stinger)` from a class ([`crate::audio::music::Music::request`]).
-    fn music_request(&mut self, track: i16, stinger: i16) { self.audio.music.request(track, stinger); }
+    fn music_request(&mut self, track: i16, stinger: i16) {
+        self.audio.level_music_start();
+        self.audio.music.request(track, stinger);
+    }
     /// `SoundSetPitchBend(slot, pb)`: the slot's +0x14 (no owner test, as the game).
     fn set_pitch_bend(&mut self, slot: i32, pb: i32) {
         if let Some(s) = usize::try_from(slot).ok().and_then(|i| self.audio.slots.slots.get_mut(i)) { s.pb = pb; }
@@ -218,6 +221,14 @@ impl SoundSink for ClassSoundSink<'_> {
         if let Some(s) = usize::try_from(slot).ok().and_then(|i| self.audio.slots.slots.get_mut(i)) {
             s.owner = Some(crate::audio::voices::Owner { id: moby as u32, privileged: Some(moby) == hero });
             s.pos = pos;
+        }
+    }
+    /// `0x2982e8(slot, offset)`: flag 0x40 and the offset (+0x30) on the slot, its owner kept (the follow does not
+    /// turn the offset yet: crate::audio::voices).
+    fn set_offset(&mut self, slot: i32, offset: [f32; 3]) {
+        if let Some(s) = usize::try_from(slot).ok().and_then(|i| self.audio.slots.slots.get_mut(i)) {
+            s.flags |= crate::audio::voices::flags::ROTATED_OFFSET;
+            s.offset = offset;
         }
     }
 }

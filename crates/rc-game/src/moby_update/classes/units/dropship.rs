@@ -35,7 +35,7 @@
 //! | `0x2f14d0(m, path)` | t = point + fraction + speed / segment; point / fraction kept; before the last point: position / rotation at t (`0x277d40`, open), base z, the speed `0x270830` toward the distance to the last point (15·dt², 30·dt); returns "at the end" | [`follow`] (`path::pose`) |
 //! | `0x2a7eb8(m, v, p, at, n)` | `CreateMoby(0x32)`: distances 0xff, state 0, scale ·3, the owner's light; +0 v, +0x10 at, +0x20 = +0x30 = n, +0x24 \|v\|, +0x28 `randf(−30°, 30°)` [L: the decompile shows one bound], +0x2c `randf(0, 20°)`, +0x34 0; yaw / pitch from v; hidden | [`spawn_shot`] |
 //! | `0x2a7b90` | within 15 of the camera once: `PlayClassSoundByClass(5, 0, m, 0x54c)`; state 0: the trail; d = at − position; aim = polar(\|v\|, atan d + yaw off, pitch(d) + pitch off clamped ±70°); the blend running: v' = lerp(t / n, aim, v), else aim; `CollLine_Fix(position, position + v', 0, m)` or \|d\| < \|v\|: (Giant Clank: `0x26e830(2, 2, 1, m, position, 3, 0, 1, 0)`), sound 4, `SpawnBeamExplosion(4, 4, 4, 2, 9, 1, 15, m, v, position, 10, 3, 16, −1, shake)`, deleted; else moves on | [`shot_update`] |
-//! | `0x2a8010` | as the trooper shot's trail: `rand_vec(0.25·dt)` / `rand_vec(2·dt)`, sizes 0.5 / 0.25, phases 2 / 10..20 / 10..20, colours 0x80207080 / 0x401040ff | [`shot_trail`] |
+//! | `0x2a8010` | as the trooper shot's trail: `rand_vec(0.25·dt)` / `rand_vec(2·dt)`, sizes 0.5 / 0.25, phases 2 / 10..20 / 10..20, colours 0x80207080 / 0x401040ff, texture word 0x18 (gp−0x57dc) | [`shot_trail`] |
 
 use crate::moby_runtime::{mode, MobyId};
 use crate::moby_update::creature::{self as c, attack, damage, flash, fx, target, turn, DT, DT2};
@@ -470,6 +470,9 @@ pub fn shot_update(w: &mut World, id: MobyId) {
     }
 }
 
+/// gp−0x57dc: the shot trail's type-2 texture word (`def[0x18]`, the bright ball; −1 would be the smoke `def[23]`).
+const SHOT_TRAIL_FX: i32 = 0x18;
+
 /// `0x2a8010` (module table).
 fn shot_trail(w: &mut World, id: MobyId) {
     let v = p::v4f(&w.m(id).pvars, shot::VEL);
@@ -480,6 +483,6 @@ fn shot_trail(w: &mut World, id: MobyId) {
     v1[3] = 0.5;
     v2[3] = 0.25;
     let t: [i32; 3] = std::array::from_fn(|k| { let (a, b) = [(2.0, 2.0), (10.0, 20.0), (10.0, 20.0)][k]; let r = w.rng.randf(a, b); gscale(w, r) });
-    let a = crate::particles::type02::Spawn { pos: c::pos(w, id), v1, v2, c1: 0x8020_7080, c2: 0x4010_40ff, t, def: -1 };
+    let a = crate::particles::type02::Spawn { pos: c::pos(w, id), v1, v2, c1: 0x8020_7080, c2: 0x4010_40ff, t, def: SHOT_TRAIL_FX };
     fx::part02(w, &a);
 }

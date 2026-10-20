@@ -105,7 +105,7 @@ fn drip(w: &mut World, id: MobyId, on: bool) {
     v1[3] = w.rng.randf(0.05, 0.1);
     v2[3] = w.rng.randf(0.05, 0.1);
     let t = w.ticks(DRIP_T);
-    fx::part02(w, &crate::particles::type02::Spawn { pos, v1, v2, c1: 0x4040_4040, c2: 0x4040_4040, t: [1, t, 1], def: -1 });
+    fx::part02(w, &crate::particles::type02::Spawn { pos, v1, v2, c1: 0x4040_4040, c2: 0x4040_4040, t: [1, t, 1], def: 0x1_0022 }); // gp−0x5208: def[0x22], additive
 }
 
 /// Level12 `0x2ecac0`: the strips (module doc).

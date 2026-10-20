@@ -4,8 +4,8 @@
 //! tower, hums (sound 0, placed 8.7 up) and throws sparks (type 5, one tick in nine). Only hits from above (the
 //! attacker more than 8.7 over it) count; its health spent, it is marked dead (`SetDeathBits`), blasts at joint 0
 //! (sound 1), plays sequence 1 and blows apart in stages: at frame 8.5 at joint 1, at 17 at joints 2 and 3, the anim
-//! over a last blast and five debris bursts along to joint 3, then deleted. Its slot in the targets table 0x1847a8
-//! (+0x74) is 0 while it stands, 1 once it is gone. Already dead in the save: gone at once.
+//! over a last blast and five debris bursts along to joint 3, then deleted. Its map zone flag (level 13's table
+//! 0x1847a8, index +0x74) is 0 while it stands, 1 once it is gone: the map reveals what was behind it. Already dead in the save: gone at once.
 //!
 //! **The burst** (`0x2ce688(m, p, big)`): six type-13 puffs 0.3 up, four debris pieces 0x162 and four 0x163 / 0x164
 //! (out of a box ±1.875 × ±1.875 × 0..3.75, at 0.1..0.23 a tick); big: type-11 streaks (2 + the camera distance under
@@ -39,8 +39,6 @@ pub const PROXY_CLASSES: [i16; 1] = [PROXY];
 
 const DT: f32 = c::DT;
 const PROXY: i16 = 0x660;
-/// The targets table 0x1847a8 (bytes; a unit word each here).
-const TARGETS: u32 = 0x18_47a8;
 
 mod pv_ {
     pub const D: usize = 0x20;
@@ -56,9 +54,10 @@ const BLAST: fx::Beam = fx::Beam { damage_r: 0.0, damage: 0.0, flash: 4.0, flash
 const COLOURS_A: [u32; 6] = [0x4f00_8fff, 0x4f00_8fff, 0x4f00_7fff, 0x4f00_6fff, 0x2fff_ffff, 0x2fff_ffff];
 const COLOURS_B: [u32; 6] = [0x2f00_5f7f, 0x2f00_4f7f, 0x2f00_3f7f, 0x2f00_004f, 0x2f00_0000, 0x3f00_0000];
 
-fn mark(w: &mut World, id: MobyId, v: u32) {
+/// `0x1847a8[+0x74]` = v: the tower's map zone flag (−1 none).
+fn mark(w: &mut World, id: MobyId, v: i32) {
     let s = c::pi32(w, id, o::SLOT);
-    if s != -1 { w.svc.units.set_word(TARGETS + s as u32, v); }
+    if s != -1 { w.svc.map.set_zone_flag(s, v); }
 }
 
 /// `0x30bfb0(scale, parent, p)` (module doc).
@@ -211,15 +210,14 @@ pub fn update(w: &mut World, id: MobyId) {
         }
         1 => {
             mark(w, id, 0);
+            // The hum's slot: played when −1; whenever not alive, `0x2982e8(slot, (0, 0, 8.7))` sets its offset, even
+            // on a slot that now plays another owner's sound (the game's; the owner stays, so the sound stays theirs).
             let v = c::pi32(w, id, o::HUM);
             let alive = v != -1 && w.sound_alive(v, id);
             if !alive {
                 let v = if v == -1 { w.play_sound(0, 4, id) } else { v };
                 c::set_pi32(w, id, o::HUM, v);
-                if v != -1 {
-                    let p = c::pos(w, id);
-                    w.hand_over_sound(v, id, [p[0], p[1], p[2] + 8.7]);
-                }
+                if v != -1 { w.set_sound_offset(v, [0.0, 0.0, 8.7]); }
             }
             if w.m(id).visible != 0 && w.rng.randi(9) == 0 {
                 let r = w.rng.rand();
