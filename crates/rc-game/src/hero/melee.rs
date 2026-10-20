@@ -324,7 +324,23 @@ impl Hero {
         let row = *self.combo_row();
         if blending || frame < Pf::from_i32(row[C_HIT_TO]) { self.items.slot.swap_timer = 2; }
         self.target_speed = Pf::ZERO;
-        // The target branch (0x13fda4 set, timer < 4: speed from the distance to it) is not reachable.
+        // The target branch (0x13fda4 set within ticks(4) of the entry): the step's speed factor 0x13fdbc from the xy
+        // distance to the target (`VecDistance2`), less 0.5 (≥ 0) and the step's reach (0.75 / 0.6 / 1.3): d / 0.9 capped
+        // at 4 / 4 / 1.9, the old factor kept when that is ≤ 1, all only while |d| < 0.8 / 1.7 / 1.7 + 3. The swing
+        // lunges into reach of the crate or enemy the aim found (it was not reachable before the wrench states searched).
+        if let Some(t) = self.melee.target.filter(|_| self.timer < ticks(4)) {
+            if let Some(tp) = env.world.and_then(|w| w.melee_targets().iter().find(|x| x.id == t).map(|x| x.pos)) {
+                let h = super::physics::to_f32x3(self.pos);
+                let mut d = ((tp[0] - h[0]) * (tp[0] - h[0]) + (tp[1] - h[1]) * (tp[1] - h[1])).sqrt() - 0.5;
+                if d < 0.0 { d = 0.0; }
+                let (lim, cap, reach) = match row[C_STEP] { 0 => (0.8f32, 4.0f32, 0.75f32), 1 => (1.7, 4.0, 0.6), _ => (1.7, 1.9, 1.3) };
+                d -= reach;
+                if d.abs() < lim + 3.0 {
+                    let k = (d / 0.9).min(cap);
+                    if 1.0 < k { self.melee.speed_k = Pf::f(k); }
+                }
+            }
+        }
         let k = self.melee.speed_k;
         match row[C_STEP] {
             0 if frame < Pf::b(0x4190_0000) => self.target_speed = (DT * Pf::b(0x408c_cccd)) * k,
