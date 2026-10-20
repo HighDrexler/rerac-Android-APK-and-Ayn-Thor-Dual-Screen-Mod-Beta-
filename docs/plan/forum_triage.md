@@ -268,5 +268,14 @@ second Qwark); the camera dips under Aridia's quicksand (image).
   Thruster-Pack smoke (type-23 puffs, grey 0x808080, blend 0x44 as `0x2c98b8`; its texture `def[23]` is dark grey (≈80,
   alpha to 160), so the GS draws dark puffs: needs a PS2 clip to compare density and length). Giant Clank's red △ tint:
   needs every moby's draws late while the tint is up (a renderer task, see §1.20).
+- Fourth pass (2026-10-20): Giant Clank's pilot — HMDSOLO posted a PS2 frame (`work/forum/files/1560402964324155393/
+  1562025033889480784_Screenshot_YouTube.jpg`): Ratchet's hands above his head on the back's top edge. The port plays
+  sequence 0x81 (level 15's `0x208b80` and level 00's `0x2061f0` both; the loader maps class sequence k to table entry k,
+  Lombyte `l06/world/loaders/00252dd0.c`), whose hands sit at chest height (0.75 vs the head's 0.93); sequence 0x80 has
+  the hands above the head (1.23 vs 1.08). The game re-blends 0x81 every tick (`moby_set_anim_snapshot` has no early
+  out), converging on frame 0: still the chest pose. Unresolved. The Walloper's fist glow (`0x2d1e08` → `FastDrawQuadReal`)
+  sends no TEST register: depth-tested as the port draws it, so its cut through Ratchet's body (reproduced punching
+  toward the camera) would be the PS2's too; needs a PS2 capture. Asked roxas which missiles pass through Giant Clank,
+  and HMDSOLO to retest the self-destruct music.
 - Still open: the audio crackle (the ring's fill, drops at the cap and underruns are now in the 600-tick audio line; none
   seen in a 45 s Kerwan run here); what roxas means by "not facing straight" on the rail.
