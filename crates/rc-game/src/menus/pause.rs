@@ -1160,7 +1160,7 @@ impl PageMenu {
             func::CAMERA_DRAW => options::camera_draw(self, w, a, gs, out),
             func::SOUND_DRAW => options::sound_draw(self, w, a, gs, out),
             func::QUIT_DRAW => options::quit_draw(self, w, a, out),
-            func::PLANET_LIST_DRAW => planet_select::list_draw(self, w, a, out),
+            func::PLANET_LIST_DRAW => planet_select::list_draw(self, w, a, gs, out),
             func::GALAXY_DRAW => planet_select::galaxy_draw(self, w, a, gs, env, out),
             port::DRAW => port::draw(self, w, a, out),
             gadgets::func::GRID_DRAW => gadgets::grid_draw(self, w, a, gs, env.vsync, out),
