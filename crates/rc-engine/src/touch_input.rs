@@ -11,10 +11,11 @@ pub const TRIANGLE: u32 = 0x10;
 pub const CROSS: u32 = 0x40;
 pub const SQUARE: u32 = 0x80;
 pub const L1: u32 = 0x04;
+pub const R1: u32 = 0x08;
 // From the original v16 TouchLayout: PACK = 0x10000, THROW = 0x20000.
 pub const PACK_REQUEST: u32 = 0x1_0000;
 pub const THROW_REQUEST: u32 = 0x2_0000;
-const THROW_AIM_TICKS: u8 = 34;
+const THROW_AIM_TICKS: u8 = 2;
 const THROW_RELEASE_TICKS: u8 = THROW_AIM_TICKS + 2;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -30,8 +31,8 @@ pub struct InputState {
     // An existing weapon-wheel hold must not turn into contextual Triangle
     // when Ratchet walks into a prompt. Only a NEW down edge at the prompt arms it.
     triangle_armed: bool,
-    // A short tap starts one auto-chord: L1 enters the original aiming
-    // stance; after its 20-tick minimum, Square throws the wrench.
+    // A short tap crouches first, then presses Square for Comet-Strike.
+    // Never synthesize L1/L2: those enter the first-person look stance.
     throw_ticks: Option<u8>,
     touch_at: Option<Instant>,
     pulses: VecDeque<u32>,
@@ -89,6 +90,12 @@ impl InputState {
     /// PS2 Triangle *only* when the game has an actual interaction prompt;
     /// otherwise its original Java weapon-wheel gesture stays independent.
     pub fn tick(&mut self, now: Instant, gameplay: bool, prompt: bool) -> Sample {
+        self.tick_with_vendor(now, gameplay, prompt, false)
+    }
+
+    /// Vendor uses Triangle as Exit, even though it is not Gameplay mode.
+    /// Forward only a fresh edge so a latched wheel cannot exit on entry.
+    pub fn tick_with_vendor(&mut self, now: Instant, gameplay: bool, prompt: bool, vendor: bool) -> Sample {
         if self.paused { return Sample::default(); }
         let mut out = self.physical;
         let physical_buttons = self.physical.buttons | std::mem::take(&mut self.pending_physical);
@@ -105,6 +112,7 @@ impl InputState {
         // the wheel. Only suppress a pre-existing gesture *while* a prompt
         // is displayed. Contextual Triangle still requires a fresh DOWN.
         if !gameplay || (prompt && !self.triangle_armed) { touch_buttons &= !TRIANGLE; }
+        if vendor { touch_buttons |= touch_edges & TRIANGLE; }
         // Unlike a finger hover, physical Triangle must always be retained.
         out.buttons = physical_buttons | touch_buttons;
         let fresh = self.touch_at.is_some_and(|t|
@@ -115,13 +123,17 @@ impl InputState {
                 out.touch_axes |= bit;
             }
         }
+        if vendor {
+            // Java wheel axes are selection gestures, not vendor navigation.
+            out.axes[0..2].copy_from_slice(&self.physical.axes[0..2]);
+            out.touch_axes &= !1;
+        }
         if !gameplay {
             self.throw_ticks = None;
         } else if let Some(t) = self.throw_ticks {
-            // R1 crouches: L1/L2 is the actual look/strafe stance used
-            // by rc-game's Hero::weapon_check() wrench throw. Holding L1
-            // first is essential: a same-frame L1+Square causes a swing.
-            out.buttons |= L1;
+            // Establish crouch before Square: tr_crouch dispatches the
+            // original Comet-Strike state 0x15 without first-person aim.
+            out.buttons |= R1;
             if t == THROW_AIM_TICKS { out.buttons |= SQUARE; }
             self.throw_ticks = if t >= THROW_RELEASE_TICKS { None } else { Some(t + 1) };
         }
@@ -211,12 +223,12 @@ mod tests {
         s.touch(THROW_REQUEST,ZERO,0,n);
         s.touch(0,ZERO,0,n);
         for _ in 0..THROW_AIM_TICKS {
-            assert_eq!(tick(&mut s,n).buttons&(L1|SQUARE),L1);
+            assert_eq!(tick(&mut s,n).buttons&(R1|SQUARE),R1);
         }
-        assert_eq!(tick(&mut s,n).buttons&(L1|SQUARE),L1|SQUARE);
-        assert_eq!(tick(&mut s,n).buttons&(L1|SQUARE),L1);
-        assert_eq!(tick(&mut s,n).buttons&(L1|SQUARE),L1);
-        assert_eq!(tick(&mut s,n).buttons&(L1|SQUARE),0);
+        assert_eq!(tick(&mut s,n).buttons&(R1|SQUARE),R1|SQUARE);
+        assert_eq!(tick(&mut s,n).buttons&(R1|SQUARE),R1);
+        assert_eq!(tick(&mut s,n).buttons&(R1|SQUARE),R1);
+        assert_eq!(tick(&mut s,n).buttons&(R1|SQUARE),0);
     }
     #[test] fn throw_cannot_leak_into_menus_or_retrigger_while_held() {
         let mut s=InputState::default();let n=Instant::now();
@@ -225,7 +237,7 @@ mod tests {
         assert_eq!(s.tick(n,true,false).buttons,0);
         s.touch(0,ZERO,0,n);
         s.touch(THROW_REQUEST,ZERO,0,n);
-        assert_eq!(s.tick(n,true,false).buttons,L1);
+        assert_eq!(s.tick(n,true,false).buttons,R1);
         for _ in 0..(THROW_RELEASE_TICKS as usize+2){ s.tick(n,true,false); }
         s.touch(THROW_REQUEST,ZERO,0,n);
         assert_eq!(s.tick(n,true,false).buttons,0);
@@ -235,4 +247,25 @@ mod tests {
         s.touch(PACK_REQUEST,ZERO,0,n);s.touch(0,ZERO,0,n);
         assert_eq!(tick(&mut s,n).buttons,0);
     }
+    #[test] fn vendor_weapon_tap_exits_without_reusing_a_wheel_hold() {
+        let mut s=InputState::default();let n=Instant::now();
+        s.touch(TRIANGLE,[1.,0.,0.,0.],1,n);
+        s.tick(n,true,false);
+        assert_eq!(s.tick_with_vendor(n,false,false,true).buttons & TRIANGLE,0);
+        s.touch(0,ZERO,0,n);
+        s.touch(TRIANGLE,[1.,0.,0.,0.],1,n);
+        s.touch(0,ZERO,0,n); // tap entirely between simulation ticks
+        let exit=s.tick_with_vendor(n,false,false,true);
+        assert_eq!(exit.buttons & TRIANGLE,TRIANGLE);
+        assert_eq!(exit.axes[0..2],[0.,0.]);
+        assert_eq!(s.tick_with_vendor(n,false,false,true).buttons & TRIANGLE,0);
+    }
+    #[test] fn throw_never_synthesizes_first_person_shoulders() {
+        let mut s=InputState::default();let n=Instant::now();
+        s.touch(THROW_REQUEST,ZERO,0,n);s.touch(0,ZERO,0,n);
+        for _ in 0..=THROW_RELEASE_TICKS {
+            assert_eq!(tick(&mut s,n).buttons & (L1|0x01),0);
+        }
+    }
+
 }

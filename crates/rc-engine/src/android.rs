@@ -97,13 +97,17 @@ fn sample_tick(
         let it = &p.svc.interact;
         it.prompt_hud || it.talk_shown || it.class_shown
     });
+    let vendor = menu.as_ref().is_some_and(|m|
+        m.state.mode == rc_game::menus::mode::Mode::Vendor)
+        && !crate::saves::front_end_active();
     let sample=input().lock().unwrap_or_else(|e| e.into_inner())
-        .tick(Instant::now(), gameplay, prompt);
+        .tick_with_vendor(Instant::now(), gameplay, prompt, vendor);
     const _: () = {
         assert!(crate::touch_input::TRIANGLE == rc_game::pad::button::TRIANGLE);
         assert!(crate::touch_input::CROSS == rc_game::pad::button::CROSS);
         assert!(crate::touch_input::SQUARE == rc_game::pad::button::SQUARE);
         assert!(crate::touch_input::L1 == rc_game::pad::button::L1);
+        assert!(crate::touch_input::R1 == rc_game::pad::button::R1);
     };
     let mut p=rc_game::pad::PadInput::neutral();
     let raw=|v:f32| (127.5+127.5*(v*crate::input_map::STICK_SCALE).clamp(-1.,1.)).round() as u8;
