@@ -53,6 +53,7 @@ use rc_game::movie_player::{MovieContext, MovieFrame, MoviePlayer, Phase, MOVIE_
 use rc_game::pad::{button, PadState};
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::Instant;
 use crate::movie_pipe::{channel as sync_channel, Receiver, Sender as SyncSender, Empty};
 use std::sync::Mutex;
 
@@ -176,6 +177,10 @@ struct Running {
     last_phase: Option<Phase>,
     owner: Option<crate::audio_queue::MovieOwner>,
     media_cancelled: bool,
+    /// Diagnostic counters only: never gate or slow movie playback.
+    started: Instant,
+    presented: u32,
+    initial_underruns: u64,
 }
 
 /// The movie state, published for the tick's run condition and the reports.
@@ -390,6 +395,9 @@ fn movie_frame(
             last_phase: None,
             owner: audio.as_ref().map(|a| a.begin_movie()),
             media_cancelled: false,
+            started: Instant::now(),
+            presented: 0,
+            initial_underruns: audio.as_ref().map_or(0, |a| a.underruns()),
         });
     }
     let Some(rt) = st.running.as_mut() else { return };
@@ -467,6 +475,7 @@ fn movie_present(
             if let Some(img) = images.get_mut(&st.image) {
                 img.data = Some(std::mem::take(&mut rt.rgba));
                 rt.shown = Some(index);
+                rt.presented = rt.presented.saturating_add(1);
                 if st.trace && index.is_multiple_of(30) {
                     println!("movie: rendered app frame {}: picture {} of {:?} ({} ticks)", frame_no.0, index, rt.total, rt.frames);
                 }
@@ -505,6 +514,17 @@ fn movie_exit(
         "movie: app frame {}: mpegs[{}] {} after {} movie frames ({} of {:?} pictures decoded); mode 0, music_start_track, gameplay resumes",
         frame_no.0, rt.req.file, if rt.player.skipped { "skipped" } else { "played through" }, rt.frames, rt.received, rt.total
     );
+    #[cfg(target_os = "android")]
+    {
+        let elapsed = rt.started.elapsed().as_secs_f64();
+        let ticks_per_second = rt.frames as f64 / elapsed.max(0.001);
+        let underruns = audio.as_ref().map_or(0, |a| a.underruns());
+        println!(
+            "movie-perf: mpegs[{}] wall={elapsed:.2}s fixed_ticks={} tick_hz={ticks_per_second:.1} decoded_through={} uploaded={} audio_underruns={} skipped={}",
+            rt.req.file, rt.frames, rt.received, rt.presented,
+            underruns.saturating_sub(rt.initial_underruns), rt.player.skipped
+        );
+    }
     st.finished.push((rt.req.file, rt.player.skipped));
     set_visible(&mut vis, st.root, false);
     set_visible(&mut vis, st.picture, false);
