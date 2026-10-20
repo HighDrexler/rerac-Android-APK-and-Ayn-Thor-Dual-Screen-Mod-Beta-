@@ -18,7 +18,7 @@ on:
         type: string
         default: '22'
   push:
-    branches: [integration/native-core-035]
+    branches: [experimental]
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
           run=json.loads(Path('work/native-run.json').read_text())
           assert run['conclusion']=='success' and run['repository']['id']==1424927008
           assert run['path']=='.github/workflows/android-native-build.yml'
-          assert run['head_branch']=='integration/native-core-035'
+          assert run['head_branch']=='experimental'
           assert run['id']==int(os.environ['NATIVE_RUN'])
           PY
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
