@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [integration/native-core-035]
-    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py]
+    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
 permissions:
   contents: read
   actions: read
