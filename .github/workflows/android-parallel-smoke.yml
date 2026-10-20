@@ -54,13 +54,29 @@ jobs:
           mod.EXPECTED_SIGNER=signer
           candidates=list(Path('work/candidate').rglob('ReRAC-Launcher-*-unsigned.apk'))
           assert len(candidates)==1
-          report=mod.transform(candidates[0],Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/unsigned.apk'),signer)
+          report=mod.transform(candidates[0],Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/unsigned.apk'),signer,version='1.1.0-beta.5',code=21)
           print('Reproduced sidecar APK',report['core_version'],report['bytes'])
           PY
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --alignment-preserved --ks "$keydir/test.p12" --ks-type PKCS12 --ks-key-alias preflight --ks-pass file:"$keydir/password" --v4-signing-enabled false --out work/test/sidecar.apk work/test/unsigned.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose work/test/sidecar.apk
           rm -f "$keydir/test.p12" "$keydir/password" "$keydir/cert.der"
           rmdir "$keydir"
+      - name: Compile production-certificate DEX using D8, not binary patching
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,os
+          from pathlib import Path
+          path=Path('android/release/parallel_package.py')
+          spec=importlib.util.spec_from_file_location('parallel_package',path)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          zipalign=Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign'
+          dex=mod.source_built_dex(mod.EXPECTED_SIGNER,zipalign)
+          assert b'UpdateApkProvider' in dex
+          Path('work/reports/production-launcher-classes6.dex').write_bytes(dex)
+          print('Production launcher rebuilt with valid D8 string table:',len(dex),'bytes')
+          PY
       - name: Enable disposable Android emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
