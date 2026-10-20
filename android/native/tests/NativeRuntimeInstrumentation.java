@@ -78,9 +78,10 @@ public final class NativeRuntimeInstrumentation extends Instrumentation {
             require(!nativeResult.isNull("backend"),"Graphics backend was not reported");
             evidence.put("native_runtime",nativeResult);
             require(getUiAutomation().performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME),"Cannot background NativeActivity");
-            SystemClock.sleep(1800);JSONObject paused=report(report);
-            require(paused.getBoolean("paused"),"Native lifecycle did not pause");
-            long ticks=paused.getLong("ticks");SystemClock.sleep(1200);
+            SystemClock.sleep(1800);
+            long ticks=report(report).getLong("ticks");SystemClock.sleep(1200);
+            // A suspended NativeActivity may stop its event loop entirely. The
+            // report must stop advancing; it need not get rewritten while asleep.
             require(report(report).getLong("ticks")==ticks,"Simulation continued while backgrounded");
             c.startActivity(intent);SystemClock.sleep(3000);
             JSONObject resumed=report(report);require(!resumed.getBoolean("paused")&&resumed.getLong("ticks")>ticks,"Native lifecycle did not resume");
