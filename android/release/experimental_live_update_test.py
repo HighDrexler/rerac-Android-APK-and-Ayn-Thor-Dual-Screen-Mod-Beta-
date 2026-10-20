@@ -62,6 +62,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--apk',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--initial-code',type=int,default=22);p.add_argument('--target-code',type=int,default=23)
     p.add_argument('--target-version',default='1.1.0-beta.7');p.add_argument('--target-sha256',required=True)
+    p.add_argument('--channel',choices=('Development','Stable'),default='Development')
     args=p.parse_args();require(args.target_code>args.initial_code>0,'Invalid version progression')
     require(bool(re.fullmatch('[0-9a-f]{64}',args.target_sha256)),'Invalid expected APK digest')
     out=args.output;out.mkdir(parents=True,exist_ok=True)
@@ -72,7 +73,7 @@ def main():
         # Pre-grant only the install-source permission in this disposable emulator.
         # Android's actual package-install confirmation is still exercised below.
         sh('appops set '+PKG+' REQUEST_INSTALL_PACKAGES allow')
-        click('Updates',True);click('Development');click('Check for updates')
+        click('Updates',True);click(args.channel);click('Check for updates')
         await_text('A signed update is available.');screen(out,'01-real-feed-update-available')
         click('Download update');time.sleep(2);screen(out,'02-real-apk-downloading')
         end=time.monotonic()+360
@@ -98,12 +99,12 @@ def main():
         require(len(installed)==1 and installed[0].startswith('package:/data/app/'),'Unexpected installed package path')
         apk_path=installed[0][len('package:'):]
         require(bool(re.fullmatch('/[A-Za-z0-9_./=+~-]+',apk_path)),'Unsafe installed package path')
-        require(sh('sha256sum '+apk_path).split()[0]==args.target_sha256,'Installed APK differs from approved beta.7')
+        require(sh('sha256sum '+apk_path).split()[0]==args.target_sha256,'Installed APK differs from exact approved release hash')
         require(sh('cat /data/user/0/'+PKG+'/files/network-update-canary')=='network-update-kept-data','Network update lost app data')
         require(adb('exec-out','cat','/data/user/0/'+PKG+'/files/dual-screen.setting',binary=True)==b'\1','Network update reset dual-screen setting')
-        click('Updates',True);root=dump();require(any(n.get('text')=='Development' and n.get('checked')=='true' for n in root.iter('node')),'Network update reset channel')
+        click('Updates',True);root=dump();require(any(n.get('text')==args.channel and n.get('checked')=='true' for n in root.iter('node')),'Network update reset channel')
         click('Check for updates');await_text('You already have this version');screen(out,'07-no-repeat-update')
-        report=dict(status='passed',android_release=sh('getprop ro.build.version.release'),abi=sh('getprop ro.product.cpu.abi'),initial_version_code=args.initial_code,final_version_code=args.target_code,target_version=args.target_version,installed_apk_sha256=args.target_sha256,live_https_feed_verified=True,live_https_apk_download_verified=True,actual_android_installer_confirmed=True,existing_data_preserved=True,mod_and_channel_preserved=True,permission_setup='REQUEST_INSTALL_PACKAGES pre-granted only in disposable emulator',tested_native_gameplay=False,tested_physical_dual_screen=False)
+        report=dict(status='passed',android_release=sh('getprop ro.build.version.release'),abi=sh('getprop ro.product.cpu.abi'),initial_version_code=args.initial_code,final_version_code=args.target_code,target_version=args.target_version,installed_apk_sha256=args.target_sha256,live_https_feed_verified=True,live_https_apk_download_verified=True,actual_android_installer_confirmed=True,existing_data_preserved=True,mod_and_channel_preserved=True,update_channel=args.channel,permission_setup='REQUEST_INSTALL_PACKAGES pre-granted only in disposable emulator',tested_native_gameplay=False,tested_physical_dual_screen=False)
         (out/'network-update-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
     finally:
         (out/'logcat.txt').write_text(adb('logcat','-d',check=False))
