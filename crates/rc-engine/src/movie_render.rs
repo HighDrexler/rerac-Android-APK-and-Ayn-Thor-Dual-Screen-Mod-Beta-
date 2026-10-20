@@ -273,7 +273,9 @@ fn setup(mut commands: Commands, mut state: ResMut<MovieState>, mut images: ResM
     ));
     let size = Extent3d { width: 512, height: 416, depth_or_array_layers: 1 };
     let mut img = Image::new_fill(size, TextureDimension::D2, &[0, 0, 0, 255], TextureFormat::Rgba8UnormSrgb, RenderAssetUsages::default());
-    img.sampler = ImageSampler::nearest();
+    // Original compressed 512x416 MPEG should not be enlarged by nearest-neighbour.
+    // The rest of the game keeps its chosen sharp-pixel option unchanged.
+    img.sampler = ImageSampler::linear();
     state.image = images.add(img);
     let full = || Node { position_type: PositionType::Absolute, left: Val::Px(0.0), top: Val::Px(0.0), width: Val::Percent(100.0), height: Val::Percent(100.0), ..default() };
     // On the frame's 4:3 box (crate::display); the root is black around it.
