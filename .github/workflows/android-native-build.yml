@@ -8,6 +8,7 @@ on:
       - Cargo.toml
       - Cargo.lock
       - android/native/**
+      - android/launcher/**
       - .github/workflows/android-native-build.yml
 permissions:
   contents: read
@@ -36,12 +37,13 @@ jobs:
           git merge-base --is-ancestor "$upstream" HEAD
           python3 android/native/apply_engine_hooks.py
           python3 android/native/apply_media_hooks.py
+          python3 android/native/apply_probe_hooks.py
           git diff --check
-          git add -- crates/rc-engine
+          git add -- crates/rc-engine Cargo.lock
           if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'Wire source-built Android runtime, graphics and media ownership into engine'
+            git commit -m 'Wire source-built Android runtime, graphics, media and diagnostic entry points'
             git push origin HEAD:integration/native-core-035
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -107,7 +109,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo ndk -t '${{ matrix.abi }}' --platform 26 -o out/jniLibs build -p rc-engine --lib --release 2>&1 | tee out/native-build.log
+          cargo ndk -t '${{ matrix.abi }}' --platform 26 -o out/jniLibs build -p rc-engine --lib --release --locked 2>&1 | tee out/native-build.log
           readelf -lW out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-segments.txt
           readelf --dyn-syms --wide out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/elf-exports.txt
           sha256sum out/jniLibs/${{ matrix.abi }}/* > out/SHA256SUMS
@@ -121,5 +123,64 @@ jobs:
         with:
           name: native-core-${{ matrix.abi }}
           path: out
+          retention-days: 14
+          if-no-files-found: error
+  package:
+    needs: [prepare, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: android/launcher/pom.xml
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-core-*
+          path: work/native
+      - name: Prepare pinned original Android package and SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/tools out
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/v1.0/ReRAC-Mobile-v1.0.zip' -o work/v16.zip
+          echo '327e92b042e135dba115f332104ee947978d6aca9b3a4fa56c8e48e29bf623cc  work/v16.zip' | sha256sum -c -
+          unzip -p work/v16.zip ReRAC-Mobile-v16.apk > work/baseline.apk
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          ln -s "$sdk/build-tools/36.0.0" work/tools/build-tools
+          ln -s "$sdk/platforms/android-36/android.jar" work/tools/android.jar
+          (cd work/native/native-core-arm64-v8a && zip -qr ../../arm64.zip .)
+          (cd work/native/native-core-x86_64 && zip -qr ../../x86.zip .)
+      - name: Launcher regressions
+        working-directory: android/launcher
+        run: mvn --batch-mode test
+      - name: Package actual native core and separate runtime test
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("android/native/candidate.json"))["launcher_version"])')"
+          code="$(python3 -c 'import json; print(json.load(open("android/native/candidate.json"))["version_code"])')"
+          python3 android/native/package_core.py --baseline work/baseline.apk --tools work/tools --arm64 work/arm64.zip --x86 work/x86.zip --version "$version" --code "$code" --output "out/ReRAC-Launcher-$version-unsigned.apk"
+          python3 android/native/build_probe.py --tools work/tools --output out/ReRAC-Native-Probe-unsigned.apk
+          git rev-parse HEAD > out/source-commit.txt
+          cp android/native/candidate.json out/candidate.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-native-candidate
+          path: |
+            out
+            android/launcher/target/surefire-reports
           retention-days: 14
           if-no-files-found: error
