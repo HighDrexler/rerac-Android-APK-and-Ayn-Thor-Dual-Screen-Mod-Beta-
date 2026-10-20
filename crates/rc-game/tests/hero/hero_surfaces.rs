@@ -189,6 +189,28 @@ fn slippery_floor_is_the_slide() {
     }
 }
 
+/// A jump off the slide keeps the slide's momentum (L00 `0x214658`: over the ice, a jump latched on it accelerates
+/// by 0.17·dt²): with the stick turned away in the air, Ratchet still travels on at most of his slide speed.
+#[test]
+fn ice_jump_keeps_the_slide() {
+    let Some(lv) = level_data(12) else { return };
+    let p = find_surface(&lv.mesh, 7).expect("a clear surface-7 face");
+    let input = |t: u32| match t {
+        40..=89 => PadInput::neutral().stick(1.0, 0.0),
+        90 => PadInput::neutral().stick(1.0, 0.0).press(button::CROSS),
+        91..=130 => PadInput::neutral().stick(0.0, 1.0),
+        _ => PadInput::neutral(),
+    };
+    let recs = drop_in(&lv, 12, [p[0], p[1], p[2] + 0.5], 0.0, 130, input);
+    let s = states(&recs);
+    assert!(s.iter().any(|x| x == &(90, 7)), "the jump from the slide: {s:?}");
+    let v = |t: usize| ((recs[t].1[0] - recs[t - 1].1[0]).powi(2) + (recs[t].1[1] - recs[t - 1].1[1]).powi(2)).sqrt();
+    let slide = v(89);
+    let air: Vec<f32> = (103..113).map(v).collect();
+    assert!(recs[103..113].iter().all(|r| r.0 == 7 && r.1[2] > recs[89].1[2] + 0.3), "airborne: {s:?}");
+    assert!(slide > 0.02 && air.iter().all(|&a| a > 0.8 * slide), "slide {slide} per tick, in the air {air:?}");
+}
+
 /// Novalis' flow chutes (surface 4; the flow class 679 near them is not ported): standing on one is the sinking
 /// floor 0x31 (group 0x10); without the flow's push and its 0x13f530 hold nothing moves him.
 #[test]
