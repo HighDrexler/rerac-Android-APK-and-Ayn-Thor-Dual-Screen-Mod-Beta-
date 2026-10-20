@@ -1,0 +1,135 @@
+name: Android native candidate preflight
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run:
+        description: Successful android-native-build run to execute (no publication)
+        type: string
+        required: true
+        default: '39350794010'
+  push:
+    branches: [integration/native-core-035]
+    paths:
+      - .github/workflows/android-native-preflight.yml
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: android-native-preflight
+  cancel-in-progress: false
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_RUN: ${{ inputs.candidate_run || '39350794010' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require the exact native build, not another launcher-only build
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_RUN" =~ ^[0-9]+$ ]]
+          mkdir -p work/candidates work/reports
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CANDIDATE_RUN" > work/run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('work/run.json').read_text())
+          assert r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/android-native-build.yml'
+          assert r['head_branch']=='integration/native-core-035'
+          assert r['id']==int(os.environ['CANDIDATE_RUN'])
+          PY
+          gh run watch "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          gh run download "$CANDIDATE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidates
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Prepare disposable emulator-only signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          mkdir -p work/test-apks
+          curl --fail --location --retry 3 'https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/download/launcher-v1.1.0-beta.3/ReRAC-Launcher-1.1.0-beta.3.apk' -o work/previous.apk
+          echo '06e908ebf1304886dce744f319949606d15c33bd84badc4f6ade10b66e1461f3  work/previous.apk' | sha256sum -c -
+          # This key cannot update users' releases. It never leaves this runner.
+          keydir="$RUNNER_TEMP/rerac-preflight-key"
+          mkdir -m 700 "$keydir"
+          python3 -c 'import secrets,sys; open(sys.argv[1],"w").write(secrets.token_hex(32))' "$keydir/password"
+          chmod 600 "$keydir/password"
+          keytool -genkeypair -noprompt -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias preflight -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Disposable ReRAC CI Preflight'
+          export PREFLIGHT_KEYDIR="$keydir"
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess,zipfile
+          from pathlib import Path
+          root=Path('work/candidates')
+          candidates=list(root.rglob('ReRAC-Launcher-*-unsigned.apk'))
+          probes=list(root.rglob('ReRAC-Native-Probe-unsigned.apk'))
+          assert len(candidates)==1 and len(probes)==1
+          candidate=candidates[0]
+          with zipfile.ZipFile(candidate) as z:
+              meta=json.loads(z.read('assets/rerac-build.json'))
+          assert meta['native_source_rebuild'] is True and meta['core_version']=='0.3.5'
+          assert meta['version_code']>19
+          report=json.loads(candidate.with_suffix('.build-report.json').read_text())
+          assert report['unsigned_sha256']==hashlib.sha256(candidate.read_bytes()).hexdigest()
+          assert report['native_source_sha']==meta['native_source_sha']
+          sdk=Path(os.environ.get('ANDROID_SDK_ROOT') or os.environ['ANDROID_HOME'])/'build-tools/36.0.0'
+          key=Path(os.environ['PREFLIGHT_KEYDIR'])
+          for source,dest in [(Path('work/previous.apk'),'previous.apk'),(candidate,'candidate.apk'),(probes[0],'probe.apk')]:
+              out=Path('work/test-apks')/dest
+              subprocess.run([str(sdk/'apksigner'),'sign','--alignment-preserved','--ks',str(key/'test.p12'),'--ks-key-alias','preflight','--ks-pass','file:'+str(key/'password'),'--v4-signing-enabled','false','--out',str(out),str(source)],check=True)
+              subprocess.run([str(sdk/'apksigner'),'verify','--verbose',str(out)],check=True)
+          with zipfile.ZipFile(candidate) as before,zipfile.ZipFile('work/test-apks/candidate.apk') as after:
+              for entry in before.infolist():
+                  if not entry.filename.startswith('META-INF/'):
+                      assert before.read(entry)==after.read(entry.filename),entry.filename
+          Path('work/reports/preflight-scope.json').write_text(json.dumps(dict(schema=1,candidate_run=int(os.environ['CANDIDATE_RUN']),unsigned_sha256=report['unsigned_sha256'],native_source_sha=meta['native_source_sha'],core_version=meta['core_version'],signing_scope='Disposable emulator-only certificate; not the original release signer',release_signer_verified=False,development_feed_changed=False),indent=2)+'\n')
+          PY
+          rm -f "$keydir/test.p12" "$keydir/password"
+          rmdir "$keydir"
+      - name: Enable KVM only on the disposable runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Execute the native engine and test an in-place package upgrade
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/native_emulator.py --previous work/test-apks/previous.apk --candidate work/test-apks/candidate.apk --probe work/test-apks/probe.apk --output work/reports
+      - name: Mark results as preflight, never release-signing approval
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('work/reports/native-smoke-report.json')
+          if p.is_file():
+              r=json.loads(p.read_text());r.update(signing_scope='Disposable emulator-only certificate',release_signer_verified=False,tested_system_installer_update=False,development_feed_changed=False)
+              p.write_text(json.dumps(r,indent=2)+'\n')
+          PY
+      - name: Retain runtime evidence only, never ephemeral keys or test-signed APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-native-preflight-evidence
+          path: work/reports
+          retention-days: 14
+          if-no-files-found: warn
