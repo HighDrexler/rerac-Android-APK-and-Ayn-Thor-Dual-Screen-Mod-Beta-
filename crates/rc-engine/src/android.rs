@@ -2,6 +2,7 @@
 //! JNI threads only exchange immutable snapshots or bounded commands. All game
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
+mod companion_policy;
 include!(concat!(env!("OUT_DIR"), "/android_core_build.rs"));
 mod probe;
 use crate::touch_input::InputState;
@@ -118,7 +119,10 @@ fn java_pixels(env: JNIEnv, data: Option<Arc<[i32]>>) -> jintArray {
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeSelect(_env:JNIEnv,_class:JClass,slot:jint,item:jint,generation:jlong) {
     if slot<0 || item<0 || generation<0 {return;}
     let snap=published().read().unwrap_or_else(|e|e.into_inner());
-    if snap.generation==generation as u64 && snap.selection.get(slot as usize)==Some(&item) { queue(Command::Select{slot:slot as usize,item,generation:generation as u64}); }
+    if snap.generation!=generation as u64 {return;}
+    let Some(index)=companion_policy::selected_slot(&snap.selection,slot as usize,item) else{return};
+    drop(snap);
+    queue(Command::Select{slot:index,item,generation:generation as u64});
 }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeMenuButton(_env:JNIEnv,_class:JClass,b:jint) { pulse(b as u32); }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeMenuTouch(_env:JNIEnv,_class:JClass,page:jlong,x:jfloat,y:jfloat) { if (0..=u32::MAX as i64).contains(&page)&&x.is_finite()&&y.is_finite() {queue(Command::Touch{page:page as u32,x,y});} }
