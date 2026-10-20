@@ -1,0 +1,5 @@
+{
+  "algorithm": "SHA256withRSA",
+  "payload": "eyJzY2hlbWEiOjEsImNoYW5uZWwiOiJkZXZlbG9wbWVudCIsInJlbGVhc2UiOm51bGx9",
+  "signature": "IaYo/MFCH1QINSYEGhzNhTsaB6QfVKVdkdgx0NAtR4Yeeqg/mzrxndTFND+LEP3OGTEDXnG3EeeajzbkIOiNCDRCJBwv+/70NckSrcOO6nA2U9YVk7ayePGcczVX3ZHZhbMWc9oqPufKLwhL9PB46Qe8BzjhkhWNXz3ot0e9MVsGo8FKpC/OdaHZb7SqR/RyH4NmHOuPHqmlfdvm1FMaNGU4f5h0+bfrV4H/kdYkhVjN4NhtKoX1i6DzPsolS+G8Q7Pz2KDucMeORd4NVUnsrYfs2wVsmNxRzeztUveoCswrr4TmGCy/PldeIP06rT/6kkosIcbTmaDtRILyc+D5elYKvJKJkgXQYTUW7sHv982uiWlusK2SsTDYO6+rV/fDUIrsJuZ69MyU3m+ewZ3Z1+a0r5c5eekOy94nU0k0SCdygJuj5VFaQ+hrtz24WFb70x0HBUsDAG6u3Cic4oYLu6LPeZ9ooYJA0pNNYqpTUVSGhtnSMTK7M9+DiIQr1k//"
+}
