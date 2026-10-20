@@ -22,7 +22,12 @@ replace('crates/rc-engine/src/main.rs', '    let mut app = App::new();', '    le
 replace('crates/rc-engine/src/main.rs', 'fn asset_dir() -> String {', 'fn asset_dir() -> String {\n    #[cfg(target_os = "android")]\n    { return String::new(); }')
 replace('crates/rc-engine/src/input_map.rs', '    frame.0 = sample(&keys, &mouse, &motion, gamepads.iter().next());', '    #[cfg(not(target_os = "android"))]\n    { frame.0 = sample(&keys, &mouse, &motion, gamepads.iter().next()); }')
 replace('crates/rc-engine/src/frame_pace.rs', '    let now = Instant::now();\n    let Some(last)', '    let now = Instant::now();\n    #[cfg(target_os = "android")]\n    if crate::android::paused() {\n        pace.last = Some(now); pace.acc = 0.0; pace.next = None;\n        *strategy = TimeUpdateStrategy::FixedTimesteps(0);\n        return;\n    }\n    let Some(last)')
-replace('crates/rc-engine/src/frame_pace.rs', '    let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));', '    #[cfg(not(target_os = "android"))]\n    let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));\n    #[cfg(target_os = "android")]\n    let period = period_for(Some(crate::android::display_mhz()));')
+# Upstream v0.3.6 adds an adaptive 60-Hz fallback and the Android port
+# must use a mutable period, so the original bootstrap replacement is already
+# superseded by the tracked, reviewed native source in this branch.
+pace = (ROOT / 'crates/rc-engine/src/frame_pace.rs').read_text()
+if 'let mut period = period_for(Some(crate::android::display_mhz()));' not in pace:
+    replace('crates/rc-engine/src/frame_pace.rs', '    let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));', '    #[cfg(not(target_os = "android"))]\n    let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));\n    #[cfg(target_os = "android")]\n    let period = period_for(Some(crate::android::display_mhz()));')
 replace('crates/rc-engine/src/menu_render.rs', 'struct MenuRt {', 'pub(crate) struct MenuRt {')
 for field in ('assets', 'qs', 'menu', 'draws', 'render_mode', 'last_counter'):
     p = ROOT / 'crates/rc-engine/src/menu_render.rs'
