@@ -23,8 +23,13 @@ use bevy::time::TimeUpdateStrategy;
 use bevy::window::{Monitor, PrimaryMonitor};
 use std::time::{Duration, Instant};
 
-/// Ticks a frame may run at most (a longer stall's time is dropped).
+/// Gameplay keeps the original limit: avoid spiralling after a long stall.
 pub const MAX_STEPS: u32 = 4;
+/// FMVs need to keep supplying 48 kHz audio during slow GPU presentation.
+/// A long render can require more than four 60 Hz movie ticks, even though
+/// only the last decoded picture is uploaded for that rendered frame.
+pub const MAX_MOVIE_STEPS: u32 = 12;
+fn tick_cap(movie: bool) -> u32 { if movie { MAX_MOVIE_STEPS } else { MAX_STEPS } }
 /// The tick period (1/60 s).
 const TICK: f64 = 1.0 / crate::determinism::TICK_HZ;
 
@@ -63,8 +68,14 @@ impl Plugin for FramePacePlugin {
 }
 
 /// This frame's ticks (module docs).
-fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>) {
+fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>, movies: Res<crate::movie_render::MovieState>) {
     let now = Instant::now();
+    #[cfg(target_os = "android")]
+    if crate::android::paused() {
+        pace.last = Some(now); pace.acc = 0.0; pace.next = None;
+        *strategy = TimeUpdateStrategy::FixedTimesteps(0);
+        return;
+    }
     let Some(last) = pace.last.replace(now) else {
         *strategy = TimeUpdateStrategy::FixedTimesteps(1);
         return;
@@ -77,7 +88,10 @@ fn steps(mut pace: ResMut<Pace>, mut strategy: ResMut<TimeUpdateStrategy>) {
     } else {
         pace.acc.floor()
     };
-    let n = n.min(MAX_STEPS as f64);
+    // Never change ordinary gameplay pacing. While a movie is active the
+    // audio producer must catch up if rendering falls below 15 FPS.
+    // movie_present uploads only once in Update, outside this tick loop.
+    let n = n.min(tick_cap(movies.busy()) as f64);
     pace.acc -= n;
     pace.acc = if pace.limit { pace.acc.clamp(-0.5, 0.5) } else { pace.acc.clamp(0.0, 1.0) };
     *strategy = TimeUpdateStrategy::FixedTimesteps(n as u32);
@@ -97,7 +111,10 @@ fn period_for(mhz: Option<u32>) -> Option<Duration> {
 
 /// The limiter (module docs).
 fn wait(mut pace: ResMut<Pace>, monitors: Query<&Monitor, With<PrimaryMonitor>>) {
+    #[cfg(not(target_os = "android"))]
     let period = period_for(monitors.iter().next().and_then(|m| m.refresh_rate_millihertz));
+    #[cfg(target_os = "android")]
+    let period = period_for(Some(crate::android::display_mhz()));
     if period != pace.period {
         pace.period = period;
         pace.next = None;
@@ -118,6 +135,18 @@ fn wait(mut pace: ResMut<Pace>, monitors: Query<&Monitor, With<PrimaryMonitor>>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn movie_catchup_keeps_audio_at_slow_render_rates() {
+        assert_eq!(tick_cap(false), 4);
+        assert_eq!(tick_cap(true), 12);
+        // A 10 FPS rendered frame represents six 60 Hz audio ticks.
+        // The normal gameplay cap cannot fill that much audio.
+        assert!(tick_cap(false) < 6);
+        assert!(tick_cap(true) >= 6);
+        // A 5 FPS frame can still supply the full 200 ms audio interval.
+        assert_eq!(tick_cap(true), 12);
+    }
 
     #[test]
     fn the_period_follows_the_display() {

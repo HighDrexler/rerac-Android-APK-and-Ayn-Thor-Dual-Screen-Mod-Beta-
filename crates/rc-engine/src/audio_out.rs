@@ -46,7 +46,7 @@ use bevy::prelude::*;
 use bevy::reflect::TypePath;
 use rc_formats::level::LevelCore;
 use rc_game::audio::{self, AudioSystem, FrameInput, LevelAudio};
-use std::collections::VecDeque;
+use crate::audio_queue::{Ring, Cursor, MovieOwner};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -83,52 +83,14 @@ pub fn load(root: &Path, index: u32, core_index: &[u8], core: &LevelCore, core_d
     }
 }
 
-/// Frames the reader waits for before (re)starting: 50 ms.
-const PREFILL: usize = 2400;
-/// Ring cap: 0.25 s (older frames are dropped when the game runs ahead of the device).
-const RING_CAP: usize = 12_000;
+// Ring sizing and movie ownership live in the independently tested audio_queue.
 /// `RC_AUDIO_WAV` length: 10 s unless `RC_AUDIO_WAV_SECONDS`.
 fn wav_frames() -> usize {
     let secs = std::env::var("RC_AUDIO_WAV_SECONDS").ok().and_then(|v| v.trim().parse::<usize>().ok()).filter(|&s| s > 0).unwrap_or(10);
     secs * audio::OUTPUT_RATE as usize
 }
 
-#[derive(Default)]
-struct RingState {
-    frames: VecDeque<[i16; 2]>,
-    running: bool,
-    underruns: u64,
-}
-
-/// Rendered frames waiting for the audio device.
-#[derive(Default)]
-pub struct Ring(Mutex<RingState>);
-
-impl Ring {
-    fn push(&self, frames: &[[i16; 2]]) {
-        let mut r = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        r.frames.extend(frames.iter().copied());
-        let over = r.frames.len().saturating_sub(RING_CAP);
-        r.frames.drain(..over);
-    }
-
-    fn pop(&self) -> [i16; 2] {
-        let mut r = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if !r.running {
-            if r.frames.len() < PREFILL { return [0, 0]; }
-            r.running = true;
-        }
-        match r.frames.pop_front() {
-            Some(f) => f,
-            None => {
-                r.running = false;
-                r.underruns += 1;
-                [0, 0]
-            }
-        }
-    }
-}
-
+// Audio device buffering is owned by audio_queue::Ring.
 /// The asset bevy_audio plays: a handle on the ring.
 #[derive(Asset, TypePath)]
 pub struct MixerStream {
@@ -138,16 +100,17 @@ pub struct MixerStream {
 /// The rodio source: interleaved stereo f32 at 48 kHz, endless.
 pub struct MixerDecoder {
     ring: Arc<Ring>,
-    right: Option<f32>,
+    cursor: Cursor,
 }
 
 impl Iterator for MixerDecoder {
     type Item = f32;
     fn next(&mut self) -> Option<f32> {
-        if let Some(r) = self.right.take() { return Some(r); }
-        let [l, r] = self.ring.pop();
-        self.right = Some(r as f32 / 32768.0);
-        Some(l as f32 / 32768.0)
+        #[cfg(target_os = "android")]
+        let paused = crate::android::paused();
+        #[cfg(not(target_os = "android"))]
+        let paused = false;
+        Some(self.cursor.next(&self.ring, paused))
     }
 }
 
@@ -160,7 +123,7 @@ impl Source for MixerDecoder {
 
 impl Decodable for MixerStream {
     type Decoder = MixerDecoder;
-    fn decoder(&self) -> MixerDecoder { MixerDecoder { ring: Arc::clone(&self.ring), right: None } }
+    fn decoder(&self) -> MixerDecoder { MixerDecoder { ring: Arc::clone(&self.ring), cursor: Cursor::default() } }
 }
 
 /// `RC_AUDIO_WAV`: the first 10 s (`RC_AUDIO_WAV_SECONDS`).
@@ -227,15 +190,24 @@ impl AudioOut {
     pub fn parts(&mut self) -> (&mut AudioSystem, &mut Vec<[i16; 2]>) { (&mut self.system, &mut self.buf) }
 
     /// Frames rendered but not yet taken by the audio device (the output latency the movie clock subtracts).
-    pub fn queued(&self) -> usize { self.ring.0.lock().map(|r| r.frames.len()).unwrap_or(0) }
+    pub fn queued(&self) -> usize { self.ring.queued() }
+
+    /// Aggregate device audio underruns for low-overhead FMV diagnostics.
+    pub fn underruns(&self) -> u64 { self.ring.underruns() }
+
+    pub fn begin_movie(&self) -> MovieOwner { MovieOwner::new(&self.ring) }
 
     /// 800-sample frames output so far (one per 60 Hz tick).
     pub fn frames_out(&self) -> u64 { self.done }
 
     /// Output the rendered frame [`AudioOut::buf`] (ring and WAV capture) and clear it.
-    pub fn push_frame(&mut self) {
+    pub fn push_frame(&mut self) { self.push_owned_frame(0); }
+
+    pub fn push_movie_frame(&mut self, owner: u64) { self.push_owned_frame(owner); }
+
+    fn push_owned_frame(&mut self, owner: u64) {
         self.done += 1;
-        self.ring.push(&self.buf);
+        self.ring.push(&self.buf, owner);
         if let Some(w) = &mut self.wav {
             if !w.written {
                 let take = (w.limit - w.frames.len()).min(self.buf.len());
@@ -402,7 +374,7 @@ fn run_audio(
     if out.done >= out.last_report + 600 {
         out.last_report = out.done;
         let s = &out.system;
-        let underruns = out.ring.0.lock().map(|r| r.underruns).unwrap_or(0);
+        let underruns = out.ring.underruns();
         println!(
             "audio: tick {}, {} slots busy, {} SPU voices active, {} sounds playing, {} plays so far ({} of {} class sounds got a slot), {} underruns{}",
             out.done,

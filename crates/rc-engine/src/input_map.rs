@@ -130,7 +130,8 @@ pub fn sample_system(
     gamepads: Query<&Gamepad>,
     mut frame: ResMut<PadFrame>,
 ) {
-    frame.0 = sample(&keys, &mouse, &motion, gamepads.iter().next());
+    #[cfg(not(target_os = "android"))]
+    { frame.0 = sample(&keys, &mouse, &motion, gamepads.iter().next()); }
 }
 
 /// `RC_PLAY_SCRIPT`: pad input per gameplay tick, `item,item,...` with `item = range:action`.

@@ -53,7 +53,8 @@ use rc_game::movie_player::{MovieContext, MovieFrame, MoviePlayer, Phase, MOVIE_
 use rc_game::pad::{button, PadState};
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::time::Instant;
+use crate::movie_pipe::{channel as sync_channel, Receiver, Sender as SyncSender, Empty};
 use std::sync::Mutex;
 
 /// A movie the game asked for.
@@ -166,10 +167,20 @@ struct Running {
     rgba: Vec<u8>,
     /// The picture on screen (uploaded).
     shown: Option<u32>,
+    /// The last fixed tick's desired UI state. Only Update uploads/presents it;
+    /// a slow render may run up to twelve movie ticks but presents one image.
+    wants_picture: bool,
+    black: f32,
     pad: PadState,
     /// Movie-mode frames so far.
     frames: u32,
     last_phase: Option<Phase>,
+    owner: Option<crate::audio_queue::MovieOwner>,
+    media_cancelled: bool,
+    /// Diagnostic counters only: never gate or slow movie playback.
+    started: Instant,
+    presented: u32,
+    initial_underruns: u64,
 }
 
 /// The movie state, published for the tick's run condition and the reports.
@@ -210,7 +221,7 @@ impl Plugin for MovieRenderPlugin {
             // Mode 1 runs MovieModeUpdate instead of the game tick.
             .configure_sets(FixedUpdate, GameTick.run_if(|s: Res<MovieState>| !blocking(&s)))
             .add_systems(Startup, setup)
-            .add_systems(Update, target_main_camera)
+            .add_systems(Update, (target_main_camera, movie_present))
             .add_systems(FixedUpdate, (movie_exit.before(GameTick), movie_frame.after(GameTick)));
     }
 }
@@ -261,8 +272,10 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
     if tx.send(Msg::Opened { fps: (s.fps_num, s.fps_den), audio: m.audio.take(), info }).is_err() { return; }
     let mut n = 0u32;
     loop {
+        if tx.closed() { return; }
         match m.next_frame() {
             Ok(Some(f)) => {
+                if !tx.should_convert(n) { n += 1; continue; }
                 let mut rgba = Vec::new();
                 rc_video::movie::frame_to_rgba(&f, &mut rgba);
                 if tx.send(Msg::Picture(n, rgba)).is_err() { return; }
@@ -282,9 +295,9 @@ fn decode_thread(path: PathBuf, language: u8, tx: SyncSender<Msg>) {
 
 impl Running {
     /// Handles one worker message (blocking); false when the worker is gone.
-    fn receive(&mut self) -> bool {
+    fn receive(&mut self, blocking: bool) -> bool {
         let rx = self.rx.get_mut().unwrap_or_else(|e| e.into_inner());
-        match rx.recv() {
+        match rx.receive(blocking) {
             Ok(Msg::Opened { fps, audio, info }) => {
                 println!("movie: mpegs[{}] opened: {info}", self.req.file);
                 self.player.set_rate(fps.0, fps.1);
@@ -301,7 +314,8 @@ impl Running {
                 self.opened = true;
                 self.total = Some(self.received);
             }
-            Err(_) => {
+            Err(Empty::Pending) => return false,
+            Err(Empty::Closed) => {
                 self.opened = true;
                 self.total = Some(self.received);
                 return false;
@@ -311,9 +325,10 @@ impl Running {
     }
 
     /// Waits until picture `p` has arrived (or the stream ended before it).
-    fn fetch(&mut self, p: u32) {
-        while !self.opened { if !self.receive() { break; } }
-        while self.received <= p && self.total.is_none() { if !self.receive() { break; } }
+    fn fetch(&mut self, p: u32, blocking: bool) {
+        self.rx.get_mut().unwrap_or_else(|e| e.into_inner()).wanted(p, !blocking);
+        while !self.opened { if !self.receive(blocking) { break; } }
+        while self.received <= p && self.total.is_none() { if !self.receive(blocking) { break; } }
     }
 }
 
@@ -331,9 +346,6 @@ fn movie_frame(
     det: Res<crate::determinism::Deterministic>,
     frame_no: Res<crate::determinism::FrameNumber>,
     ticks: Res<crate::determinism::GameTicks>,
-    mut images: ResMut<Assets<Image>>,
-    mut vis: Query<&mut Visibility>,
-    mut bg: Query<&mut BackgroundColor>,
 ) {
     let st = &mut *state;
     // RC_PLAY_MOVIE: after gameplay tick 1.
@@ -376,9 +388,16 @@ fn movie_frame(
             received: 0,
             rgba: Vec::new(),
             shown: None,
+            wants_picture: false,
+            black: 0.0,
             pad: PadState::default(),
             frames: 0,
             last_phase: None,
+            owner: audio.as_ref().map(|a| a.begin_movie()),
+            media_cancelled: false,
+            started: Instant::now(),
+            presented: 0,
+            initial_underruns: audio.as_ref().map_or(0, |a| a.underruns()),
         });
     }
     let Some(rt) = st.running.as_mut() else { return };
@@ -391,17 +410,25 @@ fn movie_frame(
         println!("movie: RC_MOVIE_SKIP: Start + L1 L2 R1 R2 on movie frame {}", rt.frames);
     }
     let latency = if det.0 { 0 } else { audio.as_ref().map_or(0, |a| a.queued()) as u32 };
-    if let Some(p) = rt.player.wanted_picture(latency) { rt.fetch(p); }
-    let out: MovieFrame = rt.player.tick(&rt.pad, rt.total, latency);
-    rt.frames += 1;
-    // The picture.
-    if let Some(p) = out.picture {
-        if rt.shown != Some(p) && rt.received > 0 {
-            if let Some(mut img) = images.get_mut(&st.image) { img.data = Some(rt.rgba.clone()); }
-            if st.trace && p.is_multiple_of(30) { println!("movie: app frame {} (movie frame {}): picture {} of {:?}", frame_no.0, rt.frames, rt.received - 1, rt.total); }
-            rt.shown = Some(p);
-        }
+    // Keep the native event loop responsive while file/audio decoding opens.
+    // Frame-exact tooling still waits for every original picture.
+    if !rt.opened {
+        rt.fetch(0, det.0);
+        if !rt.opened { return; }
     }
+    if let Some(p) = rt.player.wanted_picture(latency) { rt.fetch(p, det.0); }
+    let out: MovieFrame = rt.player.tick(&rt.pad, rt.total, latency);
+    if rt.player.skipped && !rt.media_cancelled {
+        rt.rx.get_mut().unwrap_or_else(|e|e.into_inner()).close();
+        if let Some(owner) = &rt.owner { owner.cancel(); }
+        rt.media_cancelled = true;
+    }
+    rt.frames += 1;
+    // Never upload every intermediate fixed tick: Android may run several
+    // 60 Hz movie ticks between two GPU frames during cutscenes.
+    // Keep only the latest eligible decoded picture for movie_present (Update).
+    rt.wants_picture = out.picture.is_some();
+    rt.black = out.black;
     if st.trace && rt.last_phase.as_ref().map(std::mem::discriminant) != Some(std::mem::discriminant(&out.phase)) {
         println!("movie: app frame {} (movie frame {}): {:?}", frame_no.0, rt.frames, out.phase);
     }
@@ -425,15 +452,40 @@ fn movie_frame(
             _ => buf.resize(SAMPLES_PER_VSYNC as usize, [0, 0]),
         }
         a.buf = buf;
-        a.push_frame();
+        a.push_movie_frame(rt.owner.as_ref().map_or(0, |o| o.id));
     }
-    // The UI.
-    let playing = out.picture.is_some() && rt.shown.is_some();
-    let set = set_visible;
-    set(&mut vis, st.root, true);
-    set(&mut vis, st.picture, playing);
+}
+
+/// Present only once per rendered frame, after all FixedUpdate audio/movie
+/// ticks have been run. Moving the pixel Vec into the Bevy image avoids a
+/// 512x416x4-byte clone for each 30 Hz picture and cuts GPU uploads when
+/// multiple fixed ticks catch up in a single rendered frame.
+fn movie_present(
+    mut state: ResMut<MovieState>,
+    frame_no: Res<crate::determinism::FrameNumber>,
+    mut images: ResMut<Assets<Image>>,
+    mut vis: Query<&mut Visibility>,
+    mut bg: Query<&mut BackgroundColor>,
+) {
+    let st = &mut *state;
+    let Some(rt) = st.running.as_mut() else { return };
+    if rt.wants_picture && rt.received > 0 {
+        let index = rt.received - 1;
+        if rt.shown != Some(index) && !rt.rgba.is_empty() {
+            if let Some(mut img) = images.get_mut(&st.image) {
+                img.data = Some(std::mem::take(&mut rt.rgba));
+                rt.shown = Some(index);
+                rt.presented = rt.presented.saturating_add(1);
+                if st.trace && index.is_multiple_of(30) {
+                    println!("movie: rendered app frame {}: picture {} of {:?} ({} ticks)", frame_no.0, index, rt.total, rt.frames);
+                }
+            }
+        }
+    }
+    set_visible(&mut vis, st.root, true);
+    set_visible(&mut vis, st.picture, rt.wants_picture && rt.shown.is_some());
     if let Some(mut c) = st.fade.and_then(|e| bg.get_mut(e).ok()) {
-        let want = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fade_alpha(out.black)));
+        let want = BackgroundColor(Color::srgba(0.0, 0.0, 0.0, fade_alpha(rt.black)));
         if *c != want { *c = want; }
     }
 }
@@ -462,6 +514,17 @@ fn movie_exit(
         "movie: app frame {}: mpegs[{}] {} after {} movie frames ({} of {:?} pictures decoded); mode 0, music_start_track, gameplay resumes",
         frame_no.0, rt.req.file, if rt.player.skipped { "skipped" } else { "played through" }, rt.frames, rt.received, rt.total
     );
+    #[cfg(target_os = "android")]
+    {
+        let elapsed = rt.started.elapsed().as_secs_f64();
+        let ticks_per_second = rt.frames as f64 / elapsed.max(0.001);
+        let underruns = audio.as_ref().map_or(0, |a| a.underruns());
+        println!(
+            "movie-perf: mpegs[{}] wall={elapsed:.2}s fixed_ticks={} tick_hz={ticks_per_second:.1} decoded_through={} uploaded={} audio_underruns={} skipped={}",
+            rt.req.file, rt.frames, rt.received, rt.presented,
+            underruns.saturating_sub(rt.initial_underruns), rt.player.skipped
+        );
+    }
     st.finished.push((rt.req.file, rt.player.skipped));
     set_visible(&mut vis, st.root, false);
     set_visible(&mut vis, st.picture, false);

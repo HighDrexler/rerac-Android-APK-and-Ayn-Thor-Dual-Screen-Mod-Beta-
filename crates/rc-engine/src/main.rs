@@ -28,9 +28,16 @@
 //!   `RC_SETTINGS_PAGE=0` no "Port Options" page in the Options menu, crate::menu_render
 //! - `RC_SHADOWS=0|1`, `RC_SHADOW_DEBUG=1`, `RC_SHADOW_TRACE=1` the moby shadows, crate::shadow_render
 
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(any(target_os = "android", test))]
+mod touch_input;
+
 mod crash_log;
 mod asset_write;
 mod audio_out;
+mod audio_queue;
+mod movie_pipe;
 mod determinism;
 mod display;
 mod display_blend;
@@ -153,6 +160,8 @@ fn main() -> anyhow::Result<()> {
     println!("{}", fly_cam::CONTROLS);
 
     let mut app = App::new();
+    #[cfg(target_os = "android")]
+    app.add_plugins(android::AndroidPlugin);
     app.add_plugins(
         DefaultPlugins
             .set(WindowPlugin {
@@ -271,6 +280,8 @@ fn ms(d: Duration) -> f64 { d.as_secs_f64() * 1e3 }
 /// `target/*/rerac`). The executable path is resolved through symlinks first, so a symlinked binary finds the
 /// folder beside its real file.
 pub(crate) fn asset_dir() -> String {
+    #[cfg(target_os = "android")]
+    { return String::new(); }
     let exe = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let dir = exe.as_deref().and_then(std::path::Path::parent);
     [dir.map(|d| d.join("assets")), dir.map(|d| d.join("../Resources/assets"))]

@@ -1,0 +1,141 @@
+name: Android 0.3.5+ parallel APK startup regression
+on:
+  workflow_dispatch:
+    inputs:
+      native_build_run:
+        description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
+        required: false
+        type: string
+        default: '39366245358'
+      launcher_version:
+        description: Candidate launcher version
+        required: false
+        type: string
+        default: '1.1.0-beta.6'
+      version_code:
+        description: Candidate Android versionCode
+        required: false
+        type: string
+        default: '22'
+  push:
+    branches: [integration/native-core-035]
+    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39366245358' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.6' }}
+      REQUEST_CODE: ${{ inputs.version_code || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '22'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Download the real source-built APK candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidate work/reports work/test
+          [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/native-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          run=json.loads(Path('work/native-run.json').read_text())
+          assert run['conclusion']=='success' and run['repository']['id']==1424927008
+          assert run['path']=='.github/workflows/android-native-build.yml'
+          assert run['head_branch']=='integration/native-core-035'
+          assert run['id']==int(os.environ['NATIVE_RUN'])
+          PY
+          gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          printf '%s\n' "$NATIVE_RUN" > work/reports/native-build-run.txt
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography > /dev/null
+      - name: Reproduce sidecar packaging with a disposable signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          keydir="$RUNNER_TEMP/sidecar-smoke-key"
+          mkdir -m 700 "$keydir"
+          python3 -c 'import secrets,sys; open(sys.argv[1],"w").write(secrets.token_hex(24))' "$keydir/password"
+          chmod 600 "$keydir/password"
+          keytool -genkeypair -noprompt -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias preflight -keyalg RSA -keysize 2048 -validity 2 -dname 'CN=Disposable Sidecar Test'
+          keytool -exportcert -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias preflight -file "$keydir/cert.der"
+          export KEYDIR="$keydir"
+          python3 - <<'PY'
+          import hashlib,os,sys,importlib.util
+          from pathlib import Path
+          module=Path('android/release/parallel_package.py')
+          spec=importlib.util.spec_from_file_location('parallel_package',module)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          signer=hashlib.sha256((Path(os.environ['KEYDIR'])/'cert.der').read_bytes()).hexdigest()
+          mod.EXPECTED_SIGNER=signer
+          candidates=list(Path('work/candidate').rglob('ReRAC-Launcher-*-unsigned.apk'))
+          assert len(candidates)==1
+          report=mod.transform(candidates[0],Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/unsigned.apk'),signer,version=os.environ['REQUEST_VERSION'],code=int(os.environ['REQUEST_CODE']))
+          import json,zipfile
+          with zipfile.ZipFile('work/test/unsigned.apk') as z:meta=json.loads(z.read('assets/rerac-build.json'))
+          assert meta['launcher_version']==os.environ['REQUEST_VERSION']
+          assert meta['version_code']==int(os.environ['REQUEST_CODE'])
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+              env.write('EXPECT_LAUNCHER='+meta['launcher_version']+'\n')
+              env.write('EXPECT_CORE='+meta['core_version']+'\n')
+          Path('work/reports/packaged-meta.json').write_text(json.dumps(meta,indent=2)+'\n')
+          print('Reproduced sidecar APK',report['core_version'],report['bytes'])
+          PY
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --alignment-preserved --ks "$keydir/test.p12" --ks-type PKCS12 --ks-key-alias preflight --ks-pass file:"$keydir/password" --v4-signing-enabled false --out work/test/sidecar.apk work/test/unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose work/test/sidecar.apk
+          rm -f "$keydir/test.p12" "$keydir/password" "$keydir/cert.der"
+          rmdir "$keydir"
+      - name: Compile production-certificate DEX using D8, not binary patching
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util,os
+          from pathlib import Path
+          path=Path('android/release/parallel_package.py')
+          spec=importlib.util.spec_from_file_location('parallel_package',path)
+          mod=importlib.util.module_from_spec(spec);spec.loader.exec_module(mod)
+          zipalign=Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign'
+          dex=mod.source_built_dex(mod.EXPECTED_SIGNER,zipalign)
+          assert b'UpdateApkProvider' in dex
+          Path('work/reports/production-launcher-classes6.dex').write_bytes(dex)
+          print('Production launcher rebuilt with valid D8 string table:',len(dex),'bytes')
+          PY
+      - name: Enable disposable Android emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Actually install and launch the sidecar variant
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: bash android/release/sidecar-smoke.sh
+      - name: Collect evidence, including failure cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-sidecar-smoke-evidence
+          path: work/reports
+          if-no-files-found: warn
+          retention-days: 14

@@ -25,3 +25,10 @@ split-debuginfo = "packed"
 opt-level = 3
 # No debug info for external crates (Bevy, wgpu, ...): macOS unpacked debug objects grew target/ to 132 GB.
 debug = false
+
+# Keep the MPEG-2 decoder's hot loops optimized in Android release builds.
+# The broad native build uses many codegen units to avoid Bevy linker OOM,
+# but this small, CPU-bound crate benefits from single-unit optimization.
+[profile.release.package.rc-video]
+opt-level = 3
+codegen-units = 1

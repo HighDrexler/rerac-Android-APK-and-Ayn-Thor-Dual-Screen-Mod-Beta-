@@ -52,7 +52,7 @@ struct MobyLod {
 @group(#{MATERIAL_BIND_GROUP}) @binding(1) var tex_sampler: sampler;
 @group(#{MATERIAL_BIND_GROUP}) @binding(2) var<storage, read> fog: MobyFog;
 @group(#{MATERIAL_BIND_GROUP}) @binding(3) var<storage, read> insts: array<MobyInst>;
-@group(#{MATERIAL_BIND_GROUP}) @binding(4) var<storage, read> palette: array<mat4x4<f32>>;
+@group(#{MATERIAL_BIND_GROUP}) @binding(4) var<storage, read> palette: array<vec4<f32>>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(5) var<storage, read> normal_table: array<vec2<f32>>;
 @group(#{MATERIAL_BIND_GROUP}) @binding(6) var<storage, read> lods: array<MobyLod>;
 
@@ -73,6 +73,13 @@ struct MetalVertexOutput {
     @location(2) @interpolate(linear) fog: f32,
 }
 
+// Explicit 16-byte column loads preserve v16's Adreno storage-matrix workaround.
+// The CPU still uploads the same 64-byte matrices; this changes no asset layout.
+fn joint(index: u32) -> mat4x4<f32> {
+    let p = index * 4u;
+    return mat4x4<f32>(palette[p], palette[p + 1u], palette[p + 2u], palette[p + 3u]);
+}
+
 fn s16(x: i32) -> i32 { return (x << 16u) >> 16u; }
 
 @vertex
@@ -85,12 +92,12 @@ fn vertex(v: MetalVertex) -> MetalVertexOutput {
 
     let count = (v.skin.x >> 16u) & 0xffu;
     let j = vec3<u32>(v.skin.y & 0xffu, (v.skin.y >> 8u) & 0xffu, (v.skin.y >> 16u) & 0xffu);
-    var m = palette[base + j.x];
+    var m = joint(base + j.x);
     if (count >= 2u) {
         let w = vec3<f32>(f32(v.skin.z & 0x3ffu), f32((v.skin.z >> 10u) & 0x3ffu), f32((v.skin.z >> 20u) & 0x3ffu)) / 256.0;
-        m = palette[base + j.x] * w.x + palette[base + j.y] * w.y;
+        m = joint(base + j.x) * w.x + joint(base + j.y) * w.y;
         if (count >= 3u) {
-            m = m + palette[base + j.z] * w.z;
+            m = m + joint(base + j.z) * w.z;
         }
     }
 

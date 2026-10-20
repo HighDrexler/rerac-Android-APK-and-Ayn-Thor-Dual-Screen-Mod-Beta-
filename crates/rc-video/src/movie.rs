@@ -115,17 +115,39 @@ pub fn ycbcr_to_rgb(y: u8, cb: u8, cr: u8) -> [u8; 3] {
 }
 
 /// The frame as RGBA8 (alpha 255), rows top to bottom; `out` is resized to width·height·4.
+///
+/// MPEG-2 movies are 4:2:0, so one Cb/Cr pair belongs to a 2x2 luma block.
+/// Calculate the three chroma corrections ONCE per four output pixels rather
+/// than repeating all five constant multiplies for every pixel. The luma
+/// rounding and final >>16 clamps are identical to `ycbcr_to_rgb`.
 pub fn frame_to_rgba(f: &Frame, out: &mut Vec<u8>) {
     let (w, h) = (f.width, f.height);
-    out.resize(w * h * 4, 0);
+    assert!(w.is_multiple_of(2) && h.is_multiple_of(2), "MPEG-2 4:2:0 dimensions must be even");
+    let pixels = w.checked_mul(h).expect("MPEG dimensions overflow");
+    out.resize(pixels.checked_mul(4).expect("RGBA dimensions overflow"), 0);
     let cw = w / 2;
-    for y in 0..h {
-        let row = &f.y[y * w..y * w + w];
-        let (cbr, crr) = (&f.cb[(y / 2) * cw..(y / 2) * cw + cw], &f.cr[(y / 2) * cw..(y / 2) * cw + cw]);
-        let o = &mut out[y * w * 4..(y + 1) * w * 4];
-        for x in 0..w {
-            let [r, g, b] = ycbcr_to_rgb(row[x], cbr[x / 2], crr[x / 2]);
-            o[x * 4..x * 4 + 4].copy_from_slice(&[r, g, b, 255]);
+    for by in 0..h / 2 {
+        let chroma_row = by * cw;
+        for bx in 0..cw {
+            let at = chroma_row + bx;
+            let u = f.cb[at] as i32 - 128;
+            let v = f.cr[at] as i32 - 128;
+            let red = KRV * v;
+            let green = -KGU * u - KGV * v;
+            let blue = KBU * u;
+            let x = bx * 2;
+            // Both rows share the chroma sample and preserve the original
+            // per-pixel 32768 luma rounding before shifting.
+            for y in [by * 2, by * 2 + 1] {
+                for i in [y * w + x, y * w + x + 1] {
+                    let yy = (f.y[i] as i32 - 16) * KY + 32_768;
+                    let dst = i * 4;
+                    out[dst] = ((yy + red) >> 16).clamp(0, 255) as u8;
+                    out[dst + 1] = ((yy + green) >> 16).clamp(0, 255) as u8;
+                    out[dst + 2] = ((yy + blue) >> 16).clamp(0, 255) as u8;
+                    out[dst + 3] = 255;
+                }
+            }
         }
     }
 }
@@ -143,6 +165,35 @@ mod tests {
         assert_eq!(ycbcr_to_rgb(65, 100, 212), [191, 0, 1]);
         assert_eq!(ycbcr_to_rgb(112, 72, 58), [0, 191, 0]);
         assert_eq!(ycbcr_to_rgb(35, 212, 114), [0, 1, 192]);
+    }
+
+    #[test]
+    fn chroma_block_fast_path_is_byte_exact() {
+        // Verify the four-pixel converter against the scalar BT.601 oracle
+        // for black/white, extremes and reproducible random MPEG pictures.
+        let mut seed = 0x7359_1afdu32;
+        for (w, h) in [(2, 2), (16, 16), (32, 18), (512, 416)] {
+            let mut frame = Frame {
+                width: w, height: h, y: vec![0; w * h],
+                cb: vec![0; w * h / 4], cr: vec![0; w * h / 4],
+                kind: crate::mpeg2::PictureType::I, temporal_reference: 0, decode_index: 0,
+            };
+            for pass in 0..4 {
+                for byte in frame.y.iter_mut().chain(frame.cb.iter_mut()).chain(frame.cr.iter_mut()) {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    *byte = match pass { 0 => 0, 1 => 255, 2 => 128, _ => (seed >> 24) as u8 };
+                }
+                let mut got = Vec::new();
+                frame_to_rgba(&frame, &mut got);
+                let cw = w / 2;
+                for (i, pixel) in got.chunks_exact(4).enumerate() {
+                    let (x, y) = (i % w, i / w);
+                    let uv = (y / 2) * cw + x / 2;
+                    let expect = ycbcr_to_rgb(frame.y[i], frame.cb[uv], frame.cr[uv]);
+                    assert_eq!(pixel, &[expect[0], expect[1], expect[2], 255], "at {w}x{h}, {x},{y}, pass {pass}");
+                }
+            }
+        }
     }
 
     #[test]
