@@ -35,7 +35,7 @@ pub(super) fn run(root:PathBuf,nonce:String) {
 fn setup(mut commands:Commands,assets:Res<AssetServer>,mut probe:ResMut<Probe>) {
     commands.spawn(Camera2d);
     for (i,color) in [Color::srgb(0.1,0.65,0.9),Color::srgb(0.95,0.65,0.12),Color::srgb(0.15,0.8,0.4)].into_iter().enumerate(){commands.spawn((Sprite::from_color(color,Vec2::new(150.,160.)),Transform::from_xyz((i as f32-1.)*175.,0.,0.)));}
-    commands.spawn((Text2d::new(format!("ReRAC {} | native Android runtime",env!("CARGO_PKG_VERSION"))),TextFont{font_size:28.,..default()},Transform::from_xyz(0.,150.,1.)));
+    commands.spawn((Text2d::new(format!("ReRAC {} | native Android runtime",env!("CARGO_PKG_VERSION"))),TextFont{font_size:bevy::text::FontSize::Px(28.),..default()},Transform::from_xyz(0.,150.,1.)));
     probe.handles=SHADERS.iter().map(|name|assets.load(format!("shaders/{name}.wgsl"))).collect();
 }
 fn sample(pad:Res<crate::input_map::PadFrame>,mut p:ResMut<Probe>){if !paused(){p.ticks+=1;p.buttons=pad.0.buttons;p.axes=[pad.0.lx,pad.0.ly,pad.0.rx,pad.0.ry];}}
