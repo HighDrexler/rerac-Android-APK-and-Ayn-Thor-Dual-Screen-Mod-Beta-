@@ -2,7 +2,7 @@ name: Android source-built native core
 on:
   workflow_dispatch:
   push:
-    branches: [experimental, 'beta8/**', 'beta9/**', 'integration/upstream-036']
+    branches: [experimental, 'beta8/**', 'beta9/**', 'integration/upstream-036', 'fix/036-touch-and-companion']
     paths:
       - crates/**
       - Cargo.toml
@@ -59,6 +59,7 @@ jobs:
           rustup default 1.99.1
           cargo test --locked -p rc-video --lib -- --nocapture
           cargo test --locked -p rc-game --lib movie_player::tests
+          python3 -m unittest discover -s android/native/tests -p 'test_touch_dex.py' -v
   native:
     needs: prepare
     runs-on: ubuntu-24.04
