@@ -607,6 +607,11 @@ fn menu_frame(
     let mode = mm.state.mode;
     let counter = play.game.counter;
     if mode == Mode::Gameplay && rt.last_counter == Some(counter) { return; }
+    // The menu was entered on an earlier tick of this frame (a frame that catches up runs several fixed ticks): as on
+    // the PS2, where the mode switch takes effect next frame, the frame still renders as the gameplay frame the
+    // snapshot is taken of (not the menu's first panels at their start positions) and the menu's first tick is the
+    // next frame's.
+    if mode == Mode::Menu && rt.snapshot_request && rt.render_mode == Mode::Gameplay { return; }
     rt.last_counter = Some(counter);
     mm.state.begin_frame();
     let frame = mm.loop_frame;
