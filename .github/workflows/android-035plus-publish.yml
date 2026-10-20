@@ -10,6 +10,10 @@ on:
         description: New tag, e.g. rerac-android-0.3.6-dev.1
         required: true
         type: string
+      smoke_run:
+        description: Successful Android sidecar startup smoke run against this exact native build
+        required: true
+        type: string
       launcher_version:
         description: Android launcher version (e.g. 1.1.0-beta.5)
         required: true
@@ -33,6 +37,7 @@ jobs:
       RERAC_KEY_B64: ${{ secrets.RERAC_035_KEYSTORE_B64 }}
       RERAC_KEY_PASSWORD: ${{ secrets.RERAC_035_KEYSTORE_PASSWORD }}
       NATIVE_RUN: ${{ inputs.native_build_run }}
+      SMOKE_RUN: ${{ inputs.smoke_run }}
       RELEASE_TAG: ${{ inputs.release_tag }}
       LAUNCHER_VERSION: ${{ inputs.launcher_version }}
       VERSION_CODE: ${{ inputs.version_code }}
@@ -55,6 +60,7 @@ jobs:
           set -euo pipefail
           [[ -n "$RERAC_KEY_B64" && -n "$RERAC_KEY_PASSWORD" ]] || { echo "::error::Configure RERAC_035_KEYSTORE_B64 and RERAC_035_KEYSTORE_PASSWORD in Settings > Secrets and variables > Actions. Refusing unsigned publication."; exit 1; }
           [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          [[ "$SMOKE_RUN" =~ ^[0-9]+$ ]]
           [[ "$RELEASE_TAG" =~ ^rerac-android-[0-9]+\.[0-9]+\.[0-9]+-dev\.[0-9]+$ ]]
           [[ "$LAUNCHER_VERSION" =~ ^1\.1\.0-beta\.[0-9]+$ ]]
           [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
@@ -71,6 +77,20 @@ jobs:
           PY
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then echo "::error::Release tag already exists"; exit 1; fi
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SMOKE_RUN" > work/smoke-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          r=json.loads(Path('work/smoke-run.json').read_text())
+          assert r['conclusion']=='success' and r['repository']['id']==1424927008
+          assert r['path']=='.github/workflows/android-parallel-smoke.yml'
+          assert r['head_branch']=='integration/native-core-035'
+          assert r['id']==int(os.environ['SMOKE_RUN'])
+          PY
+          mkdir -p work/smoke
+          gh run download "$SMOKE_RUN" --repo "$GITHUB_REPOSITORY" --name android-sidecar-smoke-evidence --dir work/smoke
+          test "$(cat work/smoke/native-build-run.txt)" = "$NATIVE_RUN"
+          test "$(cat work/smoke/result.txt)" = 'launcher_startup=passed'
       - name: Prepare exact source-built native candidate
         shell: bash
         run: |
@@ -92,6 +112,13 @@ jobs:
           assert report['native_source_sha']==m['native_source_sha']
           assert report['unsigned_sha256']==hashlib.sha256(f.read_bytes()).hexdigest()
           assert os.environ['RELEASE_TAG'].split('-')[2]==m['core_version']
+          smoke=json.loads(Path('work/smoke/launcher-test.json').read_text())
+          tested=json.loads(Path('work/smoke/packaged-meta.json').read_text())
+          assert smoke['status']=='passed' and smoke['core_version']==m['core_version']
+          assert smoke['launcher_version']==os.environ['LAUNCHER_VERSION']
+          assert smoke['package_id']=='org.rerac.android.ui035test'
+          assert tested['native_source_sha']==m['native_source_sha']
+          assert tested['version_code']==int(os.environ['VERSION_CODE'])
           Path('work/candidate-path.txt').write_text(str(f))
           PY
           # An old or already-announced versionCode must never be republished.
