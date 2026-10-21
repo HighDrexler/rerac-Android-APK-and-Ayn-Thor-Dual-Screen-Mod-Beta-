@@ -41,7 +41,8 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         // companion-map refresh after its own cache key has been written.
         put(view,"lastWheel",packet);put(view,"lastCompanion","");put(view,"enabled",true);
         put(view,"mapCommands",new java.util.ArrayList<Object>(){
-            @Override public void clear(){throw new IllegalStateException("Injected transient companion refresh failure");}
+            private static final long serialVersionUID=1L;
+            @Override public void clear(){throw new NullPointerException("Injected transient companion refresh failure");}
         });
         Runnable poll=(Runnable)get(view,"poll");android.os.Handler handler=(android.os.Handler)get(view,"handler");
         try{
