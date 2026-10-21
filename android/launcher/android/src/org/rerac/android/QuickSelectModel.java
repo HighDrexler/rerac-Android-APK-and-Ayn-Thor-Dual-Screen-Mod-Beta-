@@ -104,9 +104,9 @@ final class QuickSelectModel {
     Geometry geometry;
     int page;
     long submittedSequence;
-    private boolean fresh,tracking,cancelled;
-    private int pointer=-1,pressedItem,pressedPage;
-    private long pressedGeneration;
+    private boolean fresh,tracking;
+    private int pointer=-1;
+    private long contactTime=-1;
     private int width,height;
 
     void accept(Snapshot next){
@@ -126,25 +126,20 @@ final class QuickSelectModel {
     }
     void hide(){geometry=null;cancel();}
     boolean hasGesture(){return tracking;}
-    boolean down(int id,float x,float y){
-        if(!available()||geometry==null||!geometry.contains(x,y))return false;
-        tracking=true;cancelled=false;pointer=id;pressedGeneration=snapshot.generation;pressedPage=page;
-        Slot slot=geometry.hit(current(),x,y);pressedItem=slot==null?0:slot.item;return true;
-    }
-    void move(int id,float x,float y){
-        if(!tracking||id!=pointer||pressedItem==0)return;
-        Slot hit=geometry==null?null:geometry.hit(current(),x,y);
-        if(hit==null||hit.item!=pressedItem)cancelled=true;
-    }
-    void extraPointer(){if(tracking)cancelled=true;}
-    boolean up(int id,float x,float y,int viewWidth,int viewHeight,Submit submit){
-        if(!tracking||id!=pointer)return false;
-        Slot hit=available()&&geometry!=null?geometry.hit(current(),x,y):null;
-        boolean valid=!cancelled&&pressedItem!=0&&width==viewWidth&&height==viewHeight&&snapshot!=null
-            &&snapshot.generation==pressedGeneration&&page==pressedPage&&hit!=null&&hit.item==pressedItem;
-        long gen=pressedGeneration;int item=pressedItem;cancel();
-        if(valid)submittedSequence=submit.select(gen,item);
+    /** A new Android DOWN starts a new stream even if an earlier UP was lost. */
+    void begin(long time){if(contactTime!=time){cancel();contactTime=time;}}
+    int submittedItem;
+    /** Equipment buttons activate on contact, exactly once for the touch stream. */
+    boolean down(int id,float x,float y,int viewWidth,int viewHeight,Submit submit){
+        if(tracking)return true;
+        if(!available()||geometry==null||width!=viewWidth||height!=viewHeight)return false;
+        Slot slot=geometry.hit(current(),x,y);
+        if(slot==null)return false;
+        tracking=true;pointer=id;submittedItem=slot.item;
+        submittedSequence=submit.select(snapshot.generation,slot.item);
         return true;
     }
-    void cancel(){tracking=false;cancelled=false;pointer=-1;pressedItem=0;}
+    /** A release finishes ownership; it never sends equipment a second time. */
+    void up(int id){if(tracking&&pointer==id)cancel();}
+    void cancel(){tracking=false;pointer=-1;}
 }

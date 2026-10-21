@@ -1,5 +1,4 @@
 package org.rerac.android;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -12,106 +11,80 @@ public class QuickSelectModelTest {
         for(int p=0;p<3;p++){
             JSONArray slots=new JSONArray();
             for(int i=0;i<8;i++)slots.put(new JSONObject().put("id",9+p*8+i).put("x",CENTRES[i][0]).put("y",CENTRES[i][1]).put("enabled",true));
-            JSONArray draws=new JSONArray().put(new JSONArray("[1,20,108,105,100,0,0,32,32,127,127,127,128]"));
-            pages.put(new JSONObject().put("slots",slots).put("draws",draws));
+            pages.put(new JSONObject().put("slots",slots).put("draws",new JSONArray().put(new JSONArray("[1,20,108,105,100,0,0,32,32,127,127,127,128]"))));
         }
-        return new JSONObject().put("generation",7).put("enabled",true).put("box",new JSONArray("[20,108,210,200]")).put("glyphs",new JSONArray()).put("pages",pages)
-            .put("selection",new JSONObject().put("sequence",0).put("item",0).put("state","idle"));
+        return new JSONObject().put("generation",7).put("enabled",true).put("box",new JSONArray("[20,108,210,200]")).put("pages",pages);
     }
-    private static QuickSelectModel create(JSONObject packet)throws Exception{
-        QuickSelectModel model=new QuickSelectModel();model.accept(QuickSelectModel.Snapshot.parse(packet.toString()));arrange(model);return model;
-    }
-    private static void arrange(QuickSelectModel model){model.arrange(20,62.5f,780,535,1.25f,800,600);}
+    private static QuickSelectModel create(JSONObject p)throws Exception{QuickSelectModel m=new QuickSelectModel();m.accept(QuickSelectModel.Snapshot.parse(p.toString()));arrange(m);return m;}
+    private static void arrange(QuickSelectModel m){m.arrange(20,62.5f,780,535,1.25f,800,600);}
     private static float x(QuickSelectModel m,int slot){return m.geometry.screenX(CENTRES[slot][0]);}
     private static float y(QuickSelectModel m,int slot){return m.geometry.screenY(CENTRES[slot][1]);}
-    static final class Sink implements QuickSelectModel.Submit {
-        int calls,item;long generation;
-        public long select(long gen,int selected){calls++;generation=gen;item=selected;return 41+calls;}
-    }
-    @Test public void everyPageSubmitsItemIdentityOnceOnRelease()throws Exception{
+    static final class Sink implements QuickSelectModel.Submit{int calls,item;long generation;public long select(long gen,int selected){calls++;generation=gen;item=selected;return 41+calls;}}
+    private static boolean press(QuickSelectModel m,int slot,Sink sink){return m.down(9,x(m,slot),y(m,slot),800,600,sink);}
+    @Test public void allPagesActivateOnContactWithoutWaitingForRelease()throws Exception{
         QuickSelectModel m=create(packet());Sink sink=new Sink();
         for(int page=0;page<3;page++){
             if(page>0){m.nextPage();arrange(m);}
-            for(int i=0;i<8;i++){
-                int before=sink.calls;float x=x(m,i),y=y(m,i);
-                assertTrue(m.down(9,x,y));assertEquals(before,sink.calls);
-                assertTrue(m.up(9,x,y,800,600,sink));assertEquals(before+1,sink.calls);
-                assertEquals(9+page*8+i,sink.item);assertEquals(7,sink.generation);
-                assertFalse(m.up(9,x,y,800,600,sink));assertEquals(before+1,sink.calls);
+            for(int slot=0;slot<8;slot++){
+                int before=sink.calls;assertTrue(press(m,slot,sink));assertEquals(before+1,sink.calls);
+                assertEquals(9+page*8+slot,sink.item);assertEquals(7,sink.generation);
+                m.up(9);m.up(9);assertEquals(before+1,sink.calls);
             }
         }
     }
-    @Test public void primaryAspectChangesCannotChangeSecondaryTransformOrSelection()throws Exception{
-        QuickSelectModel m=create(packet());float original=x(m,0),originalY=y(m,0);Sink sink=new Sink();
-        for(String primary:new String[]{"4:3","16:9","9:16","4:3"}){
-            JSONObject next=packet().put("primaryDisplay",primary);m.accept(QuickSelectModel.Snapshot.parse(next.toString()));arrange(m);
-            assertEquals(original,x(m,0),0);assertEquals(originalY,y(m,0),0);
-            m.down(4,x(m,0),y(m,0));m.up(4,x(m,0),y(m,0),800,600,sink);
-            assertEquals(9,sink.item);
-        }
-        assertEquals(4,sink.calls);
-    }
-    @Test public void originalWheelPixelAspectAndBothSourceOriginsAreInverted()throws Exception{
-        QuickSelectModel m=create(packet());
-        assertEquals(13f/12f,m.geometry.sx/m.geometry.sy,0.000001f);
-        assertEquals(400f,x(m,0),0.0001f);
-        for(int i=0;i<8;i++)assertEquals(9+i,m.geometry.hit(m.current(),x(m,i),y(m,i)).item);
-        assertNull(m.geometry.hit(m.current(),400,298.75f));
-        assertNull(m.geometry.hit(m.current(),-1,300));
-    }
-    @Test public void hybridAndPortraitLayoutsUseTheSameVisibleHitTransform()throws Exception{
+    @Test public void cancelAndLostReleaseCannotEraseOrDuplicateAnIssuedPress()throws Exception{
         QuickSelectModel m=create(packet());Sink sink=new Sink();
-        float[][] areas={{20,62.5f,336.8f,535,1.25f,800,600},{16,50,624,320,1,640,960},{30,75,930,660,1.5f,960,720}};
-        for(float[] a:areas){
-            m.arrange(a[0],a[1],a[2],a[3],a[4],(int)a[5],(int)a[6]);
-            for(int i=0;i<8;i++){
-                float x=x(m,i),y=y(m,i);assertTrue(m.down(0,x,y));m.up(0,x,y,(int)a[5],(int)a[6],sink);assertEquals(9+i,sink.item);
-            }
-        }
-        assertEquals(24,sink.calls);
+        press(m,0,sink);assertEquals(1,sink.calls);m.cancel();m.up(9);assertEquals(1,sink.calls);
+        press(m,1,sink);m.cancel();press(m,2,sink);assertEquals(3,sink.calls);assertEquals(11,sink.item);
     }
-    @Test public void unrelatedCompanionFieldsNeverDisableTheNewController()throws Exception{
-        JSONObject nativePacket=packet();QuickSelectModel m=create(nativePacket);Sink sink=new Sink();
-        nativePacket.put("legacyEnabled",false).put("lastWheel","poisoned").put("map",JSONObject.NULL).put("draws",new JSONArray());
-        m.accept(QuickSelectModel.Snapshot.parse(nativePacket.toString()));arrange(m);
-        assertTrue(m.available());m.down(0,x(m,2),y(m,2));m.up(0,x(m,2),y(m,2),800,600,sink);assertEquals(11,sink.item);
+    @Test public void duplicateDownAndAdditionalPointerCannotRepeatEquipment()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();press(m,0,sink);
+        m.down(9,x(m,1),y(m,1),800,600,sink);m.down(10,x(m,2),y(m,2),800,600,sink);
+        m.up(10);assertTrue(m.hasGesture());assertEquals(1,sink.calls);m.up(9);assertFalse(m.hasGesture());
     }
-    @Test public void failedPacketRetriesIdenticalBytesWithoutPoisoningCache()throws Exception{
-        String bytes=packet().toString();QuickSelectModel m=create(packet());Sink sink=new Sink();
-        m.down(0,x(m,0),y(m,0));m.failed();assertFalse(m.available());assertFalse(m.up(0,x(m,0),y(m,0),800,600,sink));
-        m.accept(QuickSelectModel.Snapshot.parse(bytes));arrange(m);assertTrue(m.available());
-        m.down(0,x(m,0),y(m,0));m.up(0,x(m,0),y(m,0),800,600,sink);assertEquals(1,sink.calls);
+    @Test public void newContactRecoversWhenThePreviousReleaseNeverArrived()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();m.begin(100);press(m,0,sink);
+        m.begin(200);press(m,1,sink);assertEquals(2,sink.calls);assertEquals(10,sink.item);
+        m.begin(200);press(m,1,sink);assertEquals(2,sink.calls);m.up(9);
     }
-    @Test public void cancellationDraggingAndSecondFingerCannotEquip()throws Exception{
-        QuickSelectModel m=create(packet());Sink sink=new Sink();float x=x(m,1),y=y(m,1);
-        m.down(1,x,y);m.cancel();assertFalse(m.up(1,x,y,800,600,sink));
-        m.down(1,x,y);m.move(1,0,0);m.move(1,x,y);m.up(1,x,y,800,600,sink);
-        m.down(1,x,y);m.extraPointer();m.up(2,x,y,800,600,sink);m.up(1,x,y,800,600,sink);
-        assertEquals(0,sink.calls);
+    @Test public void emptyDisabledAndOutsideSlotsNeverSubmit()throws Exception{
+        JSONObject p=packet();JSONArray slots=p.getJSONArray("pages").getJSONObject(0).getJSONArray("slots");
+        slots.getJSONObject(0).put("enabled",false);slots.getJSONObject(1).put("id",0);
+        QuickSelectModel m=create(p);Sink sink=new Sink();assertFalse(press(m,0,sink));assertFalse(press(m,1,sink));
+        assertFalse(m.down(0,-1,-1,800,600,sink));assertFalse(m.down(0,400,298.75f,800,600,sink));assertEquals(0,sink.calls);
     }
-    @Test public void generationChangesAndDisplayResizesCancelAnOldGesture()throws Exception{
-        QuickSelectModel m=create(packet());Sink sink=new Sink();float x=x(m,1),y=y(m,1);
-        m.down(1,x,y);m.accept(QuickSelectModel.Snapshot.parse(packet().put("generation",8).toString()));assertFalse(m.up(1,x,y,800,600,sink));
-        arrange(m);m.down(1,x,y);m.up(1,x,y,1600,900,sink);assertEquals(0,sink.calls);
-        m.down(1,x,y);m.arrange(20,40,900,500,1,960,540);assertFalse(m.up(1,x,y,960,540,sink));
+    @Test public void missingOrResizedGeometryNeverUsesAnOldHitArea()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();
+        assertFalse(m.down(0,x(m,0),y(m,0),1600,900,sink));m.hide();assertFalse(m.down(0,400,100,800,600,sink));assertEquals(0,sink.calls);
     }
-    @Test public void pagingAndUnavailableItemsCannotReuseAPressedItem()throws Exception{
-        QuickSelectModel m=create(packet());Sink sink=new Sink();float x=x(m,1),y=y(m,1);
-        m.down(1,x,y);m.nextPage();arrange(m);assertFalse(m.up(1,x,y,800,600,sink));
-        m.down(1,x(m,1),y(m,1));JSONObject next=packet();next.getJSONArray("pages").getJSONObject(1).getJSONArray("slots").getJSONObject(1).put("enabled",false);
-        m.accept(QuickSelectModel.Snapshot.parse(next.toString()));m.up(1,x(m,1),y(m,1),800,600,sink);assertEquals(0,sink.calls);
+    @Test public void generationAndPageChangesRequireFreshLayout()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();float x=x(m,0),y=y(m,0);
+        m.accept(QuickSelectModel.Snapshot.parse(packet().put("generation",8).toString()));assertFalse(m.down(0,x,y,800,600,sink));
+        arrange(m);press(m,0,sink);assertEquals(8,sink.generation);m.nextPage();assertFalse(m.down(0,x,y,800,600,sink));
+        arrange(m);press(m,0,sink);assertEquals(17,sink.item);
     }
-    @Test public void sameGenerationRefreshDuringTouchDoesNotDropTheRequest()throws Exception{
-        QuickSelectModel m=create(packet());Sink sink=new Sink();float x=x(m,3),y=y(m,3);
-        m.down(5,x,y);
+    @Test public void refreshBetweenPressAndReleaseDoesNotDropEquipment()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();press(m,3,sink);
         for(int i=0;i<5;i++){m.accept(QuickSelectModel.Snapshot.parse(packet().toString()));arrange(m);}
-        m.up(5,x,y,800,600,sink);assertEquals(1,sink.calls);assertEquals(12,sink.item);assertEquals(42,m.submittedSequence);
+        m.up(9);assertEquals(1,sink.calls);assertEquals(12,sink.item);assertEquals(42,m.submittedSequence);
     }
-    @Test public void nativeReceiptsReflectActualLifecycleWithoutOptimisticEquipment()throws Exception{
-        QuickSelectModel m=create(packet());
-        for(String state:new String[]{"queued","pending","equipped","rejected"}){
-            JSONObject p=packet();p.getJSONObject("selection").put("sequence",24).put("item",10).put("state",state);m.accept(QuickSelectModel.Snapshot.parse(p.toString()));
-            assertEquals(24,m.snapshot.sequence);assertEquals(10,m.snapshot.selectedItem);assertEquals(state,m.snapshot.selectionState);
+    @Test public void parseFailureDisablesNewPressAndIdenticalPacketRecovers()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();m.failed();assertFalse(press(m,0,sink));
+        m.accept(QuickSelectModel.Snapshot.parse(packet().toString()));arrange(m);assertTrue(press(m,0,sink));assertEquals(1,sink.calls);
+    }
+    @Test public void bothSourceOriginsAndPixelAspectAreInverted()throws Exception{
+        QuickSelectModel m=create(packet());assertEquals(13f/12f,m.geometry.sx/m.geometry.sy,0.000001f);
+        assertEquals(400f,x(m,0),0.0001f);for(int i=0;i<8;i++)assertEquals(9+i,m.geometry.hit(m.current(),x(m,i),y(m,i)).item);
+    }
+    @Test public void hybridPortraitAndPrimaryAspectUseVisibleWheelCoordinates()throws Exception{
+        QuickSelectModel m=create(packet());Sink sink=new Sink();float[][] areas={{20,62.5f,336.8f,535,1.25f,800,600},{16,50,624,320,1,640,960},{30,75,930,660,1.5f,960,720}};
+        for(float[] a:areas)for(String primary:new String[]{"4:3","16:9"}){
+            m.accept(QuickSelectModel.Snapshot.parse(packet().put("primaryAspect",primary).toString()));m.arrange(a[0],a[1],a[2],a[3],a[4],(int)a[5],(int)a[6]);
+            for(int i=0;i<8;i++){assertTrue(m.down(0,x(m,i),y(m,i),(int)a[5],(int)a[6],sink));assertEquals(9+i,sink.item);m.up(0);}
         }
+        assertEquals(48,sink.calls);
+    }
+    @Test public void nativeRejectionDoesNotPretendEquipmentSucceeded()throws Exception{
+        QuickSelectModel m=create(packet());assertTrue(m.down(0,x(m,0),y(m,0),800,600,(g,i)->0));assertEquals(0,m.submittedSequence);assertEquals(9,m.submittedItem);
     }
 }

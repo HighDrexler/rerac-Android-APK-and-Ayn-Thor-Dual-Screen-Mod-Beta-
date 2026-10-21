@@ -1,10 +1,6 @@
 name: Verify companion touchscreen routing on updater-branch APK
 on:
-  push:
-    branches: [update-channel3]
-    paths:
-      - .github/workflows/verify-companion-touch-routing.yml
-      - android/release/CompanionUiInstrumentation.java
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

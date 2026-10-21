@@ -55,11 +55,12 @@ final class CompanionQuickSelect {
         int layout=-1,dedicatedPage;
         String error="",presentationError="";
         Bitmap home;
+        int feedbackItem;long feedbackUntil;String feedbackText="";
         Controller(Bridge bridge){this.bridge=bridge;}
         void refresh(){
             try{
                 QuickSelectModel.Snapshot next=QuickSelectModel.Snapshot.parse(bridge.snapshot());
-                if(textureGeneration!=next.generation){textures.clear();textureGeneration=next.generation;dedicatedPage=0;}
+                if(textureGeneration!=next.generation){textures.clear();textureGeneration=next.generation;dedicatedPage=0;feedbackUntil=0;}
                 model.accept(next);error="";
             }catch(Exception|LinkageError failure){model.failed();error=failure.getClass().getSimpleName();}
         }
@@ -92,7 +93,22 @@ final class CompanionQuickSelect {
                     int quad=canvas.save();canvas.translate(d.x,d.y);canvas.scale(d.w<0?-1:1,d.h<0?-1:1);
                     canvas.drawBitmap(bitmap,source,target,paint);canvas.restoreToCount(quad);
                 }
+                if(android.os.SystemClock.uptimeMillis()<feedbackUntil){
+                    for(QuickSelectModel.Slot slot:model.current().slots)if(slot.item==feedbackItem){
+                        plain(GOLD);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2.5f);
+                        canvas.drawCircle(slot.x,slot.y,22,paint);paint.setStyle(Paint.Style.FILL);break;
+                    }
+                }
             }finally{canvas.restoreToCount(saved);}
+            if(android.os.SystemClock.uptimeMillis()<feedbackUntil){
+                QuickSelectModel.Snapshot packet=model.snapshot;
+                String message=feedbackText;
+                if(model.submittedSequence>0&&packet.sequence==model.submittedSequence){
+                    if("equipped".equals(packet.selectionState)||"deployed".equals(packet.selectionState)||"command".equals(packet.selectionState))message="Selected";
+                    else if("rejected".equals(packet.selectionState)||"cancelled".equals(packet.selectionState))message="Unavailable right now";
+                }
+                fitted(canvas,message,area.centerX(),area.bottom-14*unit,0.75f*unit,area.width(),BLUE);
+            }
         }
         float textWidth(String text,float scale){
             if(model.snapshot==null)return 0;float width=0;
@@ -179,7 +195,10 @@ final class CompanionQuickSelect {
     }
 
     static boolean touch(View view,MotionEvent event){
-        Controller s=state(view);s.refresh();syncPresentation(view,s);
+        Controller s=state(view);
+        if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){s.model.cancel();set(view,"draggingMap",false);set(view,"skillDragging",false);return true;}
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN)s.model.begin(event.getDownTime());
+        s.refresh();syncPresentation(view,s);
         if(!s.model.fresh())return true;
         if(!s.model.snapshot.menu)CompanionMenu.inactive(view);
         if(CompanionMenu.touch(view,event)){s.model.cancel();return true;}
@@ -187,12 +206,9 @@ final class CompanionQuickSelect {
         int action=event.getActionMasked(),index=event.getActionIndex(),id=event.getPointerId(index);float x=event.getX(index),y=event.getY(index);
         if(s.model.hasGesture()){
             if(action==MotionEvent.ACTION_CANCEL){s.model.cancel();return true;}
-            if(action==MotionEvent.ACTION_POINTER_DOWN){s.model.extraPointer();return true;}
-            if(action==MotionEvent.ACTION_MOVE){for(int i=0;i<event.getPointerCount();i++)s.model.move(event.getPointerId(i),event.getX(i),event.getY(i));return true;}
+            if(action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_MOVE)return true;
             if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP){
-                long before=s.model.submittedSequence;
-                s.model.up(id,x,y,view.getWidth(),view.getHeight(),s.bridge::select);
-                if(s.model.submittedSequence!=before&&s.model.submittedSequence>0)view.performClick();view.invalidate();return true;
+                s.model.up(id);view.invalidate();return true;
             }
             return true;
         }
@@ -206,6 +222,14 @@ final class CompanionQuickSelect {
         if(action==MotionEvent.ACTION_DOWN&&rect(view,"homeBox").contains(x,y)){showPage(view,s,0);view.performClick();return true;}
         if(action==MotionEvent.ACTION_DOWN&&rect(view,"skillButton").contains(x,y)){s.model.hide();invoke(view,"showSkills",new Class<?>[]{boolean.class},!bool(view,"showingSkills"));view.performClick();return true;}
         if(bool(view,"showingSkills")&&(bool(view,"skillDragging")||y<bottom))return (Boolean)invoke(view,"skillTouch",new Class<?>[]{MotionEvent.class},event);
+        if(action==MotionEvent.ACTION_DOWN&&layout!=2&&!bool(view,"showingSkills")
+            &&s.model.down(id,x,y,view.getWidth(),view.getHeight(),s.bridge::select)){
+            set(view,"draggingMap",false);set(view,"skillDragging",false);
+            s.feedbackItem=s.model.submittedItem;s.feedbackUntil=android.os.SystemClock.uptimeMillis()+1200;
+            s.feedbackText=s.model.submittedSequence>0?"Selecting...":"Unavailable right now";
+            view.performClick();view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+            view.invalidate();return true;
+        }
         if(action==MotionEvent.ACTION_DOWN&&layout!=1&&rect(view,"mapControls").contains(x,y)){
             RectF controls=rect(view,"mapControls");int control=Math.min(2,(int)((x-controls.left)/controls.width()*3));
             if(control==1){set(view,"follow",true);set(view,"centreU",get(view,"heroU"));set(view,"centreV",get(view,"heroV"));}
@@ -225,7 +249,7 @@ final class CompanionQuickSelect {
         }
         if(action==MotionEvent.ACTION_DOWN){
             if(y>=bottom){int nav=Math.max(0,Math.min(2,(int)(x/view.getWidth()*3)));if(nav<2)showPage(view,s,nav==0?1:2);else button(2048);view.performClick();return true;}
-            if(layout!=2){s.model.down(id,x,y);return true;}
+
         }
         return true;
     }

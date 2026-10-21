@@ -25,6 +25,7 @@ import org.json.JSONObject;
 /** Exercise the packaged source controller through the actual companion View. */
 public final class CompanionUiInstrumentation extends Instrumentation {
     private Class<?> wheel;
+    private Bundle arguments;
     private static void require(boolean ok,String why){if(!ok)throw new AssertionError(why);}
     private static MotionEvent twoPointers(long time,int action,float x,float y){
         MotionEvent.PointerProperties[] properties={new MotionEvent.PointerProperties(),new MotionEvent.PointerProperties()};
@@ -210,7 +211,34 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             }
         }finally{runOnMainSync(()->{if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null){image[0].setOnImageAvailableListener(null,null);image[0].close();}host.finish();});}
     }
-    @Override public void onCreate(Bundle args){start();}
+    private void staleMapRegression(Context context,ClassLoader loader,boolean oldBuild)throws Exception{
+        final Throwable[] failure={null};
+        runOnMainSync(()->{try{
+            Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
+            View view=(View)ctor.newInstance(context);view.layout(0,0,800,600);
+            JSONObject slot=new JSONObject().put("id",10).put("x",125).put("y",134).put("enabled",true);
+            JSONObject page=new JSONObject().put("slots",new JSONArray().put(slot)).put("draws",new JSONArray());
+            JSONObject packet=new JSONObject().put("generation",41).put("enabled",true).put("menu",false).put("mode",0).put("box",new JSONArray("[20,108,210,200]")).put("pages",new JSONArray().put(page).put(page));
+            Class<?> source=Class.forName("org.rerac.android.CompanionQuickSelect",true,loader),bridge=Class.forName("org.rerac.android.CompanionQuickSelect$Bridge",true,loader);
+            int[] accepted={0};Object transport=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{bridge},(proxy,method,args)->{
+                if(method.getName().equals("snapshot"))return packet.toString();
+                if(method.getName().equals("icon"))return new int[]{2,2,-1,-1,-1,-1};
+                if(method.getName().equals("select"))return (long)++accepted[0];return null;
+            });
+            Method attach=source.getDeclaredMethod("attach",View.class,bridge);attach.setAccessible(true);attach.invoke(null,view,transport);
+            Bitmap image=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));
+            RectF box=new RectF((RectF)get(view,"wheelBox"));float x=box.left+105f/210f*box.width(),y=box.top+26f/200f*box.height();
+            for(int trial=0;trial<2;trial++){
+                if(trial==1){put(view,"draggingMap",true);((RectF)get(view,"mapControls")).set(box);}
+                long now=SystemClock.uptimeMillis();MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0),up=MotionEvent.obtain(now,now+20,MotionEvent.ACTION_UP,x,y,0);
+                view.dispatchTouchEvent(down);view.dispatchTouchEvent(up);down.recycle();up.recycle();
+                require(accepted[0]==(trial==0?1:oldBuild?1:2),"Wheel/map regression mismatch: oldBuild="+oldBuild+" trial="+trial+" accepted="+accepted[0]);
+            }
+            image.recycle();
+        }catch(Throwable error){failure[0]=error;}});
+        if(failure[0]!=null)throw new AssertionError("Stale map regression",failure[0]);
+    }
+    @Override public void onCreate(Bundle args){arguments=args;start();}
     @Override public void onStart(){
         Bundle result=new Bundle();final Throwable[] failure={null};final int[] taps={0};
         try{
@@ -225,6 +253,12 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require(pixels!=null && pixels.length==128*128+2 && pixels[0]==128 && pixels[1]==128,"Q Force icon unavailable before importing game data");
             require(pixels[2]==0,"Q Force icon lost transparent border");
             wheel=Class.forName("org.rerac.android.WeaponWheel",true,loader);
+            if(arguments!=null&&arguments.getString("regression_only")!=null){
+                boolean oldBuild="baseline".equals(arguments.getString("regression_only"));
+                staleMapRegression(context,loader,oldBuild);
+                result.putString("stream",new JSONObject().put("stale_map_baseline_drops_wheel",oldBuild).put("stale_map_fixed",!oldBuild).toString()+"\n");finish(Activity.RESULT_OK,result);return;
+            }
+            staleMapRegression(context,loader,false);
             runOnMainSync(()->{try{
                 Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
                 View view=(View)ctor.newInstance(context);view.layout(0,0,800,600);
@@ -281,7 +315,9 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                         int before=accepted[0];long now=SystemClock.uptimeMillis();
                         MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0);
                         MotionEvent up=MotionEvent.obtain(now,now+20,MotionEvent.ACTION_UP,x,y,0);
-                        view.dispatchTouchEvent(down);require(accepted[0]==before,"Wheel equipped before release");
+                        if(scenario==1){put(view,"draggingMap",true);((RectF)get(view,"mapControls")).set(box);}
+                        view.dispatchTouchEvent(down);require(accepted[0]==before+1,"Wheel did not activate on contact");
+                        require(!Boolean.TRUE.equals(get(view,"draggingMap")),"Retained map drag swallowed wheel input");
                         packet.put("primaryAspect",slot%2==0?"16:9":"4:3");put(view,"menu",true);put(view,"mode",3);put(view,"transitioning",true);view.draw(new Canvas(target));
                         view.dispatchTouchEvent(up);down.recycle();up.recycle();
                         require(accepted[0]==before+1,"Source wheel tap missed: layout="+layout+" page="+page+" slot="+slot);
@@ -293,12 +329,17 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 int before=accepted[0];long now=SystemClock.uptimeMillis();
                 MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,cx,cy,0),cancel=MotionEvent.obtain(now,now+20,MotionEvent.ACTION_CANCEL,cx,cy,0),up=MotionEvent.obtain(now,now+30,MotionEvent.ACTION_UP,cx,cy,0);
                 view.dispatchTouchEvent(down);view.dispatchTouchEvent(cancel);view.dispatchTouchEvent(up);down.recycle();cancel.recycle();up.recycle();
-                require(accepted[0]==before,"Cancelled source gesture equipped an item");
-                now=SystemClock.uptimeMillis();down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,cx,cy,0);
+                require(accepted[0]==before+1,"Cancel erased or repeated a contact selection");
+                before=accepted[0];now=SystemClock.uptimeMillis();down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,cx,cy,0);
                 MotionEvent second=twoPointers(now,MotionEvent.ACTION_POINTER_DOWN|(1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),cx,cy);
                 MotionEvent firstUp=twoPointers(now,MotionEvent.ACTION_POINTER_UP,cx,cy);up=MotionEvent.obtain(now,now+50,MotionEvent.ACTION_UP,cx+4,cy+4,0);
                 view.dispatchTouchEvent(down);view.dispatchTouchEvent(second);view.dispatchTouchEvent(firstUp);view.dispatchTouchEvent(up);
-                down.recycle();second.recycle();firstUp.recycle();up.recycle();require(accepted[0]==before,"Multitouch source gesture equipped an item");
+                down.recycle();second.recycle();firstUp.recycle();up.recycle();require(accepted[0]==before+1,"Additional pointers repeated or erased a contact selection");
+                before=accepted[0];now=SystemClock.uptimeMillis();
+                down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,cx,cy,0);view.dispatchTouchEvent(down);down.recycle();
+                long next=now+100;down=MotionEvent.obtain(next,next,MotionEvent.ACTION_DOWN,cx,cy,0);view.dispatchTouchEvent(down);down.recycle();
+                up=MotionEvent.obtain(next,next+20,MotionEvent.ACTION_UP,cx,cy,0);view.dispatchTouchEvent(up);up.recycle();
+                require(accepted[0]==before+2,"A lost UP left the wheel permanently latched");
                 target.recycle();
                 failedPollRecovery(context,game);
                 pauseLayouts(context,loader);
@@ -313,7 +354,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require(((Long)select.invoke(null,0L,10))==0,"Stale generation accepted by native selection queue");
             Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
-            JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("release_cancel_multitouch",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("contact_once_multitouch",true).put("wheel_precedes_retained_map",true).put("lost_release_recovers",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             evidence.put("failed_poll_identical_packet_recovery",true);
             evidence.put("system_routed_secondary_taps",16);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
