@@ -93,8 +93,7 @@ jobs:
           git push origin HEAD:update-channel3
   verify-host:
     needs: stage
-    if: needs.stage.outputs.signed == 'true'
-    if: github.repository_id == '1424927008'
+    if: needs.stage.outputs.signed == 'true' && github.repository_id == '1424927008'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
