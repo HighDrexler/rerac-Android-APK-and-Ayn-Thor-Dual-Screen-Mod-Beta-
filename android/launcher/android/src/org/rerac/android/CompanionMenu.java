@@ -86,10 +86,8 @@ final class CompanionMenu {
             if(menu==null||!snap.optBoolean("menu")||!menu.optBoolean("supported"))return false;
             JSONArray choices=menu.optJSONArray("rows");
             if(choices==null||choices.length()==0)return false;
-            // The original root has seven one-row panels. The game omits the
-            // seventh (Goodies) until unlocked; preserve that native visibility.
-            JSONArray nativePanels=snap.optJSONArray("panels");
-            if(menu.optBoolean("root")&&choices.length()==7&&nativePanels!=null&&nativePanels.length()==6){JSONArray visible=new JSONArray();for(int i=0;i<6;i++)visible.put(choices.get(i));choices=visible;}
+            // Native exports the choices the game's live page actually exposes,
+            // including locked-menu visibility. Panel counts are not menu state.
             for(int i=0;i<choices.length();i++)if(clean(choices.getJSONObject(i).optString("label")).isEmpty())return false;
             s.active=true;long page=snap.optLong("page");if(s.page!=page){s.offset=0;s.page=page;s.down=null;}
             float scale=Math.min(view.getWidth()/800f,view.getHeight()/600f);if(scale<=0)return true;

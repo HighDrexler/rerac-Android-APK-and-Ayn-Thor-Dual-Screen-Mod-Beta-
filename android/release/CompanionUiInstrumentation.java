@@ -54,13 +54,14 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         menu.put("supported",true);rows.getJSONObject(0).put("label","Paradox! This message does not exist");
         require(Boolean.FALSE.equals(render.invoke(null,host,new Canvas(image),snap)),"Missing imported menu labels must retain the native renderer");
         JSONArray rootChoices=new JSONArray();for(String label:new String[]{"Weapons","Gadgets","Quick Select","Items","Help","Options","Goodies"})rootChoices.put(new JSONObject().put("label",label).put("enabled",true));
-        menu.put("root",true).put("rows",rootChoices);JSONArray panels=new JSONArray();for(int i=0;i<6;i++)panels.put(new JSONArray());snap.put("panels",panels);
+        menu.put("root",true);JSONArray panels=new JSONArray();for(int i=0;i<6;i++)panels.put(new JSONArray());snap.put("panels",panels);
         Method state=screen.getDeclaredMethod("state",View.class);state.setAccessible(true);
         for(int visible=6;visible<=7;visible++){
+            JSONArray exposed=new JSONArray();for(int i=0;i<visible;i++)exposed.put(rootChoices.get(i));menu.put("rows",exposed);
             require(Boolean.TRUE.equals(render.invoke(null,host,new Canvas(image),snap)),"Cannot render native root visibility");
             Object value=state.invoke(null,host);Field hits=value.getClass().getDeclaredField("hits");hits.setAccessible(true);int cards=0;
             for(Object hit:(java.util.List<?>)hits.get(value)){Field row=hit.getClass().getDeclaredField("row");row.setAccessible(true);if(row.get(hit)!=null)cards++;}
-            require(cards==visible,"Companion exposed a menu the game hid");panels.put(new JSONArray());
+            require(cards==visible,"Companion changed the native visible menu choices");
         }
         image.recycle();
     }
