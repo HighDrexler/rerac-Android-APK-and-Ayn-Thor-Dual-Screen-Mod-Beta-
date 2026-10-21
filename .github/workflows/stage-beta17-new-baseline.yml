@@ -1,0 +1,56 @@
+name: Prepare beta17 with the new recoverable release identity
+on:
+  push:
+    branches: [rebuild/036-companion-quickselect]
+    paths: [.github/workflows/stage-beta17-new-baseline.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  stage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Require the exact tested companion rebuild
+        run: |
+          set -euo pipefail
+          mkdir -p work/candidate work/proof work/staged
+          for pair in '39549307255 .github/workflows/android-native-build.yml' '39549307221 .github/workflows/android-parallel-smoke.yml' '39549307365 .github/workflows/companion-ui-smoke.yml'; do
+            read -r run path <<< "$pair"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "work/proof/$run.json"
+            python3 - "$run" "$path" <<'PY'
+          import json,sys
+          o=json.load(open('work/proof/'+sys.argv[1]+'.json'))
+          assert o['repository']['id']==1424927008 and o['id']==int(sys.argv[1])
+          assert o['path']==sys.argv[2] and o['head_sha']=='0ab6c9ca4be8d2f8f671a457c069a5f181e6d9da'
+          assert o['status']=='completed' and o['conclusion']=='success'
+          PY
+          done
+          gh run download 39549307221 --repo "$GITHUB_REPOSITORY" --name android-production-unsigned --dir work/candidate
+          gh run download 39549307365 --repo "$GITHUB_REPOSITORY" --name companion-ui-tap-proof --dir work/proof/companion
+          grep -q '"status":"passed"' work/proof/companion/companion-ui.txt
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+      - name: Rebuild the launcher trust and preserve all tested native bytes
+        run: |
+          set -euo pipefail
+          python3 android/release/rekey_baseline.py --candidate work/candidate/ReRAC-1.1.0-beta.17-production-unsigned.apk --report work/candidate/package-report.json --sdk "$ANDROID_HOME" --output work/staged
+          cp android/release/release-identity-2026.json work/staged/
+          cp -r work/proof work/staged/proof
+          cd work/staged
+          zip -q -r ../beta17-signing-input.zip .
+      - name: Make only unsigned build inputs available to the offline signer
+        run: |
+          set -euo pipefail
+          gh release create beta17-signing-input work/beta17-signing-input.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title 'Engineering signing input â€” not an installable release' --notes 'Temporary unsigned build inputs for the owner-approved new signing baseline. Do not install. No private key is included. Removed after signed beta17 publication.'
