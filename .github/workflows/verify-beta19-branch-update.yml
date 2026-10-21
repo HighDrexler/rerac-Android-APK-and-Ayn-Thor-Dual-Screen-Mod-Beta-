@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      TARGET_SHA: f7440c5f18b769aea042bd7dd8ec3ebd05c86a4d116e1a8904280617f9aa3b2e
+      TARGET_SHA: 7d0098f43fdfd93fd4b53ec3d4201f0bd62dbc4e6e3f921b392b2de09a106bb0
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,9 +34,9 @@ jobs:
               data=z.read('ReRAC.apk')
           assert hashlib.sha256(data).hexdigest()=='4239609e07bb09a727f254f461ad4c87b2ecbd03907ce652fced6089ef9d30cb'
           Path('work/fixture/beta18.apk').write_bytes(data)
-          report=json.loads(Path('builds/beta19/build.json').read_text())
-          assert report['version_code']==35 and report['sha256']=='f7440c5f18b769aea042bd7dd8ec3ebd05c86a4d116e1a8904280617f9aa3b2e'
-          assert report['apk_url']=='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta19/ReRAC-Android-beta19.apk.zip'
+          report=json.loads(Path('builds/beta19r2/build.json').read_text())
+          assert report['version_code']==36 and report['sha256']=='7d0098f43fdfd93fd4b53ec3d4201f0bd62dbc4e6e3f921b392b2de09a106bb0'
+          assert report['apk_url']=='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta19r2/ReRAC-Android-beta19.apk.zip'
           archive=urllib.request.urlopen(report['apk_url'],timeout=120).read()
           assert len(archive)==report['archive_bytes'] and hashlib.sha256(archive).hexdigest()==report['archive_sha256']
           Path('work/download/beta19.zip').write_bytes(archive)
@@ -58,7 +58,7 @@ jobs:
           disable-animations: true
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
-          script: python android/release/experimental_live_update_test.py --apk work/fixture/beta18.apk --output work/reports --initial-code 34 --target-code 35 --target-version 1.1.0-beta.19 --target-sha256 "$TARGET_SHA"
+          script: python android/release/experimental_live_update_test.py --apk work/fixture/beta18.apk --output work/reports --initial-code 34 --target-code 36 --target-version 1.1.0-beta.19 --target-sha256 "$TARGET_SHA"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
