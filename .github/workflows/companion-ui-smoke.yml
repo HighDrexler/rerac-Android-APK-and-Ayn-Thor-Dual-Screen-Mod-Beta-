@@ -29,8 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p work/candidate work/reports work/test
-          gh run watch 39519241692 --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
-          gh run download 39519241692 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          gh run watch 39521775663 --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          gh run download 39521775663 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
           sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
           sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography >/dev/null
       - name: Sign app and instrumentation with one disposable key
