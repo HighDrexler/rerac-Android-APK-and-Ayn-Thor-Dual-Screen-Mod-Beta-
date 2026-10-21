@@ -1,4 +1,11 @@
 # Changelog
+## Android launcher 1.1
+
+- Restore RAC1's native quick-select cursor pulse, selected-icon brightness, weapon name and ammo, including extra pages and Clank commands.
+- Preserve contact activation, stale-map precedence, lost-release recovery and cancellation cleanup from the owner-confirmed beta19 build.
+- Remove the synthetic Android selection circle/status overlay, obsolete beta publication workflows and superseded signing helpers/receipts.
+- Deliver the same-key, same-package Android build 37 directly through `update-channel3`; no GitHub Release or Stable promotion.
+
 
 ## v0.3.6-alpha
 

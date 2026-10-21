@@ -19,3 +19,7 @@
 
 # Release packages (tools/package/package.sh)
 /dist/
+
+# Python build/test caches
+__pycache__/
+*.py[cod]

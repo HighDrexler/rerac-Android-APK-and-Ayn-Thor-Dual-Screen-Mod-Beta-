@@ -1,44 +1,35 @@
-# ReRAC for Android — Launcher and Dual-Screen Mod
+# ReRAC for Android — Launcher 1.1
 
-Android and AYN Thor adaptation of Ratchet & Clank (2002), based on [ReRAC](https://github.com/re-rac/rerac).
+Android and AYN Thor adaptation of Ratchet & Clank (2002), based on [ReRAC](https://github.com/re-rac/rerac), with source-built ReRAC 0.3.6 for ARM64 and x86-64.
 
-**[Download Development Beta15](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/rerac-android-0.3.6-dev.6)** — Launcher **1.1.0-beta.15 / code31**, source-built **ReRAC 0.3.6** for ARM64 and x86-64.
+## Install or update
 
-Existing Development users: **Updates → Development → Check for Updates → Download update → Install downloaded update**. Updates install in place using the existing release certificate and package.
+Use **Updates → Development → Check for updates** in beta18 or newer.
 
-## Companion restoration
+For a manual installation, [download launcher 1.1](builds/1.1/ReRAC-Android-1.1.apk.zip), extract the ZIP, and install `ReRAC.apk` over the existing app. Beta17 needs this one manual installation to enable branch downloads. Keep the existing app installed to preserve its data.
 
-This update uses the owner's working [v1.0 release](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/v1.0) as its behavior reference. The retained companion view is unchanged apart from the source-built pause layer. Its native quick-select handler now restores the original direct equipment request, interaction-state admission, Drone handling, ownership/icon checks, usage statistics and ammo limits. The introduced dependencies on pause-menu state and gameplay item-definition lookup are removed. Both hybrid and dedicated layouts share this handler.
+Launcher 1.1 uses Android versionCode 37 and the same package and signing certificate as beta17–beta19. Downloads and signed update metadata are hosted directly on `update-channel3`. No GitHub Release is used, and the Stable channel is not promoted.
 
-The pause root and supported list pages show the game's live choices as larger touch cards, with selection highlights, descriptions, Back and Resume. Signed menu labels (including Port Options), the active message table, locked-menu visibility and real list callbacks are preserved. Complete native menu snapshots no longer incorrectly claim they have been filtered to focused panels. Complex maps, inventory grids and confirmations retain native rendering and input.
+## Companion screen
 
-The working secondary-display input report remains available: after a failed item tap, pause, **hold the companion Q Force icon, then tap Copy**. The report contains the installed build, native input result, native/view item IDs and equipment state; no PC is required.
+Quick select activates once on contact in both the Home and dedicated layouts. Visible wheel buttons take priority over stale map input, and a new touch recovers after a lost finger-up event. Cancellation releases held menu buttons and map drags.
 
-Automated tests now exercise accepted selections through the actual hand-swap code and menu choices through actual Open/Back/Resume transitions. **Physical AYN Thor acceptance remains pending.** Earlier UI click tests established hit testing and rejection receipts only; those are not counted as live equipment success.
+The selected weapon now uses RAC1's original quick-select renderer: the native pulsing cursor sprite, selected-icon brightness, weapon name, and ammo. The Android circle and extra status overlay are removed. Extra pages use their own item assignments for ammo; Clank retains the original command presentation.
 
-The build retains the Q Force emblem, vendor weapon-button Exit, crouch wrench THROW and save/overwrite text corrections. Development remains the testing channel; Stable is not promoted.
+The owner confirmed working touch selection on the Thor in beta19. Version 1.1 adds the native presentation and cleanup; automated checks are described in [the update process](android/UPDATE_PROCESS.md).
 
-## Installation and game data
+## Game data and setup
 
-Install `ReRAC-Android-0.3.6-Launcher-1.1-beta15-DEV.apk` from the release page. Enable the **AYN Thor Dual-Screen Mod** through Mods; its toggle takes effect at the next game launch. Use Setup in-game to customize mobile controls.
+Import your own supported USA v1.00 (SCUS-97199) Ratchet & Clank disc ISO or compatible extracted game-data ZIP. Game assets are not supplied. Enable **AYN Thor Dual-Screen Mod** in Mods; its toggle takes effect at the next game launch. Use Setup in-game to customize controls.
 
-For a new installation, import a supported USA v1.00 (SCUS-97199) Ratchet & Clank disc ISO or compatible extracted game-data ZIP. Game assets are not supplied.
+The app package remains `org.rerac.android.ui035test` for in-place compatibility. Its displayed name is **ReRAC 1.1**.
 
-The Development package is `org.rerac.android.ui035test` (ReRAC 0.3.6 Test), separate from the early `org.rerac.android.uipreview` launcher previews.
+## Source and verification
 
-## Build and validation
+Android adapters are under `crates/rc-engine/src/android`; the original quick-select renderer is `crates/rc-game/src/menus/quick_select.rs`. Editable launcher and companion code is under `android/launcher`; branch build, signing reconstruction and test tools are under `android/release`.
 
-Editable native adapters are under `crates/rc-engine/src/android*`; native build/package tooling is under `android/native`. Source-built launcher and companion UI code is under `android/launcher`, with Development packaging and UI checks under `android/release`.
+The branch contains three workflows: build source, verify and host a locally signed APK, and verify the live branch updater. Old beta publication workflows and their superseded signing helpers have been removed. Earlier versioned downloads remain immutable for compatibility with cached signed feeds.
 
-Beta15 uses native source [`5b4e2a5`](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/commit/5b4e2a5be854315394a25448251ae91c03e15284). Evidence: [native and equipment/menu regressions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535171827), [packaging/startup](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535243049), and [companion UI/secondary-window checks](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535243100). The actual production selection and menu helpers are imported by `crates/rc-game/tests/android_companion_selection.rs` and `crates/rc-game/tests/companion_menu.rs`; tests do not maintain separate copies of their implementation.
+The signing key stays on the owner's PC. GitHub receives only public signing receipts, signed metadata, and signed builds. Checksums and native source identity are recorded in [the build report](builds/1.1/build.json).
 
-Publication verifies the original signer, exact APK bytes, downloadable release asset and signed Development feed. See [release and update instructions](android/RELEASE_PROCESS.md). Private signing keys are not stored in GitHub or CI.
-
-## Integrity
-
-| APK | SHA-256 |
-| --- | --- |
-| Launcher 1.1.0-beta.15 / ReRAC 0.3.6 | `285e622323d391875472aa644e032e6b0e8e46f851f7d402cc92edda66eb7d0f` |
-| Launcher 1.1.0-beta.14 / ReRAC 0.3.6 | `27a9fc02da5bfdf6994a106d04221f6903f9ebcb711bcf330502dc51e5d931e2` |
-
-This is an unofficial community adaptation; the original project and ISC license remain credited to ReRAC.
+This is an unofficial community adaptation. The original ReRAC project and ISC license remain credited; see [LICENSE](LICENSE).

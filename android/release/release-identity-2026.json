@@ -2,13 +2,5 @@
   "schema": 1,
   "signer_sha256": "57188113b5796632a7d4db37622abf7c4d2fb3d9b0bccdc9830b01560ee0f81e",
   "feed_branch": "update-channel3",
-  "package_id": "org.rerac.android.ui035test",
-  "launcher_version": "1.1.0-beta.17",
-  "version_code": 33,
-  "native_source_sha": "0ab6c9ca4be8d2f8f671a457c069a5f181e6d9da",
-  "unsigned_run": 39549307221,
-  "native_run": 39549307255,
-  "companion_run": 39549307365,
-  "release_tag": "rerac-android-0.3.6-dev.8",
-  "apk_name": "ReRAC-Android-0.3.6-Launcher-1.1-beta17-DEV.apk"
+  "package_id": "org.rerac.android.ui035test"
 }

@@ -312,6 +312,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                     for(int slot=0;slot<8;slot++){
                         float x=box.left+(centres[slot][0]-20f)/210f*box.width();
                         float y=box.top+(centres[slot][1]-108f)/200f*box.height();
+                        Bitmap nativeArtwork=(scenario==0&&slot==0)?target.copy(Bitmap.Config.ARGB_8888,false):null;
                         int before=accepted[0];long now=SystemClock.uptimeMillis();
                         MotionEvent down=MotionEvent.obtain(now,now,MotionEvent.ACTION_DOWN,x,y,0);
                         MotionEvent up=MotionEvent.obtain(now,now+20,MotionEvent.ACTION_UP,x,y,0);
@@ -320,6 +321,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                         require(!Boolean.TRUE.equals(get(view,"draggingMap")),"Retained map drag swallowed wheel input");
                         packet.put("primaryAspect",slot%2==0?"16:9":"4:3");put(view,"menu",true);put(view,"mode",3);put(view,"transitioning",true);view.draw(new Canvas(target));
                         view.dispatchTouchEvent(up);down.recycle();up.recycle();
+                        if(nativeArtwork!=null){require(nativeArtwork.sameAs(target),"Android added a synthetic cursor/status over unchanged native artwork");nativeArtwork.recycle();}
                         require(accepted[0]==before+1,"Source wheel tap missed: layout="+layout+" page="+page+" slot="+slot);
                         require(lastItem[0]==10+page*8+slot,"Source wheel selected a slot ordinal instead of the visible item");
                         taps[0]++;
@@ -363,6 +365,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("contact_once_multitouch",true).put("wheel_precedes_retained_map",true).put("lost_release_recovers",true).put("cancel_releases_retained_menu",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             evidence.put("failed_poll_identical_packet_recovery",true);
             evidence.put("system_routed_secondary_taps",16);
+            evidence.put("native_artwork_without_android_overlay",true);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));

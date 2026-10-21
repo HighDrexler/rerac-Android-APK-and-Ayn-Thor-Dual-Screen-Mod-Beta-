@@ -5,6 +5,7 @@ from pathlib import Path
 from launcher_dex import source_built_dex, EXPECTED_SIGNER
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'launcher/tools/android'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'native'))
 from apk_format import axml_chunks, string_pool, make_string_pool, manifest_values
 
 BASE_SHA='7d0098f43fdfd93fd4b53ec3d4201f0bd62dbc4e6e3f921b392b2de09a106bb0'
@@ -36,7 +37,7 @@ def manifest(data,version,code):
     assert manifest_values(result)==expected
     return result
 
-def build(baseline,sdk,output,arm64,x86,source):
+def build(baseline,sdk,output,arm64,x86,source,packaging):
     assert sha(baseline.read_bytes())==BASE_SHA
     tools=sdk/'build-tools/36.0.0';zipalign=tools/('zipalign.exe' if (tools/'zipalign.exe').exists() else 'zipalign')
     dex=source_built_dex(EXPECTED_SIGNER,zipalign)
@@ -58,7 +59,7 @@ def build(baseline,sdk,output,arm64,x86,source):
         metadata=dict(original)
         metadata.update(update_feed_branch='update-channel3',build_delivery='branch-archive-v1')
         version,code='1.1',37
-        metadata.update(launcher_version=version,version_code=code,companion_input='contact-once-v1',companion_presentation='rac1-native-selection-v1',source_sha=source,native_source_sha=source,packaging_source_sha=source,native_sha256=native,core_provenance='Source-built ReRAC 0.3.6 / '+source[:12])
+        metadata.update(launcher_version=version,version_code=code,companion_input='contact-once-v1',companion_presentation='rac1-native-selection-v1',source_sha=source,native_source_sha=source,packaging_source_sha=packaging,native_sha256=native,core_provenance='Source-built ReRAC 0.3.6 / '+source[:12])
         metadata.pop('upgrade_test_fixture',None)
         raw=output/(name+'.unaligned');target=output/name
         assert not target.exists() and not raw.exists()
@@ -88,4 +89,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser()
     for n in ('baseline','sdk','output','arm64','x86'):p.add_argument('--'+n,type=Path,required=True)
     p.add_argument('--source',required=True)
-    a=p.parse_args();build(a.baseline,a.sdk,a.output,a.arm64,a.x86,a.source)
+    p.add_argument('--packaging-source',required=True)
+    a=p.parse_args();build(a.baseline,a.sdk,a.output,a.arm64,a.x86,a.source,a.packaging_source)
