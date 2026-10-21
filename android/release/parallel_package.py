@@ -19,8 +19,8 @@ OLD_PACKAGE='org.rerac.android.uipreview'
 DEV_PACKAGE='org.rerac.android.ui035test'
 OLD_CERT='25c5eebb05a013bf3fb84706f9ad87904b8d4d8a99ba7857d62e665d2b94e24a'
 OLD_BRANCH='update-channels'
-DEV_BRANCH='update-channel2'
-EXPECTED_SIGNER='e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e'
+DEV_BRANCH='update-channel3'
+EXPECTED_SIGNER='57188113b5796632a7d4db37622abf7c4d2fb3d9b0bccdc9830b01560ee0f81e'
 assert len(OLD_PACKAGE)==len(DEV_PACKAGE) and len(OLD_BRANCH)==len(DEV_BRANCH)
 
 def manifest(data,core,version,code,old_version,old_code):
@@ -74,6 +74,7 @@ def source_built_dex(signer,zipalign):
     source=ROOT/'android/launcher/android/src'
     android_jar=zipalign.parents[2]/'platforms/android-36/android.jar'
     d8=zipalign.parent/'d8'
+    if not d8.is_file():d8=zipalign.parent/'d8.bat'
     assert android_jar.is_file() and d8.is_file(), 'Android SDK 36 build tools required'
     with tempfile.TemporaryDirectory(prefix='rerac-recompile-') as td:
         base=Path(td);sources=base/'sources';classes=base/'classes';dexdir=base/'dex'
@@ -90,7 +91,7 @@ def source_built_dex(signer,zipalign):
                 single(OLD_PACKAGE,DEV_PACKAGE)
                 single(OLD_CERT,signer)
             if original.name=='UpdatePolicy.java':
-                single('"/'+OLD_BRANCH+'/"','"/'+DEV_BRANCH+'/"')
+                assert '"/'+DEV_BRANCH+'/"' in text, 'Wrong branch feed constant'
             target.write_text(text);paths.append(str(target))
         assert len(paths)>=10, 'Missing Android launcher sources'
         subprocess.run(['javac','-encoding','UTF-8','--release','8','-classpath',str(android_jar),'-d',str(classes),*paths],check=True)

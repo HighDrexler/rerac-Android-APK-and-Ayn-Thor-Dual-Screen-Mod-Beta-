@@ -16,7 +16,7 @@ public class UpdatePolicyTest {
         JSONObject r=new JSONObject();r.put("package_id",LauncherBuild.PACKAGE);r.put("signer_sha256",LauncherBuild.SIGNER);
         r.put("launcher_version","1.1.0-beta.2");r.put("core_version","0.3.4");r.put("version_code",18);r.put("bytes",221000000);
         r.put("min_sdk",26);r.put("abis",new JSONArray().put("arm64-v8a").put("x86_64"));
-        r.put("sha256",new String(new char[64]).replace('\0','a'));r.put("apk_url","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/launcher-v1.1.0-beta.2/ReRAC-Launcher.apk");
+        r.put("sha256",new String(new char[64]).replace('\0','a'));r.put("apk_url","https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channel3/builds/beta18/ReRAC.apk");
         r.put("notes","Launcher features; v16 engine retained.");return new JSONObject().put("schema",1).put("channel","development").put("release",r);
     }
     static byte[] bytes(JSONObject o){return o.toString().getBytes(StandardCharsets.UTF_8);}
@@ -39,7 +39,7 @@ public class UpdatePolicyTest {
     @Test public void supportedUpgradeAccepted()throws Exception{UpdatePolicy.Release r=UpdatePolicy.parsePayload(bytes(valid()),"development");UpdatePolicy.compatible(r,17,26,new String[]{"x86_64"});}
     @Test public void sdkAndProcessorMismatchRejected()throws Exception{UpdatePolicy.Release r=UpdatePolicy.parsePayload(bytes(valid()),"development");rejects(()->UpdatePolicy.compatible(r,17,25,new String[]{"x86_64"}));rejects(()->UpdatePolicy.compatible(r,17,36,new String[]{"armeabi-v7a"}));}
     @Test public void unsafeUrlsRejected(){String[] urls={"http://github.com/a.apk","https://evil.example/a.apk","https://github.com.evil.example/a.apk","https://github.com@evil.example/a.apk","https://github.com:443/a.apk","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/v1/../foo.apk","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/v1/a.apk?extra=1","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/v1/a.apk#fragment","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/v1/%2e%2e.apk","https://github.com/"+LauncherBuild.REPOSITORY+"/releases/download/v1/a.zip"};for(String url:urls)rejects(()->UpdatePolicy.releaseUrl(url));}
-    @Test public void approvedRedirectsAccepted()throws Exception{UpdatePolicy.redirectUrl("https://release-assets.githubusercontent.com/file?sig=ok");UpdatePolicy.redirectUrl("https://objects.githubusercontent.com/file");}
+    @Test public void approvedRedirectsAccepted()throws Exception{UpdatePolicy.redirectUrl("https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channel3/builds/beta18/ReRAC.apk.zip");}
     @Test public void unsafeRedirectsRejected(){rejects(()->UpdatePolicy.redirectUrl("https://example.org/file"));rejects(()->UpdatePolicy.redirectUrl("http://objects.githubusercontent.com/file"));rejects(()->UpdatePolicy.redirectUrl("https://github.com/someone/else/releases/download/tag/a.apk"));}
     @Test public void strictUtf8AndSizeLimits(){rejects(()->UpdatePolicy.utf8(new byte[]{(byte)0xff}));rejects(()->UpdatePolicy.readBounded(new ByteArrayInputStream(new byte[101]),100));}
     @Test public void validSignatureAndTamperDetection()throws Exception{
@@ -51,4 +51,24 @@ public class UpdatePolicyTest {
         rejects(()->UpdatePolicy.parseSigned(bytes(env),"stable",pair.getPublic()));
     }
     @Test public void unsignedOrWrongAlgorithmRejected(){rejects(()->UpdatePolicy.parseSigned(bytes(new JSONObject()),"stable",null));rejects(()->UpdatePolicy.parseSigned(bytes(new JSONObject().put("algorithm","none")),"stable",null));}
+    @Test public void feedUsesUpdaterBranch()throws Exception{assertEquals("https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channel3/development.json",UpdatePolicy.feedUrl("development"));}
+    @Test public void compressedBranchBuildRequiresBoundedSignedTransport()throws Exception{
+        JSONObject o=valid(),r=o.getJSONObject("release");r.put("apk_url",r.getString("apk_url")+".zip");
+        rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
+        r.put("archive_bytes",79000000);r.put("archive_sha256",new String(new char[64]).replace('\0','b'));
+        UpdatePolicy.Release parsed=UpdatePolicy.parsePayload(bytes(o),"development");
+        assertTrue(parsed.archived);assertEquals(79000000,parsed.downloadBytes);assertEquals(221000000,parsed.bytes);
+        r.put("archive_bytes",UpdatePolicy.MAX_ARCHIVE+1);rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
+    }
+    @Test public void archiveHashAndUnexpectedArchiveMetadataRejected()throws Exception{
+        JSONObject o=valid(),r=o.getJSONObject("release");r.put("archive_bytes",2000);r.put("archive_sha256","bad");
+        rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
+        r.put("apk_url",r.getString("apk_url")+".zip");rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
+    }
+    @Test public void branchPathCannotEscape()throws Exception{
+        String prefix="https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/";
+        for(String tail:new String[]{"main/builds/beta18/a.apk","update-channel3/builds/../a.apk","update-channel3/builds/beta18/%61.apk","update-channel3/builds/beta18/a.apk?x=1","update-channel3/builds/beta18/a.apk#x","update-channel3/builds/beta18/a.zip"})rejects(()->UpdatePolicy.releaseUrl(prefix+tail));
+        rejects(()->UpdatePolicy.releaseUrl("https://raw.githubusercontent.com/another/repo/update-channel3/builds/beta18/a.apk"));
+        rejects(()->UpdatePolicy.redirectUrl("https://release-assets.githubusercontent.com/file"));
+    }
 }

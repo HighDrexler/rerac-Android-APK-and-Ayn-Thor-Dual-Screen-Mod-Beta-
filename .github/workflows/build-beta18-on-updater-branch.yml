@@ -1,0 +1,70 @@
+name: Build and host beta18 on update-channel3 only
+on:
+  push:
+    branches: [update-channel3]
+    paths: [android/release/beta18-branch-signatures.json, .github/workflows/build-beta18-on-updater-branch.yml]
+permissions:
+  contents: write
+  actions: read
+jobs:
+  build:
+    if: github.repository_id == '1424927008'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: update-channel3
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17.0.20.1+1'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Get the checksum-pinned same-key fixture from existing Actions evidence
+        run: |
+          set -euo pipefail
+          mkdir -p work/base work/unsigned work/signed work/libs work/test-classes
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39667194348" > work/base/run.json
+          python3 - <<'PY'
+          import json
+          r=json.load(open('work/base/run.json'))
+          assert r['repository']['id']==1424927008 and r['conclusion']=='success'
+          assert r['head_sha']=='0625aa954954aa6114a7ba5cabadb30f0934d505'
+          PY
+          gh run download 39667194348 --repo "$GITHUB_REPOSITORY" --name beta17-signed-public-proof-and-upgrade-fixture --dir work/base/evidence
+          fixture="$(find work/base/evidence -type f -name upgrade-fixture-signed.apk)"
+          cp "$fixture" work/base/input.apk
+          echo 'c26544740a309ea54a36e129f503080e266047a3a62ce265670bae06b85935c2  work/base/input.apk' | sha256sum -c -
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs work/base/input.apk | grep -F '57188113b5796632a7d4db37622abf7c4d2fb3d9b0bccdc9830b01560ee0f81e'
+      - name: Test signed branch policy and bounded archive extraction
+        run: |
+          set -euo pipefail
+          curl -fsSL https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar -o work/libs/junit.jar
+          curl -fsSL https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar -o work/libs/hamcrest.jar
+          curl -fsSL https://repo.maven.apache.org/maven2/org/json/json/20240303/json-20240303.jar -o work/libs/json.jar
+          javac -encoding UTF-8 --release 8 -classpath "work/libs/*:$ANDROID_HOME/platforms/android-36/android.jar" -d work/test-classes $(find android/launcher/android/src -name '*.java') android/launcher/android/tests/org/rerac/android/UpdatePolicyTest.java android/launcher/android/tests/org/rerac/android/UpdateArchiveTest.java
+          java -classpath "work/test-classes:work/libs/*:$ANDROID_HOME/platforms/android-36/android.jar" org.junit.runner.JUnitCore org.rerac.android.UpdatePolicyTest org.rerac.android.UpdateArchiveTest
+      - name: Reproduce unsigned bytes and apply only offline-approved public signatures
+        run: |
+          set -euo pipefail
+          python3 android/release/build_branch_beta18.py --baseline work/base/input.apk --sdk "$ANDROID_HOME" --output work/unsigned
+          python3 android/release/prepare_branch_beta18.py --unsigned work/unsigned --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta18-branch-upgrade-fixture
+          path: work/signed/branch-upgrade-fixture.apk
+          retention-days: 14
+      - name: Commit the verified compressed APK directly to the updater branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add builds/beta18/ReRAC-Android-beta18.apk.zip builds/beta18/build.json builds/beta18/SHA256SUMS.txt
+          git commit -m 'Host signed beta18 build directly on update-channel3'
+          git push origin HEAD:update-channel3

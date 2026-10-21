@@ -20,17 +20,23 @@ import org.json.JSONObject;
 final class UpdatePolicy {
     static final int MAX_FEED = 131072;
     static final long MAX_APK = 1024L * 1024L * 1024L;
-    static final String PREFIX = "/" + LauncherBuild.REPOSITORY + "/releases/download/";
+    static final long MAX_ARCHIVE = 100L * 1024L * 1024L;
+    static final String PREFIX = "/" + LauncherBuild.REPOSITORY + "/update-channel3/builds/";
 
     static final class Release {
         final String channel, launcher, core, sha256, url, notes;
         final long code, bytes;
         final int minSdk;
         final Set<String> abis;
+        final long downloadBytes;
+        final String downloadSha256;
+        final boolean archived;
         Release(String channel, String launcher, String core, String hash, String url,
-                String notes, long code, long bytes, int minSdk, Set<String> abis) {
+                String notes, long code, long bytes, int minSdk, Set<String> abis,
+                long downloadBytes, String downloadSha256, boolean archived) {
             this.channel=channel; this.launcher=launcher; this.core=core; this.sha256=hash;
             this.url=url; this.notes=notes; this.code=code; this.bytes=bytes; this.minSdk=minSdk; this.abis=abis;
+            this.downloadBytes=downloadBytes; this.downloadSha256=downloadSha256; this.archived=archived;
         }
     }
     private UpdatePolicy() {}
@@ -41,7 +47,7 @@ final class UpdatePolicy {
     }
 
     static String feedUrl(String channel) throws IOException {
-        return "https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channels/"+channel(channel)+".json";
+        return "https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channel3/"+channel(channel)+".json";
     }
 
     static Release parseSigned(byte[] raw, String channel, PublicKey publicKey) throws Exception {
@@ -75,6 +81,12 @@ final class UpdatePolicy {
         String hash=text(r,"sha256",64);
         if (!hash.matches("[a-f0-9]{64}")) throw new IOException("Invalid update checksum.");
         String url=text(r,"apk_url",2048); releaseUrl(url);
+        boolean archived=url.endsWith(".apk.zip");
+        long downloadBytes=archived ? integer(r,"archive_bytes",1024,MAX_ARCHIVE) : bytes;
+        String downloadHash=archived ? text(r,"archive_sha256",64) : hash;
+        if(!downloadHash.matches("[a-f0-9]{64}")) throw new IOException("Invalid build archive checksum.");
+        if(!archived && (r.has("archive_bytes") || r.has("archive_sha256")))
+            throw new IOException("Unexpected build archive information.");
         String notes=r.has("notes") ? text(r,"notes",6000) : "Android launcher update.";
         JSONArray list=r.getJSONArray("abis");
         if(list.length()<1 || list.length()>4) throw new IOException("Invalid supported-device list.");
@@ -84,7 +96,7 @@ final class UpdatePolicy {
             if (!abi.equals("arm64-v8a") && !abi.equals("x86_64")) throw new IOException("Unsupported update architecture.");
             if (!abis.add(abi)) throw new IOException("Duplicate update architecture.");
         }
-        return new Release(channel,launcher,core,hash,url,notes,code,bytes,sdk,abis);
+        return new Release(channel,launcher,core,hash,url,notes,code,bytes,sdk,abis,downloadBytes,downloadHash,archived);
     }
 
     static void compatible(Release r,long installed,int sdk,String[] supported) throws IOException {
@@ -97,21 +109,16 @@ final class UpdatePolicy {
     static URI releaseUrl(String value) throws IOException {
         URI u=secureUri(value);
         String p=u.getRawPath();
-        if(!"github.com".equals(u.getHost()) || u.getRawQuery()!=null || p==null || !p.startsWith(PREFIX))
-            throw new IOException("Updates must come from this project's GitHub releases.");
+        if(!"raw.githubusercontent.com".equals(u.getHost()) || u.getRawQuery()!=null || p==null || !p.startsWith(PREFIX))
+            throw new IOException("Updates must come from this project's update-channel3 branch.");
         String tail=p.substring(PREFIX.length());
-        if(!tail.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.apk"))
-            throw new IOException("Invalid APK release address.");
+        if(!tail.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,95}/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\\.apk(?:\\.zip)?"))
+            throw new IOException("Invalid branch build address.");
         return u;
     }
 
     static URI redirectUrl(String value) throws IOException {
-        URI u=secureUri(value);
-        String h=u.getHost();
-        if(!"github.com".equals(h) && !"release-assets.githubusercontent.com".equals(h)
-                && !"objects.githubusercontent.com".equals(h)) throw new IOException("Unexpected download redirect.");
-        if("github.com".equals(h)) releaseUrl(value);
-        return u;
+        return releaseUrl(value);
     }
 
     private static URI secureUri(String value) throws IOException {

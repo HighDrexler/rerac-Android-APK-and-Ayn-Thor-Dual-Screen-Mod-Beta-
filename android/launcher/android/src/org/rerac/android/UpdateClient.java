@@ -95,35 +95,40 @@ final class UpdateClient {
         LauncherBuild installed=LauncherBuild.read(context);
         UpdatePolicy.compatible(release,installed.code,Build.VERSION.SDK_INT,Build.SUPPORTED_ABIS);
         File dir=directory(context), part=new File(dir,"download.part"), candidate=verifiedFile(context);
-        if(dir.getUsableSpace()<release.bytes*2+64L*1024*1024) throw new IOException("Not enough free space for download and installation.");
+        File unpacked=new File(dir,"unpacked.part");
+        if(dir.getUsableSpace()<release.bytes*2+release.downloadBytes+64L*1024*1024) throw new IOException("Not enough free space for download and installation.");
         if(part.exists() && !part.delete()) throw new IOException("Could not clear an interrupted download.");
+        if(unpacked.exists() && !unpacked.delete()) throw new IOException("Could not clear an interrupted unpack.");
         HttpURLConnection c=null;
         try {
             c=downloadConnection(release.url,task);
             long length=c.getContentLengthLong();
-            if(length!=-1 && length!=release.bytes) throw new IOException("Download size does not match the signed release.");
+            if(length!=-1 && length!=release.downloadBytes) throw new IOException("Download size does not match the signed update.");
             MessageDigest digest=MessageDigest.getInstance("SHA-256"); long count=0,last=0;
             try(InputStream in=c.getInputStream(); FileOutputStream out=new FileOutputStream(part)) {
                 byte[] b=new byte[65536]; int n;
                 while((n=in.read(b))!=-1) {
                     task.check(); count+=n;
-                    if(count>release.bytes) throw new IOException("Download exceeded its signed size.");
+                    if(count>release.downloadBytes) throw new IOException("Download exceeded its signed size.");
                     out.write(b,0,n); digest.update(b,0,n);
                     long now=System.nanoTime();
-                    if(now-last>=150000000L) { progress.update(count,release.bytes);last=now; }
+                    if(now-last>=150000000L) { progress.update(count,release.downloadBytes);last=now; }
                 }
                 out.getFD().sync();
             }
             task.check();
-            if(count!=release.bytes || !UpdatePolicy.hex(digest.digest()).equals(release.sha256))
+            if(count!=release.downloadBytes || !UpdatePolicy.hex(digest.digest()).equals(release.downloadSha256))
                 throw new IOException("Download verification failed. The installed app was not changed.");
-            verifyPackage(context,part,release); task.check();
-            Files.move(part.toPath(),candidate.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
-            progress.update(count,release.bytes);
+            File apk=part;
+            if(release.archived) {UpdateArchive.extract(part,unpacked,release.bytes,release.sha256,task::check);apk=unpacked;}
+            verifyPackage(context,apk,release); task.check();
+            Files.move(apk.toPath(),candidate.toPath(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+            progress.update(count,release.downloadBytes);
             return candidate;
         } finally {
             if(c!=null)c.disconnect(); task.connection=null;
             if(part.exists())part.delete();
+            if(unpacked.exists())unpacked.delete();
         }
     }
 

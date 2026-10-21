@@ -111,7 +111,7 @@ public final class LauncherToolsActivity extends Activity {
                     if(r==null){status.setText("No update is currently published on "+channel+".");active(false);return;}
                     details.setVisibility(View.VISIBLE);
                     String change=r.core.equals(LauncherBuild.read(this).core)?"Launcher update \u00b7 same ReRAC core":"Launcher + ReRAC core update";
-                    details.setText(change+"\nAvailable: Launcher "+r.launcher+"\nReRAC "+r.core+"  \u00b7  "+size(r.bytes)+"\n\n"+r.notes);
+                    details.setText(change+"\nAvailable: Launcher "+r.launcher+"\nReRAC "+r.core+"  \u00b7  "+size(r.downloadBytes)+"\n\n"+r.notes);
                     if(r.code<=LauncherBuild.read(this).code){status.setText("You already have this version or a newer build. No downgrade is needed.");active(false);return;}
                     try{UpdatePolicy.compatible(r,LauncherBuild.read(this).code,Build.VERSION.SDK_INT,Build.SUPPORTED_ABIS);release=r;status.setText("A signed update is available.");}
                     catch(Exception e){report(e);}active(false);
