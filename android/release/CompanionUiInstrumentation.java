@@ -147,6 +147,69 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require(report.has("lastTap")&&report.has("nativeSource")&&report.has("nativeWheelItems")&&report.has("view"),"Copied status lacks input evidence");
         }finally{runOnMainSync(()->{if(statusDialog[0]!=null)statusDialog[0].dismiss();if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null){image[0].setOnImageAvailableListener(null,null);image[0].close();}host.finish();});}
     }
+    /** Send touchscreen events through InputDispatcher and the real Presentation window. */
+    private void secondaryTouchRouting(Context context,ClassLoader loader)throws Exception{
+        Activity host=startActivitySync(new Intent().setClassName(context,"org.rerac.android.LauncherActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        final Throwable[] error={null};final ImageReader[] image={null};final VirtualDisplay[] display={null};final Presentation[] presentation={null};final View[] companion={null};
+        final java.util.concurrent.atomic.AtomicInteger accepted=new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger lastItem=new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.List<Integer> actions=java.util.Collections.synchronizedList(new java.util.ArrayList<Integer>());
+        final java.util.concurrent.CountDownLatch drawn=new java.util.concurrent.CountDownLatch(1);
+        final int[][] centres={{125,134},{179,156},{202,208},{179,260},{125,282},{71,260},{48,208},{71,156}};
+        try{
+            runOnMainSync(()->{try{
+                image[0]=ImageReader.newInstance(800,600,PixelFormat.RGBA_8888,2);
+                image[0].setOnImageAvailableListener(reader->{android.media.Image frame=reader.acquireLatestImage();if(frame!=null)frame.close();},new android.os.Handler(android.os.Looper.getMainLooper()));
+                DisplayManager manager=(DisplayManager)host.getSystemService(Context.DISPLAY_SERVICE);
+                display[0]=manager.createVirtualDisplay("Companion touchscreen routing",800,600,160,image[0].getSurface(),DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION|DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
+                require(display[0]!=null,"Cannot create touch-routing display");
+                presentation[0]=new Presentation(host,display[0].getDisplay(),android.R.style.Theme_Material_NoActionBar_Fullscreen);
+                Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
+                View view=companion[0]=(View)ctor.newInstance(presentation[0].getContext());
+                JSONArray slots=new JSONArray();for(int i=0;i<8;i++)slots.put(new JSONObject().put("id",10+i).put("x",centres[i][0]).put("y",centres[i][1]).put("enabled",true));
+                JSONObject page=new JSONObject().put("slots",slots).put("draws",new JSONArray().put(new JSONArray("[1,20,108,210,200,0,0,2,2,127,127,127,128]")));
+                JSONObject packet=new JSONObject().put("generation",41).put("enabled",true).put("menu",false).put("mode",0).put("transition",false).put("box",new JSONArray("[20,108,210,200]")).put("glyphs",new JSONArray()).put("pages",new JSONArray().put(page).put(page));
+                Class<?> source=Class.forName("org.rerac.android.CompanionQuickSelect",true,loader),bridge=Class.forName("org.rerac.android.CompanionQuickSelect$Bridge",true,loader);
+                Object transport=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{bridge},(proxy,method,args)->{
+                    if(method.getName().equals("snapshot"))return packet.toString();
+                    if(method.getName().equals("icon"))return new int[]{2,2,-1,-1,-1,-1};
+                    if(method.getName().equals("select")){lastItem.set((Integer)args[1]);return (long)accepted.incrementAndGet();}
+                    return null;
+                });
+                Method attach=source.getDeclaredMethod("attach",View.class,bridge);attach.setAccessible(true);attach.invoke(null,view,transport);
+                view.setOnTouchListener((v,event)->{actions.add(event.getActionMasked());return false;});
+                view.getViewTreeObserver().addOnDrawListener(()->drawn.countDown());
+                presentation[0].setContentView(view);presentation[0].getWindow().addFlags(8|128);
+                presentation[0].getWindow().getDecorView().setSystemUiVisibility(5894);presentation[0].show();
+            }catch(Throwable failure){error[0]=failure;drawn.countDown();}});
+            require(drawn.await(10,java.util.concurrent.TimeUnit.SECONDS),"Touch-routing companion did not draw");
+            if(error[0]!=null)throw new AssertionError("Cannot create touch-routing fixture",error[0]);
+            waitForIdleSync();
+            for(int layout=0;layout<2;layout++){
+                final int selectedLayout=layout;
+                runOnMainSync(()->{try{put(companion[0],"companionPage",selectedLayout);companion[0].invalidate();}catch(Throwable failure){error[0]=failure;}});
+                waitForIdleSync();SystemClock.sleep(150);
+                for(int slot=0;slot<8;slot++){
+                    final int selectedSlot=slot;final int[] location=new int[2];final RectF bounds=new RectF();
+                    runOnMainSync(()->{try{bounds.set((RectF)get(companion[0],"wheelBox"));companion[0].getLocationOnScreen(location);}catch(Throwable failure){error[0]=failure;}});
+                    if(error[0]!=null)throw new AssertionError("Cannot locate routed wheel",error[0]);
+                    require(!bounds.isEmpty(),"Routed wheel has no bounds");
+                    int x=Math.round(location[0]+bounds.left+(centres[selectedSlot][0]-20f)/210f*bounds.width());
+                    int y=Math.round(location[1]+bounds.top+(centres[selectedSlot][1]-108f)/200f*bounds.height());
+                    int before=accepted.get();actions.clear();
+                    String command="input -d "+display[0].getDisplay().getDisplayId()+" touchscreen tap "+x+" "+y;
+                    String output;
+                    try(java.io.InputStream input=new android.os.ParcelFileDescriptor.AutoCloseInputStream(getUiAutomation().executeShellCommand(command));java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream()){
+                        byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)bytes.write(buffer,0,count);output=new String(bytes.toByteArray(),java.nio.charset.StandardCharsets.UTF_8);
+                    }
+                    waitForIdleSync();
+                    require(accepted.get()==before+1,"System-routed tap missed: layout="+layout+" slot="+slot+" actions="+actions+" shell="+output);
+                    require(lastItem.get()==10+slot,"System-routed tap selected wrong item");
+                    require(actions.contains(MotionEvent.ACTION_DOWN)&&actions.contains(MotionEvent.ACTION_UP),"Incomplete Android touch stream: "+actions);
+                }
+            }
+        }finally{runOnMainSync(()->{if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null){image[0].setOnImageAvailableListener(null,null);image[0].close();}host.finish();});}
+    }
     @Override public void onCreate(Bundle args){start();}
     @Override public void onStart(){
         Bundle result=new Bundle();final Throwable[] failure={null};final int[] taps={0};
@@ -242,6 +305,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
             secondaryStatus(context,loader);
+            secondaryTouchRouting(context,loader);
             require(taps[0]==32,"Incomplete hybrid/dedicated page coverage");
             Method snapshot=core.getDeclaredMethod("quickSelectSnapshot");snapshot.setAccessible(true);
             JSONObject receipt=new JSONObject((String)snapshot.invoke(null));require(receipt.has("pages")&&receipt.has("generation"),"Missing source quick-select protocol");
@@ -251,6 +315,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
             JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("release_cancel_multitouch",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             evidence.put("failed_poll_identical_packet_recovery",true);
+            evidence.put("system_routed_secondary_taps",16);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));
