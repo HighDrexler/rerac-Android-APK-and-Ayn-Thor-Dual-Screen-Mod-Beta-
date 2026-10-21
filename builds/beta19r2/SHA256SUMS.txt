@@ -1,0 +1,2 @@
+7d0098f43fdfd93fd4b53ec3d4201f0bd62dbc4e6e3f921b392b2de09a106bb0  ReRAC.apk
+53a526f65ff69205712db842a6d44bd7b68649e08ce6a0beb18c64f4f29b0771  ReRAC-Android-beta19.apk.zip
