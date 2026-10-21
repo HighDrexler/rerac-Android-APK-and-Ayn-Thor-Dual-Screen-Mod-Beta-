@@ -39,6 +39,19 @@ final class CompanionMenu {
     private static String clean(String value){return "Paradox! This message does not exist".equals(value)?"":value;}
     private static void button(int value)throws Exception{call("nativeMenuButton",new Class<?>[]{int.class},value);}
     private static Object field(View view,String name)throws Exception{Field f=view.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(view);}
+    /** A failed retained poll must retry both packets, even when their text is unchanged. */
+    static void pollFailed(View view,boolean ignored){
+        try{
+            // The retained poller writes its cache keys before all parsing and
+            // texture loading have finished. Keeping those keys on failure
+            // skips the next valid packet, permanently disabling quick select.
+            for(String name:new String[]{"lastWheel","lastCompanion"}){
+                Field f=view.getClass().getDeclaredField(name);f.setAccessible(true);f.set(view,"");
+            }
+            Field enabled=view.getClass().getDeclaredField("enabled");enabled.setAccessible(true);enabled.setBoolean(view,false);
+            view.invalidate();
+        }catch(ReflectiveOperationException error){throw new IllegalStateException("Companion poll recovery contract changed",error);}
+    }
     private static JSONArray ids(JSONArray slots){JSONArray ids=new JSONArray();if(slots!=null)for(int i=0;i<slots.length();i++){JSONObject slot=slots.optJSONObject(i);if(slot!=null)ids.put(slot.optInt("id"));}return ids;}
     private static String inputReport(View view)throws Exception{
         JSONObject report=new JSONObject(NativeCore.companionInputStatus()),wheel=new JSONObject((String)call("nativeWheel",new Class<?>[0]));

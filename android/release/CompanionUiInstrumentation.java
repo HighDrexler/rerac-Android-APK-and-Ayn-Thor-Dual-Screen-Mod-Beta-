@@ -32,6 +32,33 @@ public final class CompanionUiInstrumentation extends Instrumentation {
     private Object get(Object view,String name)throws Exception{
         Field f=wheel.getDeclaredField(name);f.setAccessible(true);return f.get(view);
     }
+    private void failedPollRecovery(Context context,Class<?> game)throws Exception{
+        Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
+        View view=(View)ctor.newInstance(context);
+        Method nativeWheel=game.getDeclaredMethod("nativeWheel");nativeWheel.setAccessible(true);
+        String packet=(String)nativeWheel.invoke(null);
+        // The retained wheel sees an unchanged packet; fail the independent
+        // companion-map refresh after its own cache key has been written.
+        put(view,"lastWheel",packet);put(view,"lastCompanion","");put(view,"enabled",true);
+        put(view,"mapCommands",new java.util.ArrayList<Object>(){
+            @Override public void clear(){throw new IllegalStateException("Injected transient companion refresh failure");}
+        });
+        Runnable poll=(Runnable)get(view,"poll");android.os.Handler handler=(android.os.Handler)get(view,"handler");
+        try{
+            poll.run();handler.removeCallbacks(poll);
+            require("".equals(get(view,"lastWheel")),"Failed poll poisoned the unchanged wheel cache");
+            require("".equals(get(view,"lastCompanion")),"Failed poll poisoned the companion cache");
+            require(Boolean.FALSE.equals(get(view,"enabled")),"Partially refreshed wheel accepts input");
+            put(view,"mapCommands",new java.util.ArrayList<Object>());
+            // Prove that replaying the identical native packet reparses wheel
+            // state, not just that the recovery helper reset a boolean.
+            put(view,"pageSlots",null);
+            poll.run();handler.removeCallbacks(poll);
+            require(packet.equals(get(view,"lastWheel")),"Valid retry did not commit the wheel packet");
+            require(get(view,"pageSlots")!=null,"Unchanged wheel packet was not reparsed after failure");
+            require(new JSONObject(packet).optBoolean("enabled")==((Boolean)get(view,"enabled")),"Retry did not restore native wheel availability");
+        }finally{handler.removeCallbacks(poll);}
+    }
     private void pauseLayouts(Context context,ClassLoader loader)throws Exception{
         Class<?> screen=Class.forName("org.rerac.android.CompanionMenu",true,loader);
         Method render=screen.getDeclaredMethod("render",View.class,Canvas.class,JSONObject.class);render.setAccessible(true);
@@ -170,6 +197,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                     }
                 }
                 target.recycle();
+                failedPollRecovery(context,game);
                 pauseLayouts(context,loader);
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
@@ -182,6 +210,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
             JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            evidence.put("failed_poll_identical_packet_recovery",true);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));
