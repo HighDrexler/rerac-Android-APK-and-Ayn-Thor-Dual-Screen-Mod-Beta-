@@ -85,6 +85,6 @@ public class QuickSelectModelTest {
         assertEquals(48,sink.calls);
     }
     @Test public void nativeRejectionDoesNotPretendEquipmentSucceeded()throws Exception{
-        QuickSelectModel m=create(packet());assertTrue(m.down(0,x(m,0),y(m,0),800,600,(g,i)->0));assertEquals(0,m.submittedSequence);assertEquals(9,m.submittedItem);
+        QuickSelectModel m=create(packet());assertTrue(m.down(0,x(m,0),y(m,0),800,600,(g,i)->0));assertEquals(0,m.submittedSequence);
     }
 }

@@ -2,6 +2,7 @@
 //! JNI threads only exchange immutable snapshots or bounded commands. All game
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
+mod companion_wheel;
 mod companion_policy;
 mod companion_select;
 mod skip_policy;

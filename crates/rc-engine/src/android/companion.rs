@@ -274,16 +274,16 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         ids.resize(ids.len().max(16).div_ceil(8)*8,0);
         if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(8,0);}
         for group in ids.chunks(8){
-            let mut ring=q.clone();ring.open=true;ring.command_page=play.game.hero.mode==1;ring.fade=ring.consts.steps.clamp(0,255) as u8;ring.text_fade=ring.fade;ring.sel=-1;
+            let command=(play.game.hero.mode==1).then_some(if play.svc.units.bot_listeners>0 {play.game.hero.bodies.command}else{0});
+            let (ring,page_global)=super::companion_wheel::page(q,group,&gs.0.global,play.game.hero.items.slot.id,command);
             let mut slots=Vec::new();
             for (i,&item) in group.iter().enumerate(){
-                ring.entries[i].item=item;ring.entries[i].icon=if item>0{ring.items.icon.get(item as usize).copied().unwrap_or(0) as i32}else{0};
                 let selectable=item!=0&&if play.game.hero.mode==1 {play.svc.units.bot_listeners>0}else{available(item)&&!(play.game.hero.mode==3&&item==24)};
                 let (x,y)=ring.slot_pos(if play.game.hero.mode==1 {i*2}else{i});
                 slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&selectable}));
                 if selectable {selection.push(item);}
             }
-            let mut draw=Vec::new();ring.draw(&rt.assets,&gs.0.global,play.game.counter,play.svc.units.bot_listeners,&mut draw);
+            let mut draw=Vec::new();ring.draw(&rt.assets,&page_global,play.game.counter,play.svc.units.bot_listeners,&mut draw);
             let p=cache.convert(&draw,&rt.assets,hud);let draws=cache.wheel_draws(&p,hud);
             pages.push(json!({"slots":slots,"draws":draws}));
         }

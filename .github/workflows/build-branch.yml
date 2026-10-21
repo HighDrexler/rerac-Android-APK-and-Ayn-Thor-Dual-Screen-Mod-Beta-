@@ -1,0 +1,122 @@
+name: Build 1.1 from updater branch source
+on:
+  push:
+    branches: [update-channel3]
+    paths: [crates/**, android/launcher/android/src/**, android/release/build_branch.py, android/release/launcher_dex.py, .github/workflows/build-branch.yml]
+permissions:
+  contents: read
+jobs:
+  game-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked -p rc-game --test companion_wheel --test android_companion_selection --test companion_menu
+      - run: cargo test --locked -p rc-game --lib menus::quick_select::tests
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64-linux-android
+          - abi: x86_64
+            target: x86_64-linux-android
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 256
+      CARGO_PROFILE_RELEASE_DEBUG: 0
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+      RERAC_SOURCE_REVISION: ${{ github.sha }}
+      RUSTFLAGS: -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: ${{ matrix.target }}
+      - name: Prepare pinned NDK
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/28.2.13676358"
+          for attempt in 1 2 3; do
+            if sdkmanager 'ndk;28.2.13676358' && test -x "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"; then break; fi
+            test "$attempt" -lt 3
+            sleep 15
+          done
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ndk" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-native-r28-${{ matrix.abi }}
+          cache-on-failure: true
+          cache-workspace-crates: true
+      - run: cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Compile the actual Android engine
+        run: |
+          set -euo pipefail
+          cargo ndk -t '${{ matrix.abi }}' --platform 26 -o out/jniLibs build -p rc-engine --lib --release --locked
+          readelf -lW out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/segments.txt
+          readelf --dyn-syms --wide out/jniLibs/${{ matrix.abi }}/librc_engine.so > out/exports.txt
+          git rev-parse HEAD > out/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ matrix.abi }}
+          path: out
+          retention-days: 7
+  candidate:
+    needs: [native, game-tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: work/native
+      - name: Build the signing candidate
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
+          mkdir -p work/base builds/1.1
+          unzip -p builds/beta19r2/ReRAC-Android-beta19.apk.zip ReRAC.apk > work/base/beta19.apk
+          python3 android/release/build_branch.py --baseline work/base/beta19.apk --sdk "$ANDROID_HOME" --output work/candidate --arm64 work/native/engine-arm64-v8a/jniLibs/arm64-v8a/librc_engine.so --x86 work/native/engine-x86_64/jniLibs/x86_64/librc_engine.so --source "$GITHUB_SHA"
+          python3 android/native/native_abi_gate.py work/candidate/launcher-unsigned.apk --require-source-companion --report work/candidate/abi.json
+          python3 - <<'PY'
+          import hashlib,json,zipfile
+          from pathlib import Path
+          archive=Path('builds/1.1/signing-candidate.apk.zip')
+          with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.write('work/candidate/launcher-unsigned.apk','unsigned.apk')
+          assert archive.stat().st_size<100*1024*1024
+          report=json.loads(Path('work/candidate/launcher-unsigned.json').read_text())
+          report.update(archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),archive_bytes=archive.stat().st_size)
+          Path('builds/1.1/signing-candidate.json').write_text(json.dumps(report,indent=2)+'\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add builds/1.1/signing-candidate.apk.zip builds/1.1/signing-candidate.json
+          git commit -m 'Stage source-built 1.1 candidate for local signing'
+          git push origin HEAD:update-channel3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-signing-candidate
+          path: work/candidate/*.json
+          retention-days: 7

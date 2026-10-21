@@ -55,12 +55,11 @@ final class CompanionQuickSelect {
         int layout=-1,dedicatedPage;
         String error="",presentationError="";
         Bitmap home;
-        int feedbackItem;long feedbackUntil;String feedbackText="";
         Controller(Bridge bridge){this.bridge=bridge;}
         void refresh(){
             try{
                 QuickSelectModel.Snapshot next=QuickSelectModel.Snapshot.parse(bridge.snapshot());
-                if(textureGeneration!=next.generation){textures.clear();textureGeneration=next.generation;dedicatedPage=0;feedbackUntil=0;}
+                if(textureGeneration!=next.generation){textures.clear();textureGeneration=next.generation;dedicatedPage=0;}
                 model.accept(next);error="";
             }catch(Exception|LinkageError failure){model.failed();error=failure.getClass().getSimpleName();}
         }
@@ -93,22 +92,7 @@ final class CompanionQuickSelect {
                     int quad=canvas.save();canvas.translate(d.x,d.y);canvas.scale(d.w<0?-1:1,d.h<0?-1:1);
                     canvas.drawBitmap(bitmap,source,target,paint);canvas.restoreToCount(quad);
                 }
-                if(android.os.SystemClock.uptimeMillis()<feedbackUntil){
-                    for(QuickSelectModel.Slot slot:model.current().slots)if(slot.item==feedbackItem){
-                        plain(GOLD);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(2.5f);
-                        canvas.drawCircle(slot.x,slot.y,22,paint);paint.setStyle(Paint.Style.FILL);break;
-                    }
-                }
             }finally{canvas.restoreToCount(saved);}
-            if(android.os.SystemClock.uptimeMillis()<feedbackUntil){
-                QuickSelectModel.Snapshot packet=model.snapshot;
-                String message=feedbackText;
-                if(model.submittedSequence>0&&packet.sequence==model.submittedSequence){
-                    if("equipped".equals(packet.selectionState)||"deployed".equals(packet.selectionState)||"command".equals(packet.selectionState))message="Selected";
-                    else if("rejected".equals(packet.selectionState)||"cancelled".equals(packet.selectionState))message="Unavailable right now";
-                }
-                fitted(canvas,message,area.centerX(),area.bottom-14*unit,0.75f*unit,area.width(),BLUE);
-            }
         }
         float textWidth(String text,float scale){
             if(model.snapshot==null)return 0;float width=0;
@@ -213,14 +197,12 @@ final class CompanionQuickSelect {
         if(s.model.snapshot.menu){s.model.hide();return (Boolean)invoke(view,"retainedMenuTouch",new Class<?>[]{MotionEvent.class},event);}
         int action=event.getActionMasked(),index=event.getActionIndex(),id=event.getPointerId(index);float x=event.getX(index),y=event.getY(index);
         if(s.model.hasGesture()){
-            if(action==MotionEvent.ACTION_CANCEL){s.model.cancel();return true;}
             if(action==MotionEvent.ACTION_POINTER_DOWN||action==MotionEvent.ACTION_MOVE)return true;
             if(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_POINTER_UP){
                 s.model.up(id);view.invalidate();return true;
             }
             return true;
         }
-        if(action==MotionEvent.ACTION_CANCEL){set(view,"draggingMap",false);set(view,"skillDragging",false);return true;}
         float unit=unit(view),bottom=view.getHeight()-42*unit;int mode=s.model.snapshot.mode,layout=integer(view,"companionPage");s.layout(layout);
         if(!s.model.available()){
             if(action==MotionEvent.ACTION_DOWN&&y>=bottom&&(mode==1||mode==2||mode==6)){button(2048);view.performClick();}return true;
@@ -233,8 +215,6 @@ final class CompanionQuickSelect {
         if(action==MotionEvent.ACTION_DOWN&&layout!=2&&!bool(view,"showingSkills")
             &&s.model.down(id,x,y,view.getWidth(),view.getHeight(),s.bridge::select)){
             set(view,"draggingMap",false);set(view,"skillDragging",false);
-            s.feedbackItem=s.model.submittedItem;s.feedbackUntil=android.os.SystemClock.uptimeMillis()+1200;
-            s.feedbackText=s.model.submittedSequence>0?"Selecting...":"Unavailable right now";
             view.performClick();view.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
             view.invalidate();return true;
         }

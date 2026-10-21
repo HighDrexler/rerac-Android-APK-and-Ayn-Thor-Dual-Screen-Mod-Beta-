@@ -128,14 +128,13 @@ final class QuickSelectModel {
     boolean hasGesture(){return tracking;}
     /** A new Android DOWN starts a new stream even if an earlier UP was lost. */
     void begin(long time){if(contactTime!=time){cancel();contactTime=time;}}
-    int submittedItem;
     /** Equipment buttons activate on contact, exactly once for the touch stream. */
     boolean down(int id,float x,float y,int viewWidth,int viewHeight,Submit submit){
         if(tracking)return true;
         if(!available()||geometry==null||width!=viewWidth||height!=viewHeight)return false;
         Slot slot=geometry.hit(current(),x,y);
         if(slot==null)return false;
-        tracking=true;pointer=id;submittedItem=slot.item;
+        tracking=true;pointer=id;
         submittedSequence=submit.select(snapshot.generation,slot.item);
         return true;
     }
