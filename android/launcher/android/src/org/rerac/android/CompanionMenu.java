@@ -1,5 +1,9 @@
 package org.rerac.android;
 
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.graphics.*;
 import android.text.Layout;
 import android.text.StaticLayout;
@@ -8,6 +12,7 @@ import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.WeakHashMap;
 import org.json.*;
@@ -31,6 +36,18 @@ final class CompanionMenu {
     }
     private static JSONObject snapshot()throws Exception{return new JSONObject((String)call("nativeCompanion",new Class<?>[0]));}
     private static void button(int value)throws Exception{call("nativeMenuButton",new Class<?>[]{int.class},value);}
+    private static boolean status(View view,MotionEvent event,State state){
+        if(event.getActionMasked()!=MotionEvent.ACTION_UP||event.getEventTime()-event.getDownTime()<750)return false;
+        try{
+            boolean home;
+            if(state.active){float scale=Math.min(view.getWidth()/800f,view.getHeight()/600f);float x=(event.getX()-(view.getWidth()-800*scale)/2)/scale,y=(event.getY()-(view.getHeight()-600*scale)/2)/scale;home=new RectF(24,22,80,78).contains(x,y);}
+            else{Field field=view.getClass().getDeclaredField("homeBox");field.setAccessible(true);home=((RectF)field.get(view)).contains(event.getX(),event.getY());}
+            if(!home)return false;
+            String report=LauncherBuild.read(view.getContext()).footer()+"\n"+new JSONObject(NativeCore.companionInputStatus()).toString(2);
+            new AlertDialog.Builder(view.getContext()).setTitle("Companion input status").setMessage(report).setPositiveButton("Close",null).setNeutralButton("Copy",(d,w)->{ClipboardManager clipboard=(ClipboardManager)view.getContext().getSystemService(Context.CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("ReRAC companion input",report));}).show();
+            return true;
+        }catch(Exception|LinkageError error){return false;}
+    }
     private static void text(Canvas c,State s,String value,float x,float y,float size,int color,float width){
         s.text.setColor(color);s.text.setTextSize(size);s.text.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         c.drawText(TextUtils.ellipsize(value,s.text,width,TextUtils.TruncateAt.END).toString(),x,y,s.text);
@@ -93,7 +110,7 @@ final class CompanionMenu {
         finally{if(saved>=0)canvas.restoreToCount(saved);}
     }
     static boolean touch(View view,MotionEvent event){
-        State s=state(view);if(!s.active)return false;
+        State s=state(view);if(status(view,event,s)){s.down=null;return true;}if(!s.active)return false;
         float scale=Math.min(view.getWidth()/800f,view.getHeight()/600f);if(scale<=0)return true;
         float x=(event.getX()-(view.getWidth()-800*scale)/2)/scale,y=(event.getY()-(view.getHeight()-600*scale)/2)/scale;
         int action=event.getActionMasked();
@@ -105,7 +122,7 @@ final class CompanionMenu {
                 JSONObject snap=snapshot(),menu=snap.optJSONObject("pause");
                 if(snap.optLong("page")!=s.page||menu==null||menu.optBoolean("busy"))return true;
                 if(hit.row==null)button(hit.button);
-                else call("nativeMenuTouch",new Class<?>[]{long.class,float.class,float.class},s.page,(float)hit.row.getDouble("x"),(float)hit.row.getDouble("y"));
+                else if(!NativeCore.menuChoice(snap.getLong("generation"),s.page,hit.row.getLong("widget"),hit.row.getInt("index")))return true;
                 view.performClick();
             }catch(Exception ignored){}return true;
         }

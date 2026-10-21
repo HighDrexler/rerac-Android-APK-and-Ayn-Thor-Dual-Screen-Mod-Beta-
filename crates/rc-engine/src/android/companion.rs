@@ -91,19 +91,19 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
     let work:Vec<_>=commands().lock().unwrap_or_else(|e|e.into_inner()).drain(..).collect();
     for cmd in work {match cmd {
         Command::Select{slot,item,generation}=>{
-            if generation!=GENERATION.load(Ordering::Acquire)||mm.state.mode!=Mode::Gameplay||crate::saves::front_end_active(){continue;}
-            let g=gate(play,&gs.0,&sess.0);if !allowed(&g){continue;}
-            let Some(q)=rt.qs.as_ref() else{continue};
+            if generation!=GENERATION.load(Ordering::Acquire)||mm.state.mode!=Mode::Gameplay||crate::saves::front_end_active(){selection_status(item,"Gameplay or level changed before the tap applied");continue;}
+            let g=gate(play,&gs.0,&sess.0);if !allowed(&g){selection_status(item,"Player state currently blocks quick select");continue;}
+            let Some(q)=rt.qs.as_ref() else{selection_status(item,"Gameplay quick select is unavailable");continue};
             if g.b13f4!=1 {
                 // Gameplay owns the equipment definitions. A missing/unopened
                 // pause menu must never turn a visible weapon into a no-op.
                 let part=play.game.item_data.as_ref().and_then(|data|data.defs.get(item.max(0) as usize)).map(|d|d.slot);
-                if !rc_game::menus::quick_select::touch_item_available(&gs.0.global,slot,item){continue;}
+                if !rc_game::menus::quick_select::touch_item_available(&gs.0.global,slot,item){selection_status(item,"Item is neither owned nor assigned to this saved slot");continue;}
                 match part {
-                    Some(1)=>{sess.0.temp_feet=item;continue;},
-                    Some(2)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_head){sess.0.temp_head=item;}continue;},
-                    Some(3)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_back){sess.0.temp_back=item;}continue;},
-                    Some(0)=>{},_=>continue,
+                    Some(1)=>{sess.0.temp_feet=item;selection_status(item,"Feet equipment request applied");continue;},
+                    Some(2)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_head){sess.0.temp_head=item;selection_status(item,"Head equipment request applied");}else{selection_status(item,"Head equipment is blocked here");}continue;},
+                    Some(3)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_back){sess.0.temp_back=item;selection_status(item,"Back equipment request applied");}else{selection_status(item,"Back equipment is blocked here");}continue;},
+                    Some(0)=>{},_=>{selection_status(item,"Gameplay item definitions are unavailable for this item");continue},
                 }
             }
             let out=q.touch_confirm(slot,item,&g,&mut gs.0.global,&mut sess.0,mm.loop_frame as u32,play.svc.units.bot_listeners);
@@ -114,7 +114,21 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
             if let Some(request)=out.request {
                 sess.0.temp_hand=request;
                 play.game.item_globals.request=request;
+                selection_status(item,"Hand equipment request applied");
             }
+            else if out.command.is_some(){selection_status(item,"Gadgetbot command applied");}
+            else{selection_status(item,"Quick-select release produced no request");}
+        },
+        Command::MenuChoice{page,widget,index,generation}=>{
+            if generation!=GENERATION.load(Ordering::Acquire)||mm.state.mode!=Mode::Menu{continue;}
+            let Some(menu)=rt.menu.as_mut() else{continue};
+            if menu.current!=page||menu.trans!=0||!menu.pages.get(&page).is_some_and(|p|p.widgets.contains(&widget)){continue;}
+            let Some(w)=menu.widgets.get_mut(&widget) else{continue};if w.dflags&4!=0{continue;}
+            let Data::List(list)=&mut w.data else{continue};
+            if list.items.get(index).is_none_or(|i|i.action<=0||i.action==2){continue;}
+            list.cursor=index as i32;
+            if let Some(p)=menu.pages.get_mut(&page){p.focus=widget;p.pending=0;}
+            pulse(button::CROSS);
         },
         Command::Touch{page,x,y}=>{
             let Some(menu)=rt.menu.as_mut() else{continue};
@@ -283,13 +297,15 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         comp["collectibles"]=collectibles(menu,&gs.0,&rt.assets,&mut cache,hud);
         if MAP_VISIBLE.load(Ordering::Acquire)&&secondary(){let (draw,meta)=map_draws(&mut cache,menu,play,&gs.0,&rt.assets);let p=cache.convert(&draw,&rt.assets,hud);comp["map"]=json!(cache.prims(&p,hud));if let Some(m)=meta.as_object(){for(k,v)in m{comp[k]=v.clone();}}}
     }
+    comp["generation"]=json!(generation);
+    comp["equipment"]=json!({"held":play.game.hero.items.slot.id,"target":play.game.hero.items.target,"handRequest":sess.0.temp_hand});
     cache.prune();
     let snapshot=Snapshot{wheel:Arc::from(wheel),companion:Arc::from(comp.to_string()),icons:cache.icons.clone(),selection,generation};
     *published().write().unwrap_or_else(|e|e.into_inner())=snapshot;
 }
 
 /// Publish menu choices, rather than a reduced image of the primary screen.
-/// Coordinates retain the original widget hit test and its normal action path.
+/// Widget identity and index retain the game's validation and normal action path.
 /// Complex map/inventory/confirmation pages keep their existing native panels.
 fn pause_screen(menu:&PageMenu,a:&MenuAssets)->Value {
     let Some(page)=menu.pages.get(&menu.current) else{return Value::Null};
@@ -303,16 +319,11 @@ fn pause_screen(menu:&PageMenu,a:&MenuAssets)->Value {
     for id in page.widgets {
         let Some(w)=menu.widgets.get(&id) else{continue};
         if w.dflags&4!=0||w.draw==0 {continue;}
-        let [x,y,width,height]=w.rect;
         match &w.data {
             Data::List(l)=>{
                 for (i,it) in l.items.iter().enumerate(){
                     let label=text(a.msg(it.label as u16 as i32));if label.is_empty(){continue;}
-                    let source_y=if l.flags&lf::STEP_FROM_FONT!=0 {
-                        let size=if l.flags&lf::LARGE!=0 {32.}else if l.flags&lf::SMALL!=0 {12.}else{16.};
-                        y as f32+(i as f32+1.)*(size+3.)
-                    }else{y as f32+(i as f32+1.)*height as f32/(l.items.len() as f32+1.)};
-                    rows.push(json!({"label":label,"detail":text(a.msg(it.sublabel as u16 as i32)),"enabled":width>0&&height>0&&!matches!(it.action,0|2)&&source_y<(y+height) as f32,"selected":page.focus==id&&l.cursor==i as i32,"x":x as f32+width as f32*0.5,"y":source_y}));
+                    rows.push(json!({"label":label,"detail":text(a.msg(it.sublabel as u16 as i32)),"enabled":it.action>0&&it.action!=2,"selected":page.focus==id&&l.cursor==i as i32,"widget":id,"index":i}));
                 }
             },
             Data::Label(l)=>{
