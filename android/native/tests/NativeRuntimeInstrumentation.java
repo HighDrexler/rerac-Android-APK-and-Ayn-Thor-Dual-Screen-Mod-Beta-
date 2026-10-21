@@ -52,7 +52,12 @@ public final class NativeRuntimeInstrumentation extends Instrumentation {
             call("nativeMapVisible",bool,true);call("nativeMenuButton",integer,0);
             call("nativeMenuGesture",new Class<?>[]{float.class,float.class,float.class,float.class,float.class},0f,0f,0f,0f,1f);
             call("nativeMenuMode",none);call("nativeMenuTouch",new Class<?>[]{long.class,float.class,float.class},0L,0f,0f);
-            call("nativeIcon",integer,-1);call("nativePlanetIcon",new Class<?>[]{String.class},new File(c.getFilesDir(),"gamedata").getPath());
+            call("nativeIcon",integer,-1);
+            int[] home=(int[])call("nativePlanetIcon",new Class<?>[]{String.class},new File(c.getFilesDir(),"gamedata").getPath());
+            require(home!=null && home.length==128*128+2 && home[0]==128 && home[1]==128,"Missing bundled Q Force emblem");
+            require(home[2]==0,"Home emblem lost transparency");
+            boolean opaque=false;for(int i=2;i<home.length;i++)if((home[i]>>>24)==255)opaque=true;
+            require(opaque,"Home emblem is empty");
             call("nativeSecondary",bool,false);call("nativeSelect",new Class<?>[]{int.class,int.class,long.class},-1,-1,0L);
             call("nativeTouchMode",none);call("nativePause",bool,true);call("nativePause",bool,false);
             call("nativeInput",new Class<?>[]{int.class,float.class,float.class,float.class,float.class},0,0f,0f,0f,0f);

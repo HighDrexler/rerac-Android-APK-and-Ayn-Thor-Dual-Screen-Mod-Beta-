@@ -430,6 +430,32 @@ impl QuickSelect {
         self.arm = scale_ticks(30);
     }
 
+    /// Confirm a companion-screen item through the normal release handler.
+    /// The caller validates the published page and resolves its equipment slot
+    /// from gameplay's ItemData; no pause-menu instance is required.
+    pub fn touch_confirm(&self, slot: usize, item: i32, gate: &HeroGate, g: &mut Global, s: &mut SessionState, vsync: u32, listeners: i32) -> QsEvents {
+        let mut q = self.clone();
+        if gate.b13f4 == 1 {
+            if listeners <= 0 || q.commands.as_ref().and_then(|c| c.entries.get(slot)).is_none_or(|e| e.item != item) {
+                return QsEvents::default();
+            }
+            q.command_page = true;
+        } else {
+            if item <= 0 || g.owned.get(item as usize).is_none_or(|&b| b == 0) {
+                return QsEvents::default();
+            }
+            q.command_page = false;
+            q.entries[slot % SLOTS].item = item;
+            q.entries[slot % SLOTS].icon = q.items.icon_of(item);
+        }
+        q.open = true;
+        q.sel = (slot % SLOTS) as i32;
+        q.arm = 0x0100_00ff;
+        q.fade = 0;
+        q.lock_timer = 0;
+        q.update(&MenuInput::default(), gate, g, s, vsync, listeners)
+    }
+
     /// `QuickSelectUpdate` 0x24d238 (only while the ring is open), or the command menu's ([`Self::update_commands`]).
     /// `vsync` = `0x15f3f8`; `listeners` = the gadgetbots' count (`Globals::bot_listeners`).
     pub fn update(&mut self, inp: &MenuInput, gate: &HeroGate, g: &mut Global, s: &mut SessionState, vsync: u32, listeners: i32) -> QsEvents {
@@ -940,6 +966,51 @@ mod tests {
         assert!(u.closed && u.request.is_none());
         assert_eq!(s.temp_hand, 0);
         assert!(!q.open);
+    }
+
+    #[test]
+    fn touch_confirm_both_pages_reaches_actual_hand_swap() {
+        use crate::hero::{Hero, items::{ItemData, ItemEnv, ItemGlobals, update_hand_selected}};
+        use crate::rng::Rng;
+        let q = ring();
+        for slot in 0..16 {
+            let item = 10 + slot as i32;
+            let mut g = global([10, 11, 12, 13, 14, 15, 16, 17]);
+            g.owned[item as usize] = 1;
+            let original_slots = g.quick_select;
+            let mut s = SessionState::default();
+            let out = q.touch_confirm(slot, item, &HeroGate::default(), &mut g, &mut s, 17, 0);
+            // Item 24 is the Drone Device: launch without replacing the hand.
+            if item == DRONE {
+                assert!(out.drone && s.drone);
+                continue;
+            }
+            assert_eq!(out.request, Some(item), "page slot {slot}");
+            assert_eq!(s.temp_hand, item);
+            assert_eq!(g.quick_select, original_slots, "touch does not rewrite saved ring assignments");
+            assert!(!q.open, "companion does not open the top-screen wheel");
+            let mut hero = Hero::new();
+            hero.items.slot.id = WRENCH;
+            let data = ItemData::default();
+            let pad = PadState::default();
+            let env = ItemEnv { data: &data, pad: &pad, frame: 18, hero_moby: 0,
+                coll: None, mobys: None, camera: None, camera_up: None, targets: &[] };
+            let mut live = ItemGlobals { request: s.temp_hand, wrench_flag: 1, ..Default::default() };
+            update_hand_selected(&mut hero, &mut live, &mut Rng::new(), &env);
+            assert_eq!(hero.items.target, item, "tap must reach the hand swap, slot {slot}");
+            assert_eq!(live.wrench_flag, 0);
+        }
+    }
+
+    #[test]
+    fn touch_confirm_rejects_empty_and_unowned_items() {
+        let q = ring();
+        let mut g = global([10, 0, 0, 0, 0, 0, 0, 0]);
+        let mut s = SessionState::default();
+        for item in [-1, 0, 10, 1000] {
+            assert_eq!(q.touch_confirm(0, item, &HeroGate::default(), &mut g, &mut s, 0, 0).request, None);
+        }
+        assert_eq!(s.temp_hand, 0);
     }
 
     #[test]

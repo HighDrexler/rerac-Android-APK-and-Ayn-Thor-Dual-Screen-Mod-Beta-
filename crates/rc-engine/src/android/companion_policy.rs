@@ -25,7 +25,13 @@ pub fn selected_slot(selection:&[i32],slot:usize,item:i32)->Option<usize> {
 
 /// The Java title screen already provides its Start/Load text. Native glyphs
 /// from the game title must not draw a second overlapping copy underneath.
-pub fn native_frontend_primitive(front_end:bool,is_font:bool)->bool { !front_end || !is_font }
+pub fn native_frontend_primitive(title_only:bool,is_font:bool)->bool { !title_only || !is_font }
+
+/// FrontEnd modes 3/4 are the real menu and confirmation dialog, not the title.
+/// Unknown state preserves text rather than silently hiding instructions.
+pub fn title_only(front_end:bool,mode:Option<i32>)->bool {
+    front_end && mode.is_some_and(|m| !matches!(m,3|4))
+}
 
 #[cfg(test)]
 mod tests {
@@ -46,6 +52,14 @@ mod tests {
         assert_eq!(selected_slot(&items,11,23),Some(11));
         assert_eq!(selected_slot(&items,3,99),None);
         assert_eq!(selected_slot(&items,11,13),None);
+    }
+    #[test] fn front_end_save_and_overwrite_dialogs_keep_text(){
+        for mode in [3,4] {
+            assert!(native_frontend_primitive(title_only(true,Some(mode)),true));
+        }
+        assert!(native_frontend_primitive(title_only(true,None),true));
+        assert!(!native_frontend_primitive(title_only(true,Some(1)),true));
+        assert!(native_frontend_primitive(title_only(false,Some(1)),true));
     }
     #[test] fn preserve_title_panels_but_avoid_duplicate_text(){
         assert!(!native_frontend_primitive(true,true));

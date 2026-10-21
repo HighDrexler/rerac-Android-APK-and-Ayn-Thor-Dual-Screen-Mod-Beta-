@@ -61,6 +61,7 @@ jobs:
           /tmp/rerac-touch-tests --nocapture
           cargo test --locked -p rc-video --lib -- --nocapture
           cargo test --locked -p rc-game --lib movie_player::tests
+          cargo test --locked -p rc-game --lib menus::quick_select::tests
           python3 -m unittest discover -s android/native/tests -p 'test_*.py' -v
   native:
     needs: prepare

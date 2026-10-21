@@ -168,11 +168,6 @@ fn java_pixels(env: JNIEnv, data: Option<Arc<[i32]>>) -> jintArray {
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeMapView(_env:JNIEnv,_class:JClass,z:jfloat,u:jfloat,v:jfloat,follow:jboolean) {
     if [z,u,v].iter().all(|f|f.is_finite()) { *view().lock().unwrap_or_else(|e|e.into_inner())=MapView {zoom:z.clamp(0.65,4.),u:u.clamp(0.,1.),v:v.clamp(0.,1.),follow:follow!=JNI_FALSE}; }
 }
-#[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativePlanetIcon(mut env:JNIEnv,_class:JClass,path:JString)->jintArray {
-    // The Java caller gives the already-imported data path. Do not load arbitrary
-    // content outside that directory, and never retain JNIEnv on a worker.
-    let Ok(path)=env.get_string(&path).map(|s|s.to_string_lossy().into_owned()) else{return std::ptr::null_mut()};
-    let expected=std::env::var("RC_DATA_DIR").unwrap_or_default();
-    if !expected.is_empty() && path!=expected {return std::ptr::null_mut()}
-    java_pixels(env,companion::planet_icon(std::path::Path::new(&path)))
+#[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativePlanetIcon(env:JNIEnv,_class:JClass,_path:JString)->jintArray {
+    java_pixels(env,Some(companion::home_icon()))
 }
