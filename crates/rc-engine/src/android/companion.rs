@@ -98,7 +98,7 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
                 // Gameplay owns the equipment definitions. A missing/unopened
                 // pause menu must never turn a visible weapon into a no-op.
                 let part=play.game.item_data.as_ref().and_then(|data|data.defs.get(item.max(0) as usize)).map(|d|d.slot);
-                if item<=0||gs.0.global.owned.get(item as usize).is_none_or(|&b|b==0){continue;}
+                if !rc_game::menus::quick_select::touch_item_available(&gs.0.global,slot,item){continue;}
                 match part {
                     Some(1)=>{sess.0.temp_feet=item;continue;},
                     Some(2)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_head){sess.0.temp_head=item;}continue;},

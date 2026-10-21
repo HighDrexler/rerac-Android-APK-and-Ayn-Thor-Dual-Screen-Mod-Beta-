@@ -320,6 +320,14 @@ fn stat(rec: &mut HelpRec, bump: bool, play_time: i32, level: i32) {
     rec.mask |= 1u32.wrapping_shl(level as u32 & 31) | 0x8000_0000;
 }
 
+/// Saved ring assignments are authoritative for the ordinary in-game wheel.
+/// Keep companion taps equivalent even when a template/legacy save's ownership
+/// mirror has not caught up. Extra companion pages still require ownership.
+pub fn touch_item_available(g: &Global, slot: usize, item: i32) -> bool {
+    item > 0 && g.owned.get(item as usize).is_some_and(|&owned|
+        owned != 0 || g.quick_select.get(slot) == Some(&item))
+}
+
 impl QuickSelect {
     pub fn new(consts: QsConsts, tables: QsTables, items: QsItems) -> QuickSelect {
         QuickSelect {
@@ -441,7 +449,7 @@ impl QuickSelect {
             }
             q.command_page = true;
         } else {
-            if item <= 0 || g.owned.get(item as usize).is_none_or(|&b| b == 0) {
+            if !touch_item_available(g, slot, item) {
                 return QsEvents::default();
             }
             q.command_page = false;
@@ -1003,9 +1011,25 @@ mod tests {
     }
 
     #[test]
-    fn touch_confirm_rejects_empty_and_unowned_items() {
-        let q = ring();
+    fn touch_matches_working_game_wheel_for_saved_assignment_without_owned_mirror() {
+        let mut q = armed(0);
+        q.fade = 0;
         let mut g = global([10, 0, 0, 0, 0, 0, 0, 0]);
+        let mut physical_session = SessionState::default();
+        let physical = q.update(&MenuInput::default(), &HeroGate::default(), &mut g, &mut physical_session, 0, 0);
+        let mut touch_session = SessionState::default();
+        let touch = q.touch_confirm(0, 10, &HeroGate::default(), &mut g, &mut touch_session, 0, 0);
+        assert_eq!(physical.request, Some(10));
+        assert_eq!(touch.request, physical.request);
+        assert_eq!(touch_session.temp_hand, physical_session.temp_hand);
+        assert_eq!(g.owned[10], 0, "touch must not grant items or alter the save's ownership");
+        assert!(!touch_item_available(&g, 8, 10), "an extra page cannot borrow a different saved slot's authority");
+    }
+
+    #[test]
+    fn touch_confirm_rejects_empty_and_unassigned_unowned_items() {
+        let q = ring();
+        let mut g = global([0; 8]);
         let mut s = SessionState::default();
         for item in [-1, 0, 10, 1000] {
             assert_eq!(q.touch_confirm(0, item, &HeroGate::default(), &mut g, &mut s, 0, 0).request, None);
