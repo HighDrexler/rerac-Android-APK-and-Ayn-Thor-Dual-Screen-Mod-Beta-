@@ -1,5 +1,11 @@
 # Android 0.3.5+ in-launcher updates
 
+**Signing migration in beta.17:** the owner authorized a new release key. For
+beta.17 and subsequent releases use [SIGNING_2026.md](SIGNING_2026.md),
+`release-identity-2026.json` and `update-channel3`. The old certificate/feed and
+setup steps below describe beta.4 through beta.16 and must not be used to
+publish updates for the new baseline.
+
 The independently installable Android package is **org.rerac.android.ui035test**, not the original **org.rerac.android.uipreview** application. Existing original-app data is never overwritten by the new package.
 
 ## Experimental beta.6 update verification

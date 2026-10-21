@@ -1,8 +1,26 @@
-name: Companion UI, secondary dialog and copied input report
+name: Companion quick-select and secondary-screen regression
 on:
+  workflow_dispatch:
+    inputs:
+      native_build_run:
+        description: Native build run for this exact source commit (auto-detected when omitted)
+        required: false
+        type: string
   push:
-    branches: [fix/036-touch-and-companion]
-    paths: [.github/workflows/companion-ui-smoke.yml, android/release/CompanionUiInstrumentation.java, android/release/build_companion_ui_test.py, android/release/companion_dex.py, android/release/CompanionDexHooks.java, android/launcher/android/src/org/rerac/android/CompanionMenu.java]
+    branches: [fix/036-touch-and-companion, rebuild/036-companion-quickselect]
+    paths:
+      - .github/workflows/companion-ui-smoke.yml
+      - .github/workflows/android-native-build.yml
+      - android/release/CompanionUiInstrumentation.java
+      - android/release/build_companion_ui_test.py
+      - android/release/companion_dex.py
+      - android/release/CompanionDexHooks.java
+      - android/release/parallel_package.py
+      - android/launcher/**
+      - android/native/**
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
 permissions:
   contents: read
   actions: read
@@ -12,9 +30,10 @@ concurrency:
 jobs:
   companion:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 120
     env:
       GH_TOKEN: ${{ github.token }}
+      NATIVE_RUN: ${{ inputs.native_build_run }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -25,12 +44,34 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Use the cooldown-selection repair native candidate
+      - name: Download this commit's source-built native candidate
         run: |
           set -euo pipefail
           mkdir -p work/candidate work/reports work/test
-          gh run watch 39543426541 --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
-          gh run download 39543426541 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          if [[ -z "$NATIVE_RUN" ]]; then
+            for attempt in $(seq 1 18); do
+              NATIVE_RUN="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" --jq '.workflow_runs | map(select(.path == ".github/workflows/android-native-build.yml")) | sort_by(.id) | last | .id // empty')"
+              [[ -z "$NATIVE_RUN" ]] || break
+              sleep 10
+            done
+          fi
+          [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
+          export NATIVE_RUN
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/reports/native-run.json
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          run=json.loads(Path('work/reports/native-run.json').read_text())
+          assert run['repository']['id']==1424927008
+          assert run['path']=='.github/workflows/android-native-build.yml'
+          assert run['id']==int(os.environ['NATIVE_RUN'])
+          assert run['head_branch']==os.environ['GITHUB_REF_NAME']
+          assert run['head_sha']==os.environ['GITHUB_SHA'], 'Refusing a native build from another source commit'
+          PY
+          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" --jq '.conclusion' | grep -qx success
+          gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          printf '%s\n' "$NATIVE_RUN" > work/reports/native-build-run.txt
           sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
           sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography >/dev/null
       - name: Sign app and instrumentation with one disposable key
@@ -43,12 +84,19 @@ jobs:
           keytool -exportcert -keystore "$keydir/test.p12" -storetype PKCS12 -storepass:file "$keydir/password" -alias ui -file "$keydir/cert.der"
           export KEYDIR="$keydir"
           python3 - <<'PY'
-          import hashlib,importlib.util,os
+          import hashlib,importlib.util,json,os,zipfile
           from pathlib import Path
           p=Path('android/release/parallel_package.py');s=importlib.util.spec_from_file_location('package',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
           pin=hashlib.sha256((Path(os.environ['KEYDIR'])/'cert.der').read_bytes()).hexdigest();m.EXPECTED_SIGNER=pin
-          app=next(Path('work/candidate').rglob('ReRAC-Launcher-1.1.0-beta.16-unsigned.apk'))
-          m.transform(app,Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/app-unsigned.apk'),pin,version='1.1.0-beta.16',code=32)
+          candidate=json.loads(Path('android/native/candidate.json').read_text())
+          version=candidate['launcher_version'];code=candidate['version_code']
+          apps=list(Path('work/candidate').rglob(f'ReRAC-Launcher-{version}-unsigned.apk'))
+          assert len(apps)==1
+          app=apps[0]
+          with zipfile.ZipFile(app) as z:meta=json.loads(z.read('assets/rerac-build.json'))
+          assert meta['native_source_sha']==os.environ['GITHUB_SHA']
+          assert (meta['launcher_version'],meta['version_code'])==(version,code)
+          m.transform(app,Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/app-unsigned.apk'),pin,version=version,code=code)
           PY
           python3 android/release/build_companion_ui_test.py --sdk "$ANDROID_HOME" --output work/test/test-unsigned.apk
           for name in app test; do

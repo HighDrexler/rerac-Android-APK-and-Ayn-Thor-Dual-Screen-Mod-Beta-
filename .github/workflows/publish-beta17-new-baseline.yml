@@ -1,0 +1,148 @@
+name: Publish signed beta17 and verify the new GitHub update baseline
+on:
+  push:
+    branches: [rebuild/036-companion-quickselect]
+    paths: [android/release/beta17-new-baseline-receipt.json, .github/workflows/publish-beta17-new-baseline.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: beta17-new-signing-baseline
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      signed_sha: ${{ steps.approved.outputs.sha }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: rerac-android-0.3.6-dev.8
+      APK: ReRAC-Android-0.3.6-Launcher-1.1-beta17-DEV.apk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Require the successful pinned migration packaging run
+        run: |
+          set -euo pipefail
+          mkdir -p work/input work/out work/proof work/downloaded
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/39666025011" > work/proof/stage.json
+          python3 - <<'PY'
+          import json
+          o=json.load(open('work/proof/stage.json'))
+          assert o['repository']['id']==1424927008 and o['head_sha']=='87ae8378da9a5394631c397dca2d543c2f0d6818'
+          assert o['path']=='.github/workflows/stage-beta17-new-baseline.yml' and o['conclusion']=='success'
+          PY
+          gh release download beta17-signing-input --repo "$GITHUB_REPOSITORY" --pattern beta17-signing-input.zip --dir work/input
+          echo 'da68effc49b2b894307cfd470f589f9892f854dc0d2b1b5ad286e0080947d5c6  work/input/beta17-signing-input.zip' | sha256sum -c -
+          unzip -q work/input/beta17-signing-input.zip -d work/input/unpacked
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-cryptography >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq .sha > work/proof/old-stable.txt
+          gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq .sha > work/proof/old-development.txt
+      - name: Reconstruct public signing blocks and verify original tested payload
+        id: approved
+        run: |
+          set -euo pipefail
+          python3 android/release/verify_beta17_baseline.py --inputs work/input/unpacked --output work/out --tools "$ANDROID_HOME/build-tools/36.0.0"
+          echo "sha=$(sha256sum "work/out/$APK" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Publish the signed test APK and verify the full public download
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" "work/out/$APK" work/out/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title 'ReRAC Android 0.3.6 beta.17 â€” rebuilt companion / new update baseline' --notes-file android/release/BETA17_INSTALL.md
+          fi
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK" --dir work/downloaded
+          cmp "work/out/$APK" "work/downloaded/$APK"
+      - name: Publish only the new certificate's signed feed branch
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/update-channel3" >/dev/null 2>&1; then
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref=refs/heads/update-channel3 -f "sha=$GITHUB_SHA" > work/proof/new-feed-ref.json
+          fi
+          for channel in stable development; do
+            export FEED_CHANNEL="$channel"
+            gh api "repos/$GITHUB_REPOSITORY/contents/$channel.json?ref=update-channel3" > work/proof/current.json 2>/dev/null || echo '{}' > work/proof/current.json
+            python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          channel=os.environ['FEED_CHANNEL']; current=json.load(open('work/proof/current.json'))
+          text=Path('work/out/'+channel+'.json').read_bytes()
+          body=dict(branch='update-channel3',message='Publish signed beta17 new-baseline '+channel+' feed',content=base64.b64encode(text).decode())
+          if 'sha' in current:
+              assert base64.b64decode(current['content'])==text, 'Refusing to replace an unrelated existing new-baseline feed'
+              body['sha']=current['sha']
+          Path('work/proof/feed-write.json').write_text(json.dumps(body))
+          PY
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$channel.json" --input work/proof/feed-write.json > "work/proof/$channel-write.json"
+            gh api "repos/$GITHUB_REPOSITORY/contents/$channel.json?ref=update-channel3" > work/proof/readback.json
+            python3 - <<'PY'
+          import base64,json,os
+          from pathlib import Path
+          assert base64.b64decode(json.load(open('work/proof/readback.json'))['content'])==Path('work/out/'+os.environ['FEED_CHANNEL']+'.json').read_bytes()
+          PY
+          done
+          test "$(gh api "repos/$GITHUB_REPOSITORY/contents/stable.json?ref=update-channel2" --jq .sha)" = "$(cat work/proof/old-stable.txt)"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/contents/development.json?ref=update-channel2" --jq .sha)" = "$(cat work/proof/old-development.txt)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: beta17-signed-public-proof-and-upgrade-fixture
+          path: |
+            work/out/upgrade-fixture-signed.apk
+            work/out/*.txt
+            work/out/*.json
+            work/proof
+          retention-days: 14
+  live-update:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ needs.publish.outputs.signed_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Download only the verified new-key upgrade fixture
+        run: |
+          mkdir -p work/previous work/reports
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name beta17-signed-public-proof-and-upgrade-fixture --dir work/previous
+          fixture="$(find work/previous -type f -name upgrade-fixture-signed.apk)"
+          test -f "$fixture"
+          cp "$fixture" work/previous-fixture.apk
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Test the real signed HTTPS feed, download, installation and data preservation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/previous-fixture.apk --output work/reports --initial-code 32 --target-code 33 --target-version 1.1.0-beta.17 --target-sha256 "$TARGET_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta17-new-baseline-live-update
+          path: work/reports
+          retention-days: 21

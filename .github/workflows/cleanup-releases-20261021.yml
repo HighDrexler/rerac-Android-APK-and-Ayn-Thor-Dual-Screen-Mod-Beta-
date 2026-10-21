@@ -1,0 +1,36 @@
+name: Remove superseded releases after owner-requested cleanup
+on:
+  push:
+    branches: [rebuild/036-companion-quickselect]
+    paths: [android/release/release-cleanup-20261021.json]
+permissions:
+  contents: write
+concurrency:
+  group: release-cleanup-20261021
+  cancel-in-progress: false
+jobs:
+  cleanup:
+    if: github.repository_id == '1424927008'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Snapshot exact releases, source tags and live update-feed references
+        run: python3 android/release/cleanup_releases_20261021.py snapshot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-20261021-metadata-backup
+          path: work/release-cleanup
+          retention-days: 90
+      - name: Remove only the thirteen explicitly enumerated superseded releases
+        run: python3 android/release/cleanup_releases_20261021.py apply
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-cleanup-20261021-result
+          path: work/release-cleanup
+          retention-days: 90

@@ -22,8 +22,12 @@ NATIVES = (
 EXPORTS = {"android_main", "ANativeActivity_onCreate"} | {
     "Java_org_rerac_android_GameActivity_" + name for name in NATIVES
 }
+SOURCE_COMPANION_EXPORTS = {
+    "Java_org_rerac_android_NativeCore_" + name
+    for name in ("buildInfo", "menuChoice", "companionInputStatus", "quickSelect", "quickSelectSnapshot")
+}
 
-def inspect(elf, abi):
+def inspect(elf, abi, source_companion=False):
     hdr = subprocess.check_output(["readelf", "-h", str(elf)], text=True)
     sym = subprocess.check_output(["readelf", "--dyn-syms", "--wide", str(elf)], text=True)
     found = set()
@@ -33,14 +37,15 @@ def inspect(elf, abi):
             found.add(parts[7].split("@")[0])
     m = re.search(r"^\s*Machine:\s*(.*)$", hdr, re.M)
     machine = m.group(1).strip() if m else ""
-    missing = sorted(EXPORTS - found)
+    required = EXPORTS | (SOURCE_COMPANION_EXPORTS if source_companion else set())
+    missing = sorted(required - found)
     ok = ABIS[abi] in machine and not missing
     return {"abi": abi, "machine": machine, "machine_ok": ABIS[abi] in machine,
-            "missing_exports": missing, "required_exports": len(EXPORTS),
+            "missing_exports": missing, "required_exports": len(required),
             "bytes": elf.stat().st_size, "sha256": hashlib.sha256(elf.read_bytes()).hexdigest(),
             "ok": ok}
 
-def check(apk):
+def check(apk, source_companion=False):
     results = []
     with zipfile.ZipFile(apk) as z, tempfile.TemporaryDirectory() as tmp:
         for abi in ABIS:
@@ -52,7 +57,7 @@ def check(apk):
             with z.open(path) as src, target.open("wb") as dst:
                 import shutil
                 shutil.copyfileobj(src, dst)
-            results.append(inspect(target, abi))
+            results.append(inspect(target, abi, source_companion))
     return {"schema": 1, "candidate": apk.name, "checks": results,
             "ok": all(x["ok"] for x in results)}
 
@@ -61,9 +66,11 @@ def main():
     ap.add_argument("apk", type=Path)
     ap.add_argument("--baseline", type=Path)
     ap.add_argument("--report", type=Path)
+    ap.add_argument("--require-source-companion", action="store_true",
+                    help="Require the rebuilt companion controller's JNI entry points")
     args = ap.parse_args()
     try:
-        result = check(args.apk)
+        result = check(args.apk, args.require_source_companion)
         if args.baseline:
             base = json.loads(args.baseline.read_text())
             assert base["ok"] and {x["abi"] for x in base["checks"]} == set(ABIS)

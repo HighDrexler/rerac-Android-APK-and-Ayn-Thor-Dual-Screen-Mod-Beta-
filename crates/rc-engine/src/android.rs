@@ -36,24 +36,35 @@ static COMMANDS: OnceLock<Mutex<VecDeque<Command>>> = OnceLock::new();
 static PUBLISHED: OnceLock<RwLock<Snapshot>> = OnceLock::new();
 static VIEW: OnceLock<Mutex<MapView>> = OnceLock::new();
 static SELECT_STATUS: OnceLock<Mutex<serde_json::Value>> = OnceLock::new();
+static SELECT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static CANCEL_SELECTION: AtomicBool = AtomicBool::new(false);
 fn selection_status(item:i32,stage:&str) {
-    let value=serde_json::json!({"item":item,"stage":stage});
+    let value=serde_json::json!({"sequence":0,"item":item,"state":"rejected","stage":stage});
     *SELECT_STATUS.get_or_init(||Mutex::new(serde_json::json!({"stage":"No companion item tap received"}))).lock().unwrap_or_else(|e|e.into_inner())=value;
+}
+fn selection_receipt(sequence:u64,item:i32,state:&str) {
+    if sequence==0 {return;}
+    let mut last=SELECT_STATUS.get_or_init(||Mutex::new(serde_json::json!({}))).lock().unwrap_or_else(|e|e.into_inner());
+    if last.get("sequence").and_then(serde_json::Value::as_u64).unwrap_or(0)>sequence {return;}
+    *last=serde_json::json!({"sequence":sequence,"item":item,"state":state,"stage":state});
+}
+fn selection_snapshot()->serde_json::Value {
+    SELECT_STATUS.get_or_init(||Mutex::new(serde_json::json!({"sequence":0,"state":"idle"}))).lock().unwrap_or_else(|e|e.into_inner()).clone()
 }
 
 #[derive(Clone)]
 pub(super) struct Snapshot {
     wheel: Arc<str>, companion: Arc<str>, icons: HashMap<i32, Arc<[i32]>>,
-    selection: Vec<i32>, generation: u64,
+    selection: Vec<i32>, generation: u64, enabled: bool,
 }
 impl Default for Snapshot {
     fn default() -> Self {
-        Self { wheel: Arc::from(r#"{"generation":0,"enabled":false,"box":[0,0,256,256],"glyphs":[],"pages":[{"slots":[],"draws":[]},{"slots":[],"draws":[]}]}"#), companion: Arc::from(r#"{"menu":false,"mode":0,"transition":false,"map":[],"prims":[],"panels":[],"objectives":[],"textures":0}"#), icons: HashMap::new(), selection: Vec::new(), generation: 0 }
+        Self { wheel: Arc::from(r#"{"protocol":2,"generation":0,"enabled":false,"mode":0,"menu":false,"transition":false,"box":[0,0,256,256],"glyphs":[],"pages":[{"slots":[],"draws":[]},{"slots":[],"draws":[]}]}"#), companion: Arc::from(r#"{"menu":false,"mode":0,"transition":false,"map":[],"prims":[],"panels":[],"objectives":[],"textures":0}"#), icons: HashMap::new(), selection: Vec::new(), generation: 0, enabled: false }
     }
 }
 #[derive(Clone, Copy, Debug)]
 pub(super) enum Command {
-    Select { slot: usize, item: i32, generation: u64 },
+    Select { sequence: u64, item: i32, generation: u64 },
     Touch { page: u32, x: f32, y: f32 },
     Gesture { x: f32, y: f32, dx: f32, dy: f32, scale: f32 },
     MenuChoice { page:u32, widget:u32, index:usize, generation:u64 },
@@ -64,6 +75,12 @@ impl Default for MapView { fn default() -> Self { Self { zoom: 1.6, u: 0.5, v: 0
 fn input() -> &'static Mutex<InputState> { INPUT.get_or_init(|| Mutex::new(InputState::default())) }
 fn published() -> &'static RwLock<Snapshot> { PUBLISHED.get_or_init(|| RwLock::new(Snapshot::default())) }
 fn commands() -> &'static Mutex<VecDeque<Command>> { COMMANDS.get_or_init(|| Mutex::new(VecDeque::new())) }
+fn discard_commands() {
+    let mut pending=commands().lock().unwrap_or_else(|e|e.into_inner());
+    for command in pending.drain(..) {
+        if let Command::Select{sequence,item,..}=command {selection_receipt(sequence,item,"cancelled");}
+    }
+}
 fn view() -> &'static Mutex<MapView> { VIEW.get_or_init(|| Mutex::new(MapView::default())) }
 fn queue(command: Command)->bool { let mut q=commands().lock().unwrap_or_else(|e| e.into_inner()); if q.len()<64 && !paused() { q.push_back(command);true }else{false} }
 pub fn paused() -> bool { PAUSED.load(Ordering::Acquire) }
@@ -71,10 +88,11 @@ pub fn display_mhz() -> u32 { DISPLAY_MHZ.load(Ordering::Relaxed) }
 pub fn secondary() -> bool { DUAL.load(Ordering::Relaxed) && SECONDARY.load(Ordering::Relaxed) }
 pub(super) fn pulse(button: u32) { input().lock().unwrap_or_else(|e| e.into_inner()).pulse(button); }
 fn reset_level() {
+    CANCEL_SELECTION.store(true,Ordering::Release);
     selection_status(-1,"Level changed; no companion item tap received yet");
     GENERATION.fetch_add(1, Ordering::AcqRel);
     *published().write().unwrap_or_else(|e| e.into_inner())=Snapshot::default();
-    commands().lock().unwrap_or_else(|e| e.into_inner()).clear();
+    discard_commands();
     *view().lock().unwrap_or_else(|e| e.into_inner())=MapView::default();
     TOUCH_MODE.store(3,Ordering::Relaxed);
 }
@@ -82,8 +100,10 @@ fn reset_level() {
 pub struct AndroidPlugin;
 impl Plugin for AndroidPlugin {
     fn build(&self, app:&mut App) {
-        app.add_systems(crate::level_switch::LevelUnload, reset_level)
+        app.init_resource::<companion::SelectionController>()
+           .add_systems(crate::level_switch::LevelUnload, reset_level)
            .add_systems(FixedUpdate, (companion::apply_commands, sample_tick).chain().before(crate::gameplay::GameTick).before(crate::menu_render::MenuFrameSet))
+           .add_systems(FixedUpdate, companion::selection_feedback.after(crate::gameplay::GameTick).before(crate::menu_render::MenuFrameSet))
            .add_systems(PostUpdate, companion::publish.after(crate::hud_render::HudBuild));
     }
 }
@@ -150,7 +170,7 @@ fn java_pixels(env: JNIEnv, data: Option<Arc<[i32]>>) -> jintArray {
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativePause(_env:JNIEnv,_class:JClass,v:jboolean) {
     let pause=v!=JNI_FALSE; PAUSED.store(pause,Ordering::Release);
     input().lock().unwrap_or_else(|e| e.into_inner()).pause(pause);
-    if pause {commands().lock().unwrap_or_else(|e| e.into_inner()).clear();}
+    if pause {discard_commands();CANCEL_SELECTION.store(true,Ordering::Release);}
 }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeDisplayRate(_env:JNIEnv,_class:JClass,hz:jfloat) { if hz.is_finite() && (20.0..=500.0).contains(&hz) { DISPLAY_MHZ.store((hz*1000.).round() as u32,Ordering::Relaxed); } }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeSetDual(_env:JNIEnv,_class:JClass,v:jboolean) { DUAL.store(v!=JNI_FALSE,Ordering::Release); }
@@ -161,14 +181,34 @@ fn java_pixels(env: JNIEnv, data: Option<Arc<[i32]>>) -> jintArray {
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeWheel(env:JNIEnv,_class:JClass)->jstring { let s=published().read().unwrap_or_else(|e|e.into_inner()).wheel.clone();java_string(env,&s) }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeCompanion(env:JNIEnv,_class:JClass)->jstring { let s=published().read().unwrap_or_else(|e|e.into_inner()).companion.clone();java_string(env,&s) }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeIcon(env:JNIEnv,_class:JClass,id:jint)->jintArray { let p=published().read().unwrap_or_else(|e|e.into_inner()).icons.get(&id).cloned();java_pixels(env,p) }
-#[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeSelect(_env:JNIEnv,_class:JClass,slot:jint,item:jint,generation:jlong) {
-    if slot<0 || item<0 || generation<0 {selection_status(item,"Invalid tap arguments");return;}
+/// Both Java entry points enter one identity-based queue. Display coordinates,
+/// source aspect ratio, page ordinal and retained Java view state have no role.
+fn select_item(item:i32,generation:i64)->u64 {
+    if item<=0 || generation<=0 {selection_status(item,"Invalid tap arguments");return 0;}
     let snap=published().read().unwrap_or_else(|e|e.into_inner());
-    if snap.generation!=generation as u64 {selection_status(item,"Companion displayed an outdated level");return;}
-    let Some(index)=companion_policy::selected_slot(&snap.selection,slot as usize,item) else{selection_status(item,"Item does not match the displayed slot");return};
+    if snap.generation!=generation as u64 {selection_status(item,"Companion displayed an outdated level");return 0;}
+    if !snap.enabled || !snap.selection.contains(&item) {selection_status(item,"Item is not available in gameplay");return 0;}
     drop(snap);
-    selection_status(item,"Tap received; waiting for simulation");
-    if !queue(Command::Select{slot:index,item,generation:generation as u64}){selection_status(item,if paused(){"Android activity is paused"}else{"Input queue is full"});}
+    let sequence=SELECT_SEQUENCE.fetch_add(1,Ordering::Relaxed);
+    let mut pending=commands().lock().unwrap_or_else(|e|e.into_inner());
+    if paused() {selection_status(item,"Android activity is paused");return 0;}
+    // Only the latest wheel intent can win. Menu/gesture messages keep their order.
+    pending.retain(|c|!matches!(c,Command::Select{..}));
+    if pending.len()>=64 {selection_status(item,"Input queue is full");return 0;}
+    pending.push_back(Command::Select{sequence,item,generation:generation as u64});
+    selection_receipt(sequence,item,"queued");
+    sequence
+}
+#[no_mangle] pub extern "system" fn Java_org_rerac_android_GameActivity_nativeSelect(_env:JNIEnv,_class:JClass,slot:jint,item:jint,generation:jlong) {
+    if slot<0 {selection_status(item,"Invalid tap arguments");return;}
+    select_item(item,generation);
+}
+#[no_mangle] pub extern "system" fn Java_org_rerac_android_NativeCore_quickSelect(_env:JNIEnv,_class:JClass,generation:jlong,item:jint)->jlong {
+    select_item(item,generation) as jlong
+}
+#[no_mangle] pub extern "system" fn Java_org_rerac_android_NativeCore_quickSelectSnapshot(env:JNIEnv,_class:JClass)->jstring {
+    let wheel=published().read().unwrap_or_else(|e|e.into_inner()).wheel.clone();
+    java_string(env,&wheel)
 }
 #[no_mangle] pub extern "system" fn Java_org_rerac_android_NativeCore_menuChoice(_env:JNIEnv,_class:JClass,generation:jlong,page:jlong,widget:jlong,index:jint)->jboolean {
     if generation<1||generation as u64!=GENERATION.load(Ordering::Acquire)||!(0..=u32::MAX as i64).contains(&page)||!(0..=u32::MAX as i64).contains(&widget)||index<0{return JNI_FALSE;}

@@ -11,18 +11,6 @@ pub fn display_mode(mode:i32,front_end:bool)->(bool,u32) {
     (visible_menu,touch)
 }
 
-/// A tap may give either the absolute index or its location in an 8-slot page.
-/// Earlier builds compared only absolute positions, rejecting page 2+ taps.
-/// Match exactly by item as well so a recycled/stale page selection is rejected.
-pub fn selected_slot(selection:&[i32],slot:usize,item:i32)->Option<usize> {
-    if item<0{return None}
-    if selection.get(slot)==Some(&item){return Some(slot)}
-    if slot<8 {
-        return selection.iter().enumerate().find(|(i,id)|i%8==slot&&**id==item).map(|(i,_)|i)
-    }
-    None
-}
-
 /// The Java title screen already provides its Start/Load text. Native glyphs
 /// from the game title must not draw a second overlapping copy underneath.
 pub fn native_frontend_primitive(title_only:bool,is_font:bool)->bool { !title_only || !is_font }
@@ -44,14 +32,6 @@ mod tests {
         assert_eq!(display_mode(0,false),(false,0));
         assert_eq!(display_mode(1,false),(false,2));
         assert_eq!(display_mode(6,false),(false,2));
-    }
-    #[test] fn page_two_quick_select_touches_resolve(){
-        let items=[10,11,12,13,14,15,16,17,20,21,22,23,24,25,26,27];
-        assert_eq!(selected_slot(&items,3,13),Some(3));
-        assert_eq!(selected_slot(&items,3,23),Some(11));
-        assert_eq!(selected_slot(&items,11,23),Some(11));
-        assert_eq!(selected_slot(&items,3,99),None);
-        assert_eq!(selected_slot(&items,11,13),None);
     }
     #[test] fn front_end_save_and_overwrite_dialogs_keep_text(){
         for mode in [3,4] {
