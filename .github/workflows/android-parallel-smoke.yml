@@ -6,7 +6,7 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39528247162'
+        default: '39535171827'
       launcher_version:
         description: Candidate launcher version
         required: false
@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39528247162' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39535171827' }}
       REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.15' }}
       REQUEST_CODE: ${{ inputs.version_code || '31' }}
     steps:
