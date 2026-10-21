@@ -57,19 +57,25 @@ public final class CompanionUiInstrumentation extends Instrumentation {
     }
     private void secondaryStatus(Context context,ClassLoader loader)throws Exception{
         Activity host=startActivitySync(new Intent().setClassName(context,"org.rerac.android.LauncherActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        final Throwable[] error={null};
-        runOnMainSync(()->{
-            ImageReader image=null;VirtualDisplay display=null;Presentation presentation=null;
-            try{
-                image=ImageReader.newInstance(800,600,PixelFormat.RGBA_8888,2);
+        final Throwable[] error={null};final ImageReader[] image={null};final VirtualDisplay[] display={null};final Presentation[] presentation={null};final View[] companion={null};
+        java.util.concurrent.CountDownLatch attached=new java.util.concurrent.CountDownLatch(1);
+        try{
+            runOnMainSync(()->{try{
+                image[0]=ImageReader.newInstance(800,600,PixelFormat.RGBA_8888,2);
+                image[0].setOnImageAvailableListener(reader->{android.media.Image frame=reader.acquireLatestImage();if(frame!=null)frame.close();},new android.os.Handler(android.os.Looper.getMainLooper()));
                 DisplayManager manager=(DisplayManager)host.getSystemService(Context.DISPLAY_SERVICE);
-                display=manager.createVirtualDisplay("Companion input dialog test",800,600,160,image.getSurface(),DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION|DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
-                require(display!=null,"Cannot create secondary display");
-                presentation=new Presentation(host,display.getDisplay());
+                display[0]=manager.createVirtualDisplay("Companion input dialog test",800,600,160,image[0].getSurface(),DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION|DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
+                require(display[0]!=null,"Cannot create secondary display");
+                presentation[0]=new Presentation(host,display[0].getDisplay());
                 Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
-                View view=(View)ctor.newInstance(presentation.getContext());presentation.setContentView(view);
-                presentation.getWindow().addFlags(8);presentation.show();view.layout(0,0,800,600);
-                require(view.getWindowToken()!=null,"Companion view has no secondary window token");
+                companion[0]=(View)ctor.newInstance(presentation[0].getContext());
+                companion[0].addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){public void onViewAttachedToWindow(View view){attached.countDown();}public void onViewDetachedFromWindow(View view){}});
+                presentation[0].setContentView(companion[0]);presentation[0].getWindow().addFlags(8);presentation[0].show();
+            }catch(Throwable failure){error[0]=failure;attached.countDown();}});
+            require(attached.await(5,java.util.concurrent.TimeUnit.SECONDS),"Secondary view did not attach");
+            if(error[0]!=null)throw new AssertionError("Cannot create secondary fixture",error[0]);
+            runOnMainSync(()->{try{
+                View view=companion[0];view.layout(0,0,800,600);require(view.getWindowToken()!=null,"Companion view has no secondary window token");
                 Class<?> screen=Class.forName("org.rerac.android.CompanionMenu",true,loader);
                 Method render=screen.getDeclaredMethod("render",View.class,Canvas.class,JSONObject.class);render.setAccessible(true);
                 JSONObject menu=new JSONObject().put("title","Paused").put("root",true).put("supported",true).put("rows",new JSONArray().put(new JSONObject().put("label","Options").put("enabled",true)));
@@ -80,10 +86,9 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 require(status!=null,"Input status handler unavailable");status.setAccessible(true);
                 long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now-1000,now,MotionEvent.ACTION_UP,52,50,0);
                 try{require(Boolean.TRUE.equals(status.invoke(null,view,up,value)),"Input status dialog failed on the real secondary window");}finally{up.recycle();}
-            }catch(Throwable failure){error[0]=failure;}
-            finally{if(presentation!=null)presentation.dismiss();if(display!=null)display.release();if(image!=null)image.close();host.finish();}
-        });
-        if(error[0]!=null)throw new AssertionError("Secondary-display status dialog failed",error[0]);
+            }catch(Throwable failure){error[0]=failure;}});
+            if(error[0]!=null)throw new AssertionError("Secondary-display status dialog failed",error[0]);
+        }finally{runOnMainSync(()->{if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null)image[0].close();host.finish();});}
     }
     @Override public void onCreate(Bundle args){start();}
     @Override public void onStart(){
