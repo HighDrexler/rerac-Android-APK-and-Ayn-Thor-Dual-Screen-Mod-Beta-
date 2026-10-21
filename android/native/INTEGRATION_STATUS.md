@@ -1,4 +1,18 @@
-# Actual native-core integration status
+# Android integration status — 2026-10-21
+
+## Current: Beta13 physical companion acceptance failed
+
+Development publishes Launcher 1.1.0-beta.13 / code29 with source-built ReRAC 0.3.6 (`7202b3a`), release `rerac-android-0.3.6-dev.4`. The APK SHA-256 is `fee032d0bc49cf0c09108f33297e9c7ab538b5634a8f2106c276a548e869108e`. Original-signer live beta12 → beta13 installation passed in run `39524413848`. Stable was not promoted. Original update signing material has been recovered for offline use; the current certificate is `e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e`.
+
+Blake confirmed that companion touch still fails in the installed Beta13/code29. The primary wheel and ordinary touch work, while companion quick select fails in hybrid and dedicated layouts. Do not mark this fixed or promote Stable based on the earlier injected-tap fixture. That fixture counted `performClick` with generation 0 and no published native selections; it did not establish JNI acceptance or equipment changes.
+
+The follow-up pause interface uses actual menu choices as larger cards, with selection, descriptions, Back and Resume. Choices identify the live page, widget and row and run the game's ordinary Cross action after validation. Complex map/inventory/confirmation pages retain native rendering with focused panel reflow. Packaged UI run `39527296034` passed and retained screenshots; it used layout fixtures and does not prove gameplay acceptance.
+
+The new native input status distinguishes no item tap, stale level/slot, paused activity, queue rejection, player-state rejection, missing definitions and an applied equipment request. Hold the companion Q Force icon and Copy the status. It includes installed build metadata and held/target/request values so a Thor report can locate the remaining failure without a PC. This is diagnostic evidence, not a selection-fix claim. Both ABI compilation and candidate validation remain required before a new versionCode is published to Development.
+
+## Historical 0.3.5 integration notes
+
+The following records describe the earlier beta4 investigation, including its then-missing key and feed state; they are not the current release status.
 
 ## Source-built candidate exists; release is blocked
 

@@ -2,42 +2,43 @@
 
 Android and AYN Thor adaptation of Ratchet & Clank (2002), based on [ReRAC](https://github.com/re-rac/rerac).
 
-**[Launcher 1.1 development test APKs](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/launcher-v1.1.0-beta-test)** · [Existing v1.0 release](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/v1.0)
+**[Download Development Beta15](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/rerac-android-0.3.6-dev.6)** — Launcher **1.1.0-beta.15 / code31**, source-built **ReRAC 0.3.6** for ARM64 and x86-64.
 
-## Launcher 1.1 test
+Existing Development users: **Updates → Development → Check for Updates → Download update → Install downloaded update**. Updates install in place using the existing release certificate and package.
 
-Install `ReRAC-Launcher-1.1.0-beta.1.apk` over the existing v1.0 app. **Do not uninstall.** Back up important saves before trying a development build.
+## Companion restoration
 
-The test adds an Updates page with Stable/Development channels, verified in-launcher downloads, an Android installation prompt, a small bottom launcher/core version label, and a Mods manager. Only the existing **AYN Thor Dual-Screen Mod** is bundled. Its toggle takes effect at the next game launch. Choose Mods folder uses Android's file picker; external configuration/resolution-profile mods are supported, not arbitrary native-code or script mods.
+This update uses the owner's working [v1.0 release](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/v1.0) as its behavior reference. The retained companion view is unchanged apart from the source-built pause layer. Its native quick-select handler now restores the original direct equipment request, interaction-state admission, Drone handling, ownership/icon checks, usage statistics and ammo limits. The introduced dependencies on pause-menu state and gameplay item-definition lookup are removed. Both hybrid and dedicated layouts share this handler.
 
-To exercise the update process: open **Updates → Development → Check for updates → Download update → Install downloaded update**. Allow installations from ReRAC in Android Settings when prompted, return to the app and confirm installation. The feed offers beta.2, an otherwise equivalent build with a higher Android versionCode. Stable does not advertise this experimental test.
+The pause root and supported list pages show the game's live choices as larger touch cards, with selection highlights, descriptions, Back and Resume. Signed menu labels (including Port Options), the active message table, locked-menu visibility and real list callbacks are preserved. Complete native menu snapshots no longer incorrectly claim they have been filtered to focused panels. Complex maps, inventory grids and confirmations retain native rendering and input.
 
-**These APKs still contain ReRAC 0.3.4/v16 native libraries. They do not include the upstream 0.3.5 native game update.** The footer and update notes show the actual versions, not the Rust workspace version.
+The working secondary-display input report remains available: after a failed item tap, pause, **hold the companion Q Force icon, then tap Copy**. The report contains the installed build, native input result, native/view item IDs and equipment state; no PC is required.
 
-## Preserved Android functionality
+Automated tests now exercise accepted selections through the actual hand-swap code and menu choices through actual Open/Back/Resume transitions. **Physical AYN Thor acceptance remains pending.** Earlier UI click tests established hit testing and rejection receipts only; those are not counted as live equipment success.
 
-The original v16 native libraries, importer and game-control DEX files are preserved. Existing features include the optional companion-screen maps/menus/quick selection, touch and analog-stick Quick Select, configurable mobile and DualShock-style layouts, hold-to-Crouch and Crouch + Jump controls, physical-controller support, camera options and rendering-resolution selection. The launcher retains its existing styling.
+The build retains the Q Force emblem, vendor weapon-button Exit, crouch wrench THROW and save/overwrite text corrections. Development remains the testing channel; Stable is not promoted.
 
-For a new installation, import a supported USA v1.00 (SCUS-97199) Ratchet & Clank disc ISO or compatible extracted game-data ZIP. Game assets are not supplied. In Launcher 1.1, enable the second display through Mods; use Setup in-game to customize mobile controls.
+## Installation and game data
 
-## Build and test status
+Install `ReRAC-Android-0.3.6-Launcher-1.1-beta15-DEV.apk` from the release page. Enable the **AYN Thor Dual-Screen Mod** through Mods; its toggle takes effect at the next game launch. Use Setup in-game to customize mobile controls.
 
-The editable launcher extension and regression tests are under `android/launcher`. The recovery build compiles those Java sources, rebuilds the launcher DEX/manifest and packages the pinned public v16 APK's other components without changing them. This is a maintainable launcher rebuild path, **not** a complete from-source native port rebuild.
+For a new installation, import a supported USA v1.00 (SCUS-97199) Ratchet & Clank disc ISO or compatible extracted game-data ZIP. Game assets are not supplied.
 
-The signed development candidates passed all 50 Java policy, persistence, mod and UI tests, plus signature/alignment/payload checks and actual Android 15 x86-64 emulator installs with two data-preserving upgrades. Real network updater tests have a separate workflow and evidence artifact. Physical AYN Thor dual-screen output, ARM64 gameplay, imported game data and cutscenes still need device testing.
+The Development package is `org.rerac.android.ui035test` (ReRAC 0.3.6 Test), separate from the early `org.rerac.android.uipreview` launcher previews.
 
-The Rust workspace on dev includes the merged upstream 0.3.5 source. The original native Android port modifications/build project remain to be recovered and reconciled before compiling a new 0.3.5 Android engine. Do not assume that `cargo build` on this branch reproduces the native libraries in the APK.
+## Build and validation
 
-See [release and update instructions](android/RELEASE_PROCESS.md). Dev commits become user updates only after a successful build, signing, validation, release-asset publication and signed channel update. Private signing keys are not stored in GitHub or CI.
+Editable native adapters are under `crates/rc-engine/src/android*`; native build/package tooling is under `android/native`. Source-built launcher and companion UI code is under `android/launcher`, with Development packaging and UI checks under `android/release`.
+
+Beta15 uses native source [`5b4e2a5`](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/commit/5b4e2a5be854315394a25448251ae91c03e15284). Evidence: [native and equipment/menu regressions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535171827), [packaging/startup](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535243049), and [companion UI/secondary-window checks](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/actions/runs/39535243100). The actual production selection and menu helpers are imported by `crates/rc-game/tests/android_companion_selection.rs` and `crates/rc-game/tests/companion_menu.rs`; tests do not maintain separate copies of their implementation.
+
+Publication verifies the original signer, exact APK bytes, downloadable release asset and signed Development feed. See [release and update instructions](android/RELEASE_PROCESS.md). Private signing keys are not stored in GitHub or CI.
 
 ## Integrity
 
-Package ID: `org.rerac.android.uipreview`, unchanged for in-place updates.
-
 | APK | SHA-256 |
 | --- | --- |
-| Launcher 1.1.0-beta.1 | `09154d2abfc5d079e2b8d32418b2a91216f78e9be372ba708a8baaa0cd3eda0d` |
-| Launcher 1.1.0-beta.2 | `474e2e3a75a334aff2691128e8520291ab59af3fcb2fc3e6532d9f5a6700444f` |
-| Original v16/v1.0 | `cb13360fc1796e2c1e9ef00029eacbb853bd8e966837140878bd65df55f3b477` |
+| Launcher 1.1.0-beta.15 / ReRAC 0.3.6 | `285e622323d391875472aa644e032e6b0e8e46f851f7d402cc92edda66eb7d0f` |
+| Launcher 1.1.0-beta.14 / ReRAC 0.3.6 | `27a9fc02da5bfdf6994a106d04221f6903f9ebcb711bcf330502dc51e5d931e2` |
 
-All three use the original release certificate. This is an unofficial community adaptation; the original project and ISC license remain credited to ReRAC.
+This is an unofficial community adaptation; the original project and ISC license remain credited to ReRAC.
