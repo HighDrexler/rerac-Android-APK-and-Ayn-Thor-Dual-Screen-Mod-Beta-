@@ -1,4 +1,4 @@
-name: Actual companion wheel touch regression
+name: Companion UI layouts and native input receipts
 on:
   push:
     branches: [fix/036-touch-and-companion]

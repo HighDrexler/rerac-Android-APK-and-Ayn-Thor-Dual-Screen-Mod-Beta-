@@ -19,7 +19,7 @@ on:
         default: '30'
   push:
     branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality','integration/upstream-036','fix/036-touch-and-companion']
-    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
+    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh, 'android/launcher/android/src/**']
 permissions:
   contents: read
   actions: read
