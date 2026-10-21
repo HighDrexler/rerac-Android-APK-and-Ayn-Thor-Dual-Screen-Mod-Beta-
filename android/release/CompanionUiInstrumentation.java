@@ -31,11 +31,11 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         Bundle result=new Bundle();final Throwable[] failure={null};final int[] taps={0};
         try{
             Context context=getTargetContext();ClassLoader loader=context.getClassLoader();
+            Class<?> game=Class.forName("org.rerac.android.GameActivity",true,loader);
             Class<?> core=Class.forName("org.rerac.android.NativeCore",true,loader);
             Method info=core.getDeclaredMethod("buildInfo");info.setAccessible(true);
             JSONObject build=new JSONObject((String)info.invoke(null));
             require("0.3.6".equals(build.getString("core_version")),"Unexpected native core");
-            Class<?> game=Class.forName("org.rerac.android.GameActivity",true,loader);
             Method icon=game.getDeclaredMethod("nativePlanetIcon",String.class);icon.setAccessible(true);
             int[] pixels=(int[])icon.invoke(null,context.getFilesDir()+"/gamedata");
             require(pixels!=null && pixels.length==128*128+2 && pixels[0]==128 && pixels[1]==128,"Q Force icon unavailable before importing game data");

@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: companion-ui-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   companion:
     runs-on: ubuntu-24.04
