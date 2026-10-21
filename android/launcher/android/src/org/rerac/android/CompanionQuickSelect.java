@@ -196,7 +196,15 @@ final class CompanionQuickSelect {
 
     static boolean touch(View view,MotionEvent event){
         Controller s=state(view);
-        if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){s.model.cancel();set(view,"draggingMap",false);set(view,"skillDragging",false);return true;}
+        if(event.getActionMasked()==MotionEvent.ACTION_CANCEL){
+            s.model.cancel();set(view,"draggingMap",false);set(view,"skillDragging",false);
+            CompanionMenu.touch(view,event);
+            // Complex retained menus own repeat timers/native button releases.
+            // Release those even when the snapshot transport is unavailable.
+            try{invoke(view,"retainedMenuTouch",new Class<?>[]{MotionEvent.class},event);}
+            catch(RuntimeException failure){android.util.Log.w("ReRACCompanion","Menu cancel cleanup failed",failure);}
+            return true;
+        }
         if(event.getActionMasked()==MotionEvent.ACTION_DOWN)s.model.begin(event.getDownTime());
         s.refresh();syncPresentation(view,s);
         if(!s.model.fresh())return true;

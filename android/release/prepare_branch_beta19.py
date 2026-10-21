@@ -18,7 +18,7 @@ def prepare(unsigned,output,tools):
         assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in result
         subprocess.run([str(tools/'zipalign'),'-c','-P','16','4',str(target)],check=True)
         manifest=subprocess.check_output([str(tools/'aapt'),'dump','badging',str(target)],text=True)
-        version,code=('1.1.0-beta.19',35)
+        version,code=('1.1.0-beta.19',36)
         assert f"package: name='org.rerac.android.ui035test' versionCode='{code}' versionName='{version}'" in manifest
         with zipfile.ZipFile(target) as apk:
             meta=json.loads(apk.read('assets/rerac-build.json'))
@@ -28,7 +28,7 @@ def prepare(unsigned,output,tools):
             assert meta['native_source_sha']=='0ab6c9ca4be8d2f8f671a457c069a5f181e6d9da'
             assert {n:hashlib.sha256(apk.read(n)).hexdigest() for n in meta['native_sha256']}==meta['native_sha256']
         (output/(target.name+'.signature.txt')).write_text(result)
-    folder=Path('builds/beta19');folder.mkdir(parents=True,exist_ok=True)
+    folder=Path('builds/beta19r2');folder.mkdir(parents=True,exist_ok=True)
     archive=folder/'ReRAC-Android-beta19.apk.zip'
     with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
         info=zipfile.ZipInfo('ReRAC.apk',(2026,10,21,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
@@ -36,10 +36,10 @@ def prepare(unsigned,output,tools):
         z.writestr(info,(output/'ReRAC-Android-beta19.apk').read_bytes(),compresslevel=9)
     assert archive.stat().st_size<100*1024*1024
     main=receipt['apks'][0]
-    report=dict(schema=1,launcher_version='1.1.0-beta.19',version_code=35,core_version='0.3.6',
+    report=dict(schema=1,launcher_version='1.1.0-beta.19',version_code=36,core_version='0.3.6',
         package_id='org.rerac.android.ui035test',signer_sha256=pin,sha256=main['signed_sha256'],bytes=main['signed_bytes'],
         archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),archive_bytes=archive.stat().st_size,
-        apk_url='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta19/'+archive.name,
+        apk_url='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta19r2/'+archive.name,
         native_source_sha=main['build']['native_source_sha'],native_sha256=main['build']['native_sha256'])
     (folder/'build.json').write_text(json.dumps(report,indent=2)+'\n')
     (folder/'SHA256SUMS.txt').write_text(main['signed_sha256']+'  ReRAC.apk\n'+report['archive_sha256']+'  '+archive.name+'\n')

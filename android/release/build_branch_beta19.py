@@ -52,7 +52,7 @@ def build(baseline,sdk,output):
             name='beta19-unsigned.apk'
             metadata=dict(original)
             metadata.update(update_feed_branch='update-channel3',build_delivery='branch-archive-v1')
-            version,code='1.1.0-beta.19',35
+            version,code='1.1.0-beta.19',36
             metadata.update(launcher_version=version,version_code=code,companion_input='contact-once-v1')
             metadata.pop('upgrade_test_fixture',None)
             if fixture:metadata['upgrade_test_fixture']=True

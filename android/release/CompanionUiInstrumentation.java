@@ -340,6 +340,12 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 long next=now+100;down=MotionEvent.obtain(next,next,MotionEvent.ACTION_DOWN,cx,cy,0);view.dispatchTouchEvent(down);down.recycle();
                 up=MotionEvent.obtain(next,next+20,MotionEvent.ACTION_UP,cx,cy,0);view.dispatchTouchEvent(up);up.recycle();
                 require(accepted[0]==before+2,"A lost UP left the wheel permanently latched");
+                // CANCEL must also release complex-menu arrow repeat state.
+                put(view,"heldArrow",4);put(view,"repeatingArrow",true);put(view,"draggingMap",true);put(view,"skillDragging",true);
+                now=SystemClock.uptimeMillis();cancel=MotionEvent.obtain(now,now,MotionEvent.ACTION_CANCEL,0,0,0);
+                view.dispatchTouchEvent(cancel);cancel.recycle();
+                require(((Integer)get(view,"heldArrow"))==0&&!((Boolean)get(view,"repeatingArrow")),"Menu cancellation left an arrow repeating");
+                require(!((Boolean)get(view,"draggingMap"))&&!((Boolean)get(view,"skillDragging")),"Cancellation left a retained drag active");
                 target.recycle();
                 failedPollRecovery(context,game);
                 pauseLayouts(context,loader);
@@ -354,7 +360,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require(((Long)select.invoke(null,0L,10))==0,"Stale generation accepted by native selection queue");
             Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
-            JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("contact_once_multitouch",true).put("wheel_precedes_retained_map",true).put("lost_release_recovers",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            JSONObject evidence=new JSONObject().put("status","passed").put("scope","Packaged source controller, identity transport fixture, native rejection ABI; no imported-game gameplay").put("companion_view","source-owned CompanionQuickSelect in original companion layout").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("primary_aspect_independent",true).put("old_poll_independent",true).put("stale_menu_independent",true).put("contact_once_multitouch",true).put("wheel_precedes_retained_map",true).put("lost_release_recovers",true).put("cancel_releases_retained_menu",true).put("old_quick_select_removed",true).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             evidence.put("failed_poll_identical_packet_recovery",true);
             evidence.put("system_routed_secondary_taps",16);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
