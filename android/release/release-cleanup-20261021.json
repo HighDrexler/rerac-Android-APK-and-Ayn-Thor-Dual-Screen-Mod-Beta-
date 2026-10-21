@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "repository": "HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-",
+  "keep": [
+    {
+      "id": 420001807,
+      "tag": "rerac-android-0.3.6-dev.8"
+    },
+    {
+      "id": 419167879,
+      "tag": "rerac-android-0.3.6-dev.7"
+    },
+    {
+      "id": 416785922,
+      "tag": "v1.0"
+    }
+  ],
+  "remove": [
+    {
+      "id": 419105836,
+      "tag": "rerac-android-0.3.6-dev.6"
+    },
+    {
+      "id": 419063719,
+      "tag": "rerac-android-0.3.6-dev.5"
+    },
+    {
+      "id": 419030255,
+      "tag": "rerac-android-0.3.6-dev.4"
+    },
+    {
+      "id": 419996071,
+      "tag": "beta17-signing-input"
+    },
+    {
+      "id": 418989697,
+      "tag": "rerac-android-0.3.6-dev.3"
+    },
+    {
+      "id": 418966977,
+      "tag": "rerac-android-0.3.6-dev.2"
+    },
+    {
+      "id": 418849207,
+      "tag": "rerac-android-0.3.6-dev.1"
+    },
+    {
+      "id": 418743677,
+      "tag": "rerac-android-0.3.5-dev.4"
+    },
+    {
+      "id": 418690071,
+      "tag": "rerac-android-0.3.5-dev.3"
+    },
+    {
+      "id": 418125056,
+      "tag": "rerac-android-0.3.5-dev.2"
+    },
+    {
+      "id": 418022925,
+      "tag": "rerac-android-0.3.5-dev.1"
+    },
+    {
+      "id": 417813397,
+      "tag": "launcher-v1.1.0-beta.3"
+    },
+    {
+      "id": 417720128,
+      "tag": "launcher-v1.1.0-beta-test"
+    }
+  ],
+  "preserve_git_tags": true
+}
