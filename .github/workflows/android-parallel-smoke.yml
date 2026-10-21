@@ -1,4 +1,4 @@
-name: Android 0.3.5+ parallel APK startup regression
+name: Android Development APK package and startup regression
 on:
   workflow_dispatch:
     inputs:
