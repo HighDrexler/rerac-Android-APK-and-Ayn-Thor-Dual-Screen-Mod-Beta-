@@ -11,12 +11,12 @@ on:
         description: Candidate launcher version
         required: false
         type: string
-        default: '1.1.0-beta.14'
+        default: '1.1.0-beta.15'
       version_code:
         description: Candidate Android versionCode
         required: false
         type: string
-        default: '30'
+        default: '31'
   push:
     branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality','integration/upstream-036','fix/036-touch-and-companion']
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh, 'android/launcher/android/src/**']
@@ -30,8 +30,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       NATIVE_RUN: ${{ inputs.native_build_run || '39528247162' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.14' }}
-      REQUEST_CODE: ${{ inputs.version_code || '30' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.15' }}
+      REQUEST_CODE: ${{ inputs.version_code || '31' }}
     steps:
       - uses: actions/checkout@v4
         with:
