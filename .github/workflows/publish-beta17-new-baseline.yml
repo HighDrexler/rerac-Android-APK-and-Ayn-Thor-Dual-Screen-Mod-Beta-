@@ -2,13 +2,13 @@ name: Publish signed beta17 and verify the new GitHub update baseline
 on:
   push:
     branches: [rebuild/036-companion-quickselect]
-    paths: [android/release/beta17-new-baseline-receipt.json]
+    paths: [android/release/beta17-new-baseline-receipt.json, .github/workflows/publish-beta17-new-baseline.yml]
 permissions:
   contents: write
   actions: read
 concurrency:
   group: beta17-new-signing-baseline
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   publish:
     runs-on: ubuntu-24.04
@@ -122,6 +122,9 @@ jobs:
         run: |
           mkdir -p work/previous work/reports
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --name beta17-signed-public-proof-and-upgrade-fixture --dir work/previous
+          fixture="$(find work/previous -type f -name upgrade-fixture-signed.apk)"
+          test -f "$fixture"
+          cp "$fixture" work/previous-fixture.apk
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -136,7 +139,7 @@ jobs:
           disable-animations: true
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
-          script: python android/release/experimental_live_update_test.py --apk work/previous/upgrade-fixture-signed.apk --output work/reports --initial-code 32 --target-code 33 --target-version 1.1.0-beta.17 --target-sha256 "$TARGET_SHA"
+          script: python android/release/experimental_live_update_test.py --apk work/previous-fixture.apk --output work/reports --initial-code 32 --target-code 33 --target-version 1.1.0-beta.17 --target-sha256 "$TARGET_SHA"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
