@@ -6,17 +6,17 @@ on:
         description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
         required: false
         type: string
-        default: '39514150118'
+        default: '39519241692'
       launcher_version:
         description: Candidate launcher version
         required: false
         type: string
-        default: '1.1.0-beta.12'
+        default: '1.1.0-beta.13'
       version_code:
         description: Candidate Android versionCode
         required: false
         type: string
-        default: '28'
+        default: '29'
   push:
     branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality','integration/upstream-036','fix/036-touch-and-companion']
     paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh]
@@ -29,9 +29,9 @@ jobs:
     timeout-minutes: 35
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39514150118' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.12' }}
-      REQUEST_CODE: ${{ inputs.version_code || '28' }}
+      NATIVE_RUN: ${{ inputs.native_build_run || '39519241692' }}
+      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.13' }}
+      REQUEST_CODE: ${{ inputs.version_code || '29' }}
     steps:
       - uses: actions/checkout@v4
         with:
