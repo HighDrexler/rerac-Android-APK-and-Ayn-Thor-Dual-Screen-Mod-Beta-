@@ -56,7 +56,16 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 put(view,"originX",20f);put(view,"originY",108f);put(view,"boxW",210f);put(view,"boxH",200f);
                 Method select=wheel.getDeclaredMethod("selectWheelPage");select.setAccessible(true);
                 Bitmap target=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);
-                for(int layout=0;layout<2;layout++)for(int page=0;page<(layout==0?1:2);page++){
+                for(int scenario=0;scenario<3;scenario++)for(int page=0;page<(scenario<2?1:2);page++){
+                    int layout=scenario==2?1:0;
+                    put(view,"collectibleInfo",scenario==1?new JSONObject().put("level",0):new JSONObject());
+                    java.util.ArrayList<Object> mapCommands=new java.util.ArrayList<>();
+                    if(scenario==1){
+                        Class<?> command=Class.forName("org.rerac.android.WeaponWheel$DrawCommand",true,loader);
+                        Constructor<?> dc=command.getDeclaredConstructor(wheel,JSONArray.class);dc.setAccessible(true);
+                        mapCommands.add(dc.newInstance(view,new JSONArray("[0,[[0,0],[512,0],[0,384],[512,384]],[[0,0],[1,0],[0,1],[1,1]],-1,[0,511,0,383],false,false]")));
+                    }
+                    put(view,"mapCommands",mapCommands);
                     put(view,"companionPage",layout);put(view,"wheelPage",page);
                     ((RectF)get(view,"mapBox")).setEmpty();((RectF)get(view,"mapControls")).setEmpty();
                     select.invoke(view);view.draw(new Canvas(target));
@@ -76,8 +85,8 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 target.recycle();
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
-            require(taps[0]==24,"Incomplete hybrid/dedicated page coverage");
-            JSONObject evidence=new JSONObject().put("status","passed").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",8).put("dedicated_taps",16).put("q_force_icon",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            require(taps[0]==32,"Incomplete hybrid/dedicated page coverage");
+            JSONObject evidence=new JSONObject().put("status","passed").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));
