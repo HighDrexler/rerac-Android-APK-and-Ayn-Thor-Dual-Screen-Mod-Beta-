@@ -57,8 +57,8 @@ public final class CompanionUiInstrumentation extends Instrumentation {
     }
     private void secondaryStatus(Context context,ClassLoader loader)throws Exception{
         Activity host=startActivitySync(new Intent().setClassName(context,"org.rerac.android.LauncherActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        final Throwable[] error={null};final ImageReader[] image={null};final VirtualDisplay[] display={null};final Presentation[] presentation={null};final View[] companion={null};
-        java.util.concurrent.CountDownLatch attached=new java.util.concurrent.CountDownLatch(1);
+        final Throwable[] error={null};final ImageReader[] image={null};final VirtualDisplay[] display={null};final Presentation[] presentation={null};final View[] companion={null};final android.app.AlertDialog[] statusDialog={null};
+        java.util.concurrent.CountDownLatch attached=new java.util.concurrent.CountDownLatch(1);final java.util.concurrent.CountDownLatch statusAttached=new java.util.concurrent.CountDownLatch(1);
         try{
             runOnMainSync(()->{try{
                 image[0]=ImageReader.newInstance(800,600,PixelFormat.RGBA_8888,2);
@@ -86,9 +86,22 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 require(status!=null,"Input status handler unavailable");status.setAccessible(true);
                 long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now-1000,now,MotionEvent.ACTION_UP,52,50,0);
                 try{require(Boolean.TRUE.equals(status.invoke(null,view,up,value)),"Input status dialog failed on the real secondary window");}finally{up.recycle();}
+                Field dialog= value.getClass().getDeclaredField("statusDialog");dialog.setAccessible(true);statusDialog[0]=(android.app.AlertDialog)dialog.get(value);
+                require(statusDialog[0]!=null&&statusDialog[0].isShowing(),"No attached status dialog");
+                View decor=statusDialog[0].getWindow().getDecorView();decor.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener(){public void onViewAttachedToWindow(View v){statusAttached.countDown();}public void onViewDetachedFromWindow(View v){}});if(decor.isAttachedToWindow())statusAttached.countDown();
             }catch(Throwable failure){error[0]=failure;}});
             if(error[0]!=null)throw new AssertionError("Secondary-display status dialog failed",error[0]);
-        }finally{runOnMainSync(()->{if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null)image[0].close();host.finish();});}
+            require(statusAttached.await(5,java.util.concurrent.TimeUnit.SECONDS),"Status dialog did not attach");
+            runOnMainSync(()->{try{
+                require(statusDialog[0].getWindow().getDecorView().getDisplay().getDisplayId()==display[0].getDisplay().getDisplayId(),"Status dialog opened on the wrong display");
+                require(statusDialog[0].getButton(android.app.AlertDialog.BUTTON_NEUTRAL).performClick(),"Cannot press Copy");
+            }catch(Throwable failure){error[0]=failure;}});
+            waitForIdleSync();if(error[0]!=null)throw new AssertionError("Status Copy failed",error[0]);
+            android.content.ClipboardManager clipboard=(android.content.ClipboardManager)context.getSystemService(Context.CLIPBOARD_SERVICE);
+            android.content.ClipData clip=clipboard.getPrimaryClip();require(clip!=null&&clip.getItemCount()==1,"Companion status was not copied");
+            String copied=clip.getItemAt(0).coerceToText(context).toString();JSONObject report=new JSONObject(copied.substring(copied.indexOf('{')));
+            require(report.has("lastTap")&&report.has("nativeSource")&&report.has("nativeWheelItems")&&report.has("view"),"Copied status lacks input evidence");
+        }finally{runOnMainSync(()->{if(statusDialog[0]!=null)statusDialog[0].dismiss();if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null){image[0].setOnImageAvailableListener(null,null);image[0].close();}host.finish();});}
     }
     @Override public void onCreate(Bundle args){start();}
     @Override public void onStart(){
@@ -158,7 +171,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require("Item does not match the displayed slot".equals(receipt.getJSONObject("lastTap").getString("stage")),"Generation-zero fixture must be rejected, not counted as an applied equipment selection");
             Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
-            JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("status_clipboard",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));

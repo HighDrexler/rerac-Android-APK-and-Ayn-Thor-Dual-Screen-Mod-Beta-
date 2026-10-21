@@ -11,6 +11,7 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ final class CompanionMenu {
     }
     private static final class State {
         final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);final TextPaint text=new TextPaint(Paint.ANTI_ALIAS_FLAG);
-        final ArrayList<Hit> hits=new ArrayList<>();long page=-1;float offset,downY;Hit down;boolean scrolling,active;Bitmap logo;String version;
+        final ArrayList<Hit> hits=new ArrayList<>();long page=-1;float offset,downY;Hit down;boolean scrolling,active;Bitmap logo;String version;AlertDialog statusDialog;
     }
     private static State state(View v){State s=STATES.get(v);if(s==null){s=new State();STATES.put(v,s);}return s;}
     private static Object call(String name,Class<?>[] types,Object... args)throws Exception{
@@ -37,6 +38,15 @@ final class CompanionMenu {
     private static JSONObject snapshot()throws Exception{return new JSONObject((String)call("nativeCompanion",new Class<?>[0]));}
     private static String clean(String value){return "Paradox! This message does not exist".equals(value)?"":value;}
     private static void button(int value)throws Exception{call("nativeMenuButton",new Class<?>[]{int.class},value);}
+    private static Object field(View view,String name)throws Exception{Field f=view.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(view);}
+    private static JSONArray ids(JSONArray slots){JSONArray ids=new JSONArray();if(slots!=null)for(int i=0;i<slots.length();i++){JSONObject slot=slots.optJSONObject(i);if(slot!=null)ids.put(slot.optInt("id"));}return ids;}
+    private static String inputReport(View view)throws Exception{
+        JSONObject report=new JSONObject(NativeCore.companionInputStatus()),wheel=new JSONObject((String)call("nativeWheel",new Class<?>[0]));
+        JSONArray pages=wheel.optJSONArray("pages"),items=new JSONArray();if(pages!=null)for(int i=0;i<pages.length();i++){JSONObject page=pages.optJSONObject(i);if(page!=null)items.put(ids(page.optJSONArray("slots")));}
+        report.put("nativeSource",new JSONObject(NativeCore.buildInfo()).optString("source_sha")).put("nativeWheelGeneration",wheel.optLong("generation",-1)).put("nativeWheelItems",items);
+        report.put("view",new JSONObject().put("generation",field(view,"generation")).put("enabled",field(view,"enabled")).put("page",field(view,"companionPage")).put("wheelPage",field(view,"wheelPage")).put("items",ids((JSONArray)field(view,"slots"))).put("width",view.getWidth()).put("height",view.getHeight()).put("display",view.getDisplay()==null?-1:view.getDisplay().getDisplayId()));
+        return LauncherBuild.read(view.getContext()).footer()+"\n"+report.toString(2);
+    }
     private static boolean status(View view,MotionEvent event,State state){
         if(event.getActionMasked()!=MotionEvent.ACTION_UP||event.getEventTime()-event.getDownTime()<750)return false;
         try{
@@ -44,8 +54,16 @@ final class CompanionMenu {
             if(state.active){float scale=Math.min(view.getWidth()/800f,view.getHeight()/600f);float x=(event.getX()-(view.getWidth()-800*scale)/2)/scale,y=(event.getY()-(view.getHeight()-600*scale)/2)/scale;home=new RectF(24,22,80,78).contains(x,y);}
             else{Field field=view.getClass().getDeclaredField("homeBox");field.setAccessible(true);home=((RectF)field.get(view)).contains(event.getX(),event.getY());}
             if(!home)return false;
-            String report=LauncherBuild.read(view.getContext()).footer()+"\n"+new JSONObject(NativeCore.companionInputStatus()).toString(2);
-            new AlertDialog.Builder(view.getContext()).setTitle("Companion input status").setMessage(report).setPositiveButton("Close",null).setNeutralButton("Copy",(d,w)->{ClipboardManager clipboard=(ClipboardManager)view.getContext().getSystemService(Context.CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("ReRAC companion input",report));}).show();
+            if(state.statusDialog!=null&&state.statusDialog.isShowing())return true;
+            if(view.getWindowToken()==null)return false;
+            String report=inputReport(view);
+            AlertDialog dialog=new AlertDialog.Builder(view.getContext()).setTitle("Companion input status").setMessage(report).setPositiveButton("Close",null).setNeutralButton("Copy",(d,w)->{ClipboardManager clipboard=(ClipboardManager)view.getContext().getSystemService(Context.CLIPBOARD_SERVICE);if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("ReRAC companion input",report));}).create();
+            // Presentation owns a different window context from the Activity.
+            // A child dialog must use its actual parent view's window token.
+            dialog.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG);
+            WindowManager.LayoutParams attrs=dialog.getWindow().getAttributes();attrs.token=view.getWindowToken();dialog.getWindow().setAttributes(attrs);
+            dialog.setOnDismissListener(d->{if(state.statusDialog==dialog)state.statusDialog=null;});
+            dialog.show();state.statusDialog=dialog;
             return true;
         }catch(Exception|LinkageError error){return false;}
     }
