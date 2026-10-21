@@ -4,16 +4,6 @@ Android and AYN Thor dual-screen adaptation of **Ratchet & Clank (2002)**, based
 
 **[Download the current Android release (v1.0 Beta)](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/v1.0)**
 
-The published `ReRAC-Mobile-v1.0.zip` is the verified ReRAC Mobile v16 build. It contains the signed APK, not game data.
-
-## Launcher 1.1 development test
-
-**[Launcher 1.1 beta test APKs](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/launcher-v1.1.0-beta-test)** are available for device testing. They add Updates, Stable/Development channels, a small launcher/core version footer, and a Mods manager with only the existing Dual-Screen Mod bundled. The original v1.0 release remains available and has not been replaced.
-
-Install beta.1 over v1.0 without uninstalling. In Updates, select Development, check, download and approve installation of beta.2. Android may require allowing installations from ReRAC first. Beta.2 is an otherwise equivalent build with a higher Android versionCode for exercising the update process. Stable does not advertise this experimental build.
-
-**The 1.1 beta APKs retain ReRAC 0.3.4/v16 native code. Upstream 0.3.5 is merged in the development Rust source, not in these Android binaries.** Physical-device gameplay and companion-display testing are still required. Back up important saves before testing.
-
 See the [editable launcher source on dev](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/tree/dev/android/launcher) and [release/update instructions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/blob/dev/android/RELEASE_PROCESS.md).
 
 ## Android and dual-screen features
