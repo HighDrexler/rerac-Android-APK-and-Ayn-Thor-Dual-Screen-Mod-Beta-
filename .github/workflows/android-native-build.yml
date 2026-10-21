@@ -2,14 +2,21 @@ name: Android source-built native core
 on:
   workflow_dispatch:
   push:
-    branches: [experimental, 'beta8/**', 'beta9/**', 'integration/upstream-036', 'fix/036-touch-and-companion']
+    branches: [experimental, 'beta8/**', 'beta9/**', 'integration/upstream-036', 'fix/036-touch-and-companion', 'rebuild/036-companion-quickselect']
     paths:
       - crates/**
       - Cargo.toml
       - Cargo.lock
       - android/native/**
       - android/launcher/**
+      - android/release/Companion*.java
+      - android/release/build_companion_ui_test.py
+      - android/release/companion_dex.py
+      - android/release/parallel_package.py
+      - android/release/sidecar-smoke.sh
       - .github/workflows/android-native-build.yml
+      - .github/workflows/companion-ui-smoke.yml
+      - .github/workflows/android-parallel-smoke.yml
 permissions:
   contents: read
 concurrency:
@@ -207,6 +214,7 @@ jobs:
           version="$(python3 -c 'import json; print(json.load(open("android/native/candidate.json"))["launcher_version"])')"
           code="$(python3 -c 'import json; print(json.load(open("android/native/candidate.json"))["version_code"])')"
           python3 android/native/package_core.py --baseline work/baseline.apk --tools work/tools --arm64 work/arm64.zip --x86 work/x86.zip --version "$version" --code "$code" --output "out/ReRAC-Launcher-$version-unsigned.apk"
+          python3 android/native/native_abi_gate.py "out/ReRAC-Launcher-$version-unsigned.apk" --require-source-companion --report out/companion-native-abi.json
           python3 android/native/build_probe.py --tools work/tools --output out/ReRAC-Native-Probe-unsigned.apk
           git rev-parse HEAD > out/source-commit.txt
           cp android/native/candidate.json out/candidate.json

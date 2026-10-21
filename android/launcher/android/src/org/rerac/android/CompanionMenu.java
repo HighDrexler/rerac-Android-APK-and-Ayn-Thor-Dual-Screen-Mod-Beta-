@@ -32,6 +32,7 @@ final class CompanionMenu {
         final ArrayList<Hit> hits=new ArrayList<>();long page=-1;float offset,downY;Hit down;boolean scrolling,active;Bitmap logo;String version;AlertDialog statusDialog;
     }
     private static State state(View v){State s=STATES.get(v);if(s==null){s=new State();STATES.put(v,s);}return s;}
+    static void inactive(View view){State s=state(view);s.active=false;s.down=null;}
     private static Object call(String name,Class<?>[] types,Object... args)throws Exception{
         Class<?> game=Class.forName("org.rerac.android.GameActivity");Method m=game.getDeclaredMethod(name,types);m.setAccessible(true);return m.invoke(null,args);
     }
@@ -39,12 +40,12 @@ final class CompanionMenu {
     private static String clean(String value){return "Paradox! This message does not exist".equals(value)?"":value;}
     private static void button(int value)throws Exception{call("nativeMenuButton",new Class<?>[]{int.class},value);}
     private static Object field(View view,String name)throws Exception{Field f=view.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(view);}
-    /** A failed retained poll must retry both packets, even when their text is unchanged. */
+    /** Retry the retained map/menu painters after a failed poll. The source wheel is independent. */
     static void pollFailed(View view,boolean ignored){
         try{
             // The retained poller writes its cache keys before all parsing and
             // texture loading have finished. Keeping those keys on failure
-            // skips the next valid packet, permanently disabling quick select.
+            // skips the next valid packet and leaves retained map/menu content stale.
             for(String name:new String[]{"lastWheel","lastCompanion"}){
                 Field f=view.getClass().getDeclaredField(name);f.setAccessible(true);f.set(view,"");
             }
@@ -58,6 +59,7 @@ final class CompanionMenu {
         JSONArray pages=wheel.optJSONArray("pages"),items=new JSONArray();if(pages!=null)for(int i=0;i<pages.length();i++){JSONObject page=pages.optJSONObject(i);if(page!=null)items.put(ids(page.optJSONArray("slots")));}
         report.put("nativeSource",new JSONObject(NativeCore.buildInfo()).optString("source_sha")).put("nativeWheelGeneration",wheel.optLong("generation",-1)).put("nativeWheelItems",items);
         report.put("view",new JSONObject().put("generation",field(view,"generation")).put("enabled",field(view,"enabled")).put("page",field(view,"companionPage")).put("wheelPage",field(view,"wheelPage")).put("items",ids((JSONArray)field(view,"slots"))).put("width",view.getWidth()).put("height",view.getHeight()).put("display",view.getDisplay()==null?-1:view.getDisplay().getDisplayId()));
+        report.put("quickSelect",CompanionQuickSelect.inputStatus(view));
         return LauncherBuild.read(view.getContext()).footer()+"\n"+report.toString(2);
     }
     private static boolean status(View view,MotionEvent event,State state){

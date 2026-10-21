@@ -662,13 +662,7 @@ pub fn update_hand_selected(hero: &mut Hero, g: &mut ItemGlobals, rng: &mut Rng,
     let r = g.request;
     if r != 0 {
         if r == it.target {
-            // A lockout below can defer the put-away after the target was
-            // recorded. The target alone is not proof that the held item
-            // changed: keep retrying while the old item is still ready.
-            // Once put-away has started (or the item is already held), a
-            // duplicate request can be cleared so creation can proceed.
-            if it.slot.state == 2 && held != r { changed = true; }
-            else { g.request = 0; }
+            g.request = 0;
         } else {
             if r == 0x26 {
                 it.target = 0;

@@ -6,4 +6,6 @@ final class NativeCore {
     static native String buildInfo();
     static native boolean menuChoice(long generation,long page,long widget,int index);
     static native String companionInputStatus();
+    static native String quickSelectSnapshot();
+    static native long quickSelect(long generation,int item);
 }

@@ -3,35 +3,46 @@ on:
   workflow_dispatch:
     inputs:
       native_build_run:
-        description: Successful native build run ID to test (required for subsequent 0.3.6+ updates)
+        description: Native build run for this exact source commit (auto-detected when omitted)
         required: false
         type: string
-        default: '39543426541'
       launcher_version:
-        description: Candidate launcher version
+        description: Must match android/native/candidate.json when supplied
         required: false
         type: string
-        default: '1.1.0-beta.16'
       version_code:
-        description: Candidate Android versionCode
+        description: Must match android/native/candidate.json when supplied
         required: false
         type: string
-        default: '32'
   push:
-    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality','integration/upstream-036','fix/036-touch-and-companion']
-    paths: [.github/workflows/android-parallel-smoke.yml, android/release/parallel_package.py, android/release/sidecar-smoke.sh, 'android/launcher/android/src/**']
+    branches: [experimental, 'beta8/fmv-rendering', 'beta9/fmv-quality', 'integration/upstream-036', 'fix/036-touch-and-companion', 'rebuild/036-companion-quickselect']
+    paths:
+      - .github/workflows/android-parallel-smoke.yml
+      - .github/workflows/android-native-build.yml
+      - android/release/parallel_package.py
+      - android/release/sidecar-smoke.sh
+      - android/release/companion_dex.py
+      - android/release/CompanionDexHooks.java
+      - android/launcher/**
+      - android/native/**
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
 permissions:
   contents: read
   actions: read
+concurrency:
+  group: android-parallel-smoke-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 120
     env:
       GH_TOKEN: ${{ github.token }}
-      NATIVE_RUN: ${{ inputs.native_build_run || '39543426541' }}
-      REQUEST_VERSION: ${{ inputs.launcher_version || '1.1.0-beta.16' }}
-      REQUEST_CODE: ${{ inputs.version_code || '32' }}
+      NATIVE_RUN: ${{ inputs.native_build_run }}
+      REQUEST_VERSION: ${{ inputs.launcher_version }}
+      REQUEST_CODE: ${{ inputs.version_code }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,18 +60,36 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p work/candidate work/reports work/test
+          if [[ -z "$NATIVE_RUN" ]]; then
+            for attempt in $(seq 1 18); do
+              NATIVE_RUN="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" --jq '.workflow_runs | map(select(.path == ".github/workflows/android-native-build.yml")) | sort_by(.id) | last | .id // empty')"
+              [[ -z "$NATIVE_RUN" ]] || break
+              sleep 10
+            done
+          fi
           [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
-          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          export NATIVE_RUN
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" > work/native-run.json
           python3 - <<'PY'
           import json,os
           from pathlib import Path
           run=json.loads(Path('work/native-run.json').read_text())
-          assert run['conclusion']=='success' and run['repository']['id']==1424927008
+          assert run['repository']['id']==1424927008
           assert run['path']=='.github/workflows/android-native-build.yml'
-          assert run['head_branch'] in ('experimental','beta8/fmv-rendering','beta9/fmv-quality','integration/upstream-036','fix/036-touch-and-companion')
+          assert run['head_branch']==os.environ['GITHUB_REF_NAME']
+          assert run['head_sha']==os.environ['GITHUB_SHA'], 'Refusing a native build from another source commit'
           assert run['id']==int(os.environ['NATIVE_RUN'])
+          candidate=json.loads(Path('android/native/candidate.json').read_text())
+          version=candidate['launcher_version'];code=candidate['version_code']
+          assert not os.environ['REQUEST_VERSION'] or os.environ['REQUEST_VERSION']==version
+          assert not os.environ['REQUEST_CODE'] or int(os.environ['REQUEST_CODE'])==code
+          with open(os.environ['GITHUB_ENV'],'a') as env:
+              env.write('NATIVE_RUN='+os.environ['NATIVE_RUN']+'\n')
+              env.write('REQUEST_VERSION='+version+'\n')
+              env.write('REQUEST_CODE='+str(code)+'\n')
           PY
+          gh run watch "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN" --jq '.conclusion' | grep -qx success
           gh run download "$NATIVE_RUN" --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
           printf '%s\n' "$NATIVE_RUN" > work/reports/native-build-run.txt
           sdkmanager 'build-tools;36.0.0'
@@ -91,6 +120,7 @@ jobs:
           with zipfile.ZipFile('work/test/unsigned.apk') as z:meta=json.loads(z.read('assets/rerac-build.json'))
           assert meta['launcher_version']==os.environ['REQUEST_VERSION']
           assert meta['version_code']==int(os.environ['REQUEST_CODE'])
+          assert meta['native_source_sha']==os.environ['GITHUB_SHA']
           with open(os.environ['GITHUB_ENV'],'a') as env:
               env.write('EXPECT_LAUNCHER='+meta['launcher_version']+'\n')
               env.write('EXPECT_CORE='+meta['core_version']+'\n')

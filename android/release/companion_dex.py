@@ -1,4 +1,4 @@
-"""Insert source-built companion UI entry points with a DEX-aware pool rebuild."""
+"""Replace companion wheel entry points with source, preserving the surrounding artwork."""
 import hashlib,subprocess,tempfile,urllib.request
 from pathlib import Path
 
@@ -21,5 +21,6 @@ def hook_companion(data):
         (work/'input.dex').write_bytes(data)
         subprocess.run(['java','-cp',str(work)+':'+str(work/'*'),'CompanionDexHooks',str(work/'input.dex'),str(work/'output.dex')],check=True)
         result=(work/'output.dex').read_bytes()
-        if b'Lorg/rerac/android/CompanionMenu;' not in result:raise ValueError('Missing companion UI hook')
+        if b'Lorg/rerac/android/CompanionQuickSelect;' not in result:raise ValueError('Missing source-built companion controller')
+        if b'retainedMenuTouch' not in result:raise ValueError('Missing complex pause-menu routing')
         return result
