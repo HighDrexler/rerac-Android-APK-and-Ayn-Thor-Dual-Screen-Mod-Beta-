@@ -2,7 +2,13 @@ package org.rerac.tests;
 
 import android.app.Activity;
 import android.app.Instrumentation;
+import android.app.Presentation;
 import android.content.Context;
+import android.content.Intent;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.ImageReader;
+import android.graphics.PixelFormat;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.RectF;
@@ -48,6 +54,36 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         menu.put("supported",true);rows.getJSONObject(0).put("label","Paradox! This message does not exist");
         require(Boolean.FALSE.equals(render.invoke(null,host,new Canvas(image),snap)),"Missing imported menu labels must retain the native renderer");
         image.recycle();
+    }
+    private void secondaryStatus(Context context,ClassLoader loader)throws Exception{
+        Activity host=startActivitySync(new Intent().setClassName(context,"org.rerac.android.LauncherActivity").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        final Throwable[] error={null};
+        runOnMainSync(()->{
+            ImageReader image=null;VirtualDisplay display=null;Presentation presentation=null;
+            try{
+                image=ImageReader.newInstance(800,600,PixelFormat.RGBA_8888,2);
+                DisplayManager manager=(DisplayManager)host.getSystemService(Context.DISPLAY_SERVICE);
+                display=manager.createVirtualDisplay("Companion input dialog test",800,600,160,image.getSurface(),DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION|DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY);
+                require(display!=null,"Cannot create secondary display");
+                presentation=new Presentation(host,display.getDisplay());
+                Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);
+                View view=(View)ctor.newInstance(presentation.getContext());presentation.setContentView(view);
+                presentation.getWindow().addFlags(8);presentation.show();view.layout(0,0,800,600);
+                require(view.getWindowToken()!=null,"Companion view has no secondary window token");
+                Class<?> screen=Class.forName("org.rerac.android.CompanionMenu",true,loader);
+                Method render=screen.getDeclaredMethod("render",View.class,Canvas.class,JSONObject.class);render.setAccessible(true);
+                JSONObject menu=new JSONObject().put("title","Paused").put("root",true).put("supported",true).put("rows",new JSONArray().put(new JSONObject().put("label","Options").put("enabled",true)));
+                Bitmap bitmap=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);
+                require(Boolean.TRUE.equals(render.invoke(null,view,new Canvas(bitmap),new JSONObject().put("menu",true).put("page",123).put("pause",menu))),"Cannot render attached companion fixture");bitmap.recycle();
+                Method state=screen.getDeclaredMethod("state",View.class);state.setAccessible(true);Object value=state.invoke(null,view);
+                Method status=null;for(Method m:screen.getDeclaredMethods())if(m.getName().equals("status"))status=m;
+                require(status!=null,"Input status handler unavailable");status.setAccessible(true);
+                long now=SystemClock.uptimeMillis();MotionEvent up=MotionEvent.obtain(now-1000,now,MotionEvent.ACTION_UP,52,50,0);
+                try{require(Boolean.TRUE.equals(status.invoke(null,view,up,value)),"Input status dialog failed on the real secondary window");}finally{up.recycle();}
+            }catch(Throwable failure){error[0]=failure;}
+            finally{if(presentation!=null)presentation.dismiss();if(display!=null)display.release();if(image!=null)image.close();host.finish();}
+        });
+        if(error[0]!=null)throw new AssertionError("Secondary-display status dialog failed",error[0]);
     }
     @Override public void onCreate(Bundle args){start();}
     @Override public void onStart(){
@@ -109,6 +145,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 pauseLayouts(context,loader);
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
+            secondaryStatus(context,loader);
             require(taps[0]==32,"Incomplete hybrid/dedicated page coverage");
             Method status=core.getDeclaredMethod("companionInputStatus");status.setAccessible(true);
             JSONObject receipt=new JSONObject((String)status.invoke(null));
@@ -116,7 +153,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             require("Item does not match the displayed slot".equals(receipt.getJSONObject("lastTap").getString("stage")),"Generation-zero fixture must be rejected, not counted as an applied equipment selection");
             Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
             require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
-            JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("secondary_status_dialog",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));
