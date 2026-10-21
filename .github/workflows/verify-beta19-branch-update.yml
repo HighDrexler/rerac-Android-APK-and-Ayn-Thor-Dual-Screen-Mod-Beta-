@@ -1,0 +1,67 @@
+name: Verify actual beta18 updating to beta19 from update-channel3
+on:
+  push:
+    branches: [update-channel3]
+    paths: [development.json, .github/workflows/verify-beta19-branch-update.yml]
+permissions:
+  contents: read
+jobs:
+  branch-update:
+    if: github.repository_id == '1424927008'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TARGET_SHA: f7440c5f18b769aea042bd7dd8ec3ebd05c86a4d116e1a8904280617f9aa3b2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Verify the real beta18 baseline and hosted beta19 archive
+        run: |
+          set -euo pipefail
+          mkdir -p work/fixture work/reports work/download
+          python3 - <<'PY'
+          import hashlib,json,urllib.request,zipfile
+          from pathlib import Path
+          with zipfile.ZipFile('builds/beta18/ReRAC-Android-beta18.apk.zip') as z:
+              data=z.read('ReRAC.apk')
+          assert hashlib.sha256(data).hexdigest()=='4239609e07bb09a727f254f461ad4c87b2ecbd03907ce652fced6089ef9d30cb'
+          Path('work/fixture/beta18.apk').write_bytes(data)
+          report=json.loads(Path('builds/beta19/build.json').read_text())
+          assert report['version_code']==35 and report['sha256']=='f7440c5f18b769aea042bd7dd8ec3ebd05c86a4d116e1a8904280617f9aa3b2e'
+          assert report['apk_url']=='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta19/ReRAC-Android-beta19.apk.zip'
+          archive=urllib.request.urlopen(report['apk_url'],timeout=120).read()
+          assert len(archive)==report['archive_bytes'] and hashlib.sha256(archive).hexdigest()==report['archive_sha256']
+          Path('work/download/beta19.zip').write_bytes(archive)
+          with zipfile.ZipFile('work/download/beta19.zip') as z:
+              assert z.namelist()==['ReRAC.apk']
+              assert hashlib.sha256(z.read('ReRAC.apk')).hexdigest()==report['sha256']
+          PY
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Download, verify and install beta19 through the actual beta18 updater
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/fixture/beta18.apk --output work/reports --initial-code 34 --target-code 35 --target-version 1.1.0-beta.19 --target-sha256 "$TARGET_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta19-branch-upgrade-proof
+          path: work/reports
+          retention-days: 14

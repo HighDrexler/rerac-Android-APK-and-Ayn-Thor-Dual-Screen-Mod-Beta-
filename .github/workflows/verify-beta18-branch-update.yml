@@ -1,8 +1,6 @@
 name: Verify beta18 updating directly from update-channel3
 on:
-  push:
-    branches: [update-channel3]
-    paths: [development.json, .github/workflows/verify-beta18-branch-update.yml]
+  workflow_dispatch:
 permissions:
   contents: read
   actions: read
