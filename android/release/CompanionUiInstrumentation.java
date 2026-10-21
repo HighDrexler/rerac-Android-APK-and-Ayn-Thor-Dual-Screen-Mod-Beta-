@@ -26,6 +26,26 @@ public final class CompanionUiInstrumentation extends Instrumentation {
     private Object get(Object view,String name)throws Exception{
         Field f=wheel.getDeclaredField(name);f.setAccessible(true);return f.get(view);
     }
+    private void pauseLayouts(Context context,ClassLoader loader)throws Exception{
+        Class<?> screen=Class.forName("org.rerac.android.CompanionMenu",true,loader);
+        Method render=screen.getDeclaredMethod("render",View.class,Canvas.class,JSONObject.class);render.setAccessible(true);
+        View host=new View(context);host.layout(0,0,800,600);
+        JSONArray rows=new JSONArray();String[] choices={"Weapons","Gadgets","Quick Select","Map","Help","Options","Goodies","Save Game","Load Game"};
+        for(int i=0;i<choices.length;i++)rows.put(new JSONObject().put("label",choices[i]).put("enabled",true).put("selected",i==1).put("x",180).put("y",40+i*20));
+        JSONObject menu=new JSONObject().put("title","Paused").put("root",true).put("rows",rows).put("supported",true).put("canResume",true);
+        JSONObject snap=new JSONObject().put("menu",true).put("page",123).put("pause",menu);
+        Bitmap image=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);
+        require(Boolean.TRUE.equals(render.invoke(null,host,new Canvas(image),snap)),"Source-built pause root did not render");
+        java.io.File dir=context.getExternalFilesDir(null);require(dir!=null,"No UI evidence directory");
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(dir,"pause-root.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}
+        menu.put("title","Help").put("root",false).put("descriptions",new JSONArray().put("Select a topic to read the game's instructions. The companion keeps the description readable beside the menu, with Back and Resume always visible."));
+        rows=new JSONArray();for(String label:new String[]{"Controls","Weapons","Gadgets","Moves"})rows.put(new JSONObject().put("label",label).put("enabled",true).put("selected",label.equals("Moves")).put("x",180).put("y",100));menu.put("rows",rows);snap.put("page",124);
+        require(Boolean.TRUE.equals(render.invoke(null,host,new Canvas(image),snap)),"Pause description layout did not render");
+        try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(dir,"pause-detail.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}
+        menu.put("supported",false);
+        require(Boolean.FALSE.equals(render.invoke(null,host,new Canvas(image),snap)),"Complex game pages lost the original renderer");
+        image.recycle();
+    }
     @Override public void onCreate(Bundle args){start();}
     @Override public void onStart(){
         Bundle result=new Bundle();final Throwable[] failure={null};final int[] taps={0};
@@ -83,6 +103,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                     }
                 }
                 target.recycle();
+                pauseLayouts(context,loader);
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
             require(taps[0]==32,"Incomplete hybrid/dedicated page coverage");

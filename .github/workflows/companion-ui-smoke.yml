@@ -2,7 +2,7 @@ name: Actual companion wheel touch regression
 on:
   push:
     branches: [fix/036-touch-and-companion]
-    paths: [.github/workflows/companion-ui-smoke.yml, android/release/CompanionUiInstrumentation.java, android/release/build_companion_ui_test.py]
+    paths: [.github/workflows/companion-ui-smoke.yml, android/release/CompanionUiInstrumentation.java, android/release/build_companion_ui_test.py, android/release/companion_dex.py, android/release/CompanionDexHooks.java, android/launcher/android/src/org/rerac/android/CompanionMenu.java]
 permissions:
   contents: read
   actions: read
@@ -74,6 +74,8 @@ jobs:
             adb install work/test/test.apk
             adb shell am instrument -w -r org.rerac.tests.companion/org.rerac.tests.CompanionUiInstrumentation | tee work/reports/companion-ui.txt
             grep -q '"status":"passed"' work/reports/companion-ui.txt
+            adb pull /sdcard/Android/data/org.rerac.android.ui035test/files/pause-root.png work/reports/pause-root.png
+            adb pull /sdcard/Android/data/org.rerac.android.ui035test/files/pause-detail.png work/reports/pause-detail.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:

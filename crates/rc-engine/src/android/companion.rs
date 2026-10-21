@@ -277,14 +277,57 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         cache.prims(&p,hud)
     };
     let panels:Vec<_>=rt.draws.iter().filter_map(|d|if let MenuDraw::PanelBegin{x,y,w,h,..}=d {Some([*x,*y,*w,*h])}else{None}).collect();
-    let mut comp=json!({"menu":in_menu,"mode":mode.raw(),"page":rt.menu.as_ref().map_or(0,|m|m.current),"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"continuousArrows":false,"focusedPanels":false,"panels":panels,"prims":prims,"map":[],"textures":cache.frame});
+    let mut comp=json!({"menu":in_menu,"mode":mode.raw(),"page":rt.menu.as_ref().map_or(0,|m|m.current),"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"continuousArrows":false,"focusedPanels":mode==Mode::Menu,"panels":panels,"prims":prims,"map":[],"textures":cache.frame});
     if let Some(menu)=rt.menu.as_ref(){
+        if mode==Mode::Menu&&!frontend {comp["pause"]=pause_screen(menu,&rt.assets);}
         comp["collectibles"]=collectibles(menu,&gs.0,&rt.assets,&mut cache,hud);
         if MAP_VISIBLE.load(Ordering::Acquire)&&secondary(){let (draw,meta)=map_draws(&mut cache,menu,play,&gs.0,&rt.assets);let p=cache.convert(&draw,&rt.assets,hud);comp["map"]=json!(cache.prims(&p,hud));if let Some(m)=meta.as_object(){for(k,v)in m{comp[k]=v.clone();}}}
     }
     cache.prune();
     let snapshot=Snapshot{wheel:Arc::from(wheel),companion:Arc::from(comp.to_string()),icons:cache.icons.clone(),selection,generation};
     *published().write().unwrap_or_else(|e|e.into_inner())=snapshot;
+}
+
+/// Publish menu choices, rather than a reduced image of the primary screen.
+/// Coordinates retain the original widget hit test and its normal action path.
+/// Complex map/inventory/confirmation pages keep their existing native panels.
+fn pause_screen(menu:&PageMenu,a:&MenuAssets)->Value {
+    let Some(page)=menu.pages.get(&menu.current) else{return Value::Null};
+    let mut rows=Vec::new();let mut descriptions=Vec::new();let mut supported=true;
+    let mut title=if menu.current==menu.addrs.root {"Paused".to_owned()} else {"Game menu".to_owned()};
+    for w in menu.widgets.values(){if let Data::List(l)=&w.data {for it in &l.items {
+        if matches!(it.action,3|4|5)&&it.arg==menu.current {
+            let label=text(a.msg(it.label as u16 as i32));if !label.is_empty(){title=label;}
+        }
+    }}}
+    for id in page.widgets {
+        let Some(w)=menu.widgets.get(&id) else{continue};
+        if w.dflags&4!=0||w.draw==0 {continue;}
+        let [x,y,width,height]=w.rect;
+        match &w.data {
+            Data::List(l)=>{
+                for (i,it) in l.items.iter().enumerate(){
+                    let label=text(a.msg(it.label as u16 as i32));if label.is_empty(){continue;}
+                    let source_y=if l.flags&lf::STEP_FROM_FONT!=0 {
+                        let size=if l.flags&lf::LARGE!=0 {32.}else if l.flags&lf::SMALL!=0 {12.}else{16.};
+                        y as f32+(i as f32+1.)*(size+3.)
+                    }else{y as f32+(i as f32+1.)*height as f32/(l.items.len() as f32+1.)};
+                    rows.push(json!({"label":label,"detail":text(a.msg(it.sublabel as u16 as i32)),"enabled":width>0&&height>0&&!matches!(it.action,0|2)&&source_y<(y+height) as f32,"selected":page.focus==id&&l.cursor==i as i32,"x":x as f32+width as f32*0.5,"y":source_y}));
+                }
+            },
+            Data::Label(l)=>{
+                let id=if l.flags&4!=0||l.flags&0x1000!=0 {l.id} else {
+                    let addr=l.id.wrapping_add((l.content as u32).wrapping_mul(l.stride)&!3).wrapping_add(l.variant as u32*4);
+                    l.table.as_ref().or_else(||menu.label_tables.get(&l.id)).and_then(|t|usize::try_from(l.content).ok().and_then(|i|t.get(i))).copied().unwrap_or_else(||a.overlay.u32(addr).unwrap_or(0))
+                };
+                let label=text(a.msg_in(id as i32,menu.text_swap==2));
+                if !label.is_empty()&&label!=title&&!descriptions.contains(&label){descriptions.push(label);}
+            },
+            Data::Other=>{},
+            _=>supported=false,
+        }
+    }
+    json!({"title":title,"root":menu.current==menu.addrs.root,"rows":rows,"descriptions":descriptions,"supported":supported&&!rows.is_empty(),"canResume":!menu.no_close,"busy":menu.trans!=0})
 }
 
 /// The home button is the Q Force emblem, independent of imported disc data.

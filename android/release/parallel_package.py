@@ -11,7 +11,9 @@ import argparse,copy,hashlib,json,re,struct,subprocess,sys,tempfile,zipfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'android/launcher/tools/android'))
+sys.path.insert(0,str(ROOT/'android/release'))
 from apk_format import axml_chunks,string_pool,make_string_pool,manifest_values,native_alignment
+from companion_dex import hook_companion
 
 OLD_PACKAGE='org.rerac.android.uipreview'
 DEV_PACKAGE='org.rerac.android.ui035test'
@@ -132,6 +134,7 @@ def transform(candidate,zipalign,output,signer,version=None,code=None):
                 body=old.read(entry)
                 if name=='AndroidManifest.xml':body=manifest(body,meta['core_version'],version,code,old_version,old_code)
                 elif name=='classes6.dex':body=compiled_dex
+                elif name=='classes2.dex':body=hook_companion(body)
                 elif name=='assets/rerac-build.json':body=(json.dumps(meta,sort_keys=True,separators=(',',':'))+'\n').encode()
                 clone=copy.copy(entry)
                 clone.extra=b''
