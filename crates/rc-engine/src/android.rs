@@ -3,6 +3,7 @@
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
 mod companion_policy;
+mod companion_select;
 mod skip_policy;
 
 /// Android-only accessibility skip for both in-engine scenes and PSS movies.

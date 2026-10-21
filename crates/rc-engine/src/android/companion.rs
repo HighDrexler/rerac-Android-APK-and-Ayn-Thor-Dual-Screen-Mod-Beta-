@@ -2,6 +2,8 @@
 //! Uses the same PS2 draw conversion as the primary display, including all three
 //! screen-static passes. Rendering/snapshots never advance the gameplay RNG.
 use super::*;
+#[path = "companion_menu.rs"]
+mod companion_menu;
 use crate::gameplay::{Persistent, Play, Session};
 use crate::hud_render::{Hud2d, LevelHud, Prim, Tex};
 use crate::menu_render::{MenuMode, MenuRt};
@@ -83,7 +85,10 @@ fn gate(play:&Play,gs:&GameState,session:&rc_game::game_state::SessionState)->He
     let h=&play.game.hero;
     HeroGate {early_exit:session.hp<1,swap_state:h.items.slot.swap,f594:play.svc.interact.owner_at_hero,b13fc:h.items.f13fc,b13f7:h.items.f13f7,b13f4:h.mode,s3f502:h.f502,held_item:if gs.global.wrench_held!=0 {8}else{gs.global.equipped[0]}}
 }
-fn allowed(g:&HeroGate)->bool { !g.early_exit&&g.swap_state!=2&&g.f594==0&&(g.b13fc==0||g.b13f4==1||g.s3f502!=0)&&(g.b13f7==0||g.b13f4==1||g.s3f502!=0)&&matches!(g.b13f4,0|1|3) }
+fn allowed(g:&HeroGate)->bool {
+    companion_select::allowed(g)
+        || (g.b13f4==1&&!g.early_exit&&g.swap_state!=2&&g.f594==0)
+}
 
 pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResMut<Play>>, mut gs:Option<ResMut<Persistent>>,mut sess:Option<ResMut<Session>>,mm:Option<Res<MenuMode>>) {
     if paused(){return;}
@@ -95,17 +100,22 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
             let g=gate(play,&gs.0,&sess.0);if !allowed(&g){selection_status(item,"Player state currently blocks quick select");continue;}
             let Some(q)=rt.qs.as_ref() else{selection_status(item,"Gameplay quick select is unavailable");continue};
             if g.b13f4!=1 {
-                // Gameplay owns the equipment definitions. A missing/unopened
-                // pause menu must never turn a visible weapon into a no-op.
-                let part=play.game.item_data.as_ref().and_then(|data|data.defs.get(item.max(0) as usize)).map(|d|d.slot);
-                if !rc_game::menus::quick_select::touch_item_available(&gs.0.global,slot,item){selection_status(item,"Item is neither owned nor assigned to this saved slot");continue;}
-                match part {
-                    Some(1)=>{sess.0.temp_feet=item;selection_status(item,"Feet equipment request applied");continue;},
-                    Some(2)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_head){sess.0.temp_head=item;selection_status(item,"Head equipment request applied");}else{selection_status(item,"Head equipment is blocked here");}continue;},
-                    Some(3)=>{if !rt.menu.as_ref().is_some_and(|m|m.unusable_back){sess.0.temp_back=item;selection_status(item,"Back equipment request applied");}else{selection_status(item,"Back equipment is blocked here");}continue;},
-                    Some(0)=>{},_=>{selection_status(item,"Gameplay item definitions are unavailable for this item");continue},
+                // Use the user's working v1.0 companion contract. The companion
+                // is a direct equipment request, not a simulated wheel release.
+                match companion_select::apply(&q.items,item,&g,&mut gs.0.global,&mut sess.0) {
+                    Some(companion_select::Selection::Hand(request))=>{
+                        play.game.item_globals.request=request;
+                        selection_status(item,"Hand equipment request applied");
+                    },
+                    Some(companion_select::Selection::Drone)=>{
+                        play.game.item_globals.drone=true;
+                        selection_status(item,"Drone deployment request applied");
+                    },
+                    None=>selection_status(item,"Item is unavailable in the current companion state"),
                 }
+                continue;
             }
+            // Preserve Clank's separate command-wheel extension.
             let out=q.touch_confirm(slot,item,&g,&mut gs.0.global,&mut sess.0,mm.loop_frame as u32,play.svc.units.bot_listeners);
             if let Some(command)=out.command {play.game.hero.bodies.command=command;}
             // The ordinary quick-select's release writes 0x141408. The live
@@ -122,13 +132,7 @@ pub(crate) fn apply_commands(mut rt:Option<ResMut<MenuRt>>, mut play:Option<ResM
         Command::MenuChoice{page,widget,index,generation}=>{
             if generation!=GENERATION.load(Ordering::Acquire)||mm.state.mode!=Mode::Menu{continue;}
             let Some(menu)=rt.menu.as_mut() else{continue};
-            if menu.current!=page||menu.trans!=0||!menu.pages.get(&page).is_some_and(|p|p.widgets.contains(&widget)){continue;}
-            let Some(w)=menu.widgets.get_mut(&widget) else{continue};if w.dflags&4!=0{continue;}
-            let Data::List(list)=&mut w.data else{continue};
-            if list.items.get(index).is_none_or(|i|i.action<=0||i.action==2){continue;}
-            list.cursor=index as i32;
-            if let Some(p)=menu.pages.get_mut(&page){p.focus=widget;p.pending=0;}
-            pulse(button::CROSS);
+            if companion_menu::choose(menu,page,widget,index){pulse(button::CROSS);}
         },
         Command::Touch{page,x,y}=>{
             let Some(menu)=rt.menu.as_mut() else{continue};
@@ -257,7 +261,7 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         let (ox,oy)=q.origin();bounds=[ox,oy,q.consts.size.0,q.consts.size.1];
         let mut ids=gs.0.global.quick_select.to_vec();
         for (id,owned) in gs.0.global.owned.iter().enumerate(){
-            if *owned!=0&&!ids.contains(&(id as i32))&&q.items.icon.get(id).is_some_and(|&i|i!=0)&&play.game.item_data.as_ref().and_then(|data|data.defs.get(id)).is_some_and(|i|(0..4).contains(&i.slot)){ids.push(id as i32);}
+            if id!=8&&*owned!=0&&!ids.contains(&(id as i32))&&companion_select::available(&q.items,&gs.0.global,id as i32){ids.push(id as i32);}
         }
         ids.resize(ids.len().max(16).div_ceil(8)*8,0);
         if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(8,0);}
@@ -266,7 +270,7 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
             let mut slots=Vec::new();
             for (i,&item) in group.iter().enumerate(){
                 ring.entries[i].item=item;ring.entries[i].icon=if item>0{ring.items.icon.get(item as usize).copied().unwrap_or(0) as i32}else{0};
-                let (x,y)=ring.slot_pos(if play.game.hero.mode==1 {i*2}else{i});slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0&&(play.game.hero.mode!=1||play.svc.units.bot_listeners>0)}));selection.push(item);
+                let (x,y)=ring.slot_pos(if play.game.hero.mode==1 {i*2}else{i});slots.push(json!({"id":item,"x":x,"y":y,"enabled":allow&&item!=0&&if play.game.hero.mode==1 {play.svc.units.bot_listeners>0}else{companion_select::available(&q.items,&gs.0.global,item)}}));selection.push(item);
             }
             let mut draw=Vec::new();ring.draw(&rt.assets,&gs.0.global,play.game.counter,play.svc.units.bot_listeners,&mut draw);
             let p=cache.convert(&draw,&rt.assets,hud);let draws=cache.wheel_draws(&p,hud);
@@ -290,8 +294,11 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         let p=p.into_iter().filter(|p|super::companion_policy::native_frontend_primitive(title_only,matches!(p.tex,Tex::Fx(1..=3)))).collect::<Vec<_>>();
         cache.prims(&p,hud)
     };
+    // v1.0 sets focusedPanels only after clipping to focused widget rects.
+    // This payload contains the full native draw list, so Java must retain
+    // its ordinary content detection and fullscreen fallback.
     let panels:Vec<_>=rt.draws.iter().filter_map(|d|if let MenuDraw::PanelBegin{x,y,w,h,..}=d {Some([*x,*y,*w,*h])}else{None}).collect();
-    let mut comp=json!({"menu":in_menu,"mode":mode.raw(),"page":rt.menu.as_ref().map_or(0,|m|m.current),"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"continuousArrows":false,"focusedPanels":mode==Mode::Menu,"panels":panels,"prims":prims,"map":[],"textures":cache.frame});
+    let mut comp=json!({"menu":in_menu,"mode":mode.raw(),"page":rt.menu.as_ref().map_or(0,|m|m.current),"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"continuousArrows":false,"focusedPanels":false,"panels":panels,"prims":prims,"map":[],"textures":cache.frame});
     if let Some(menu)=rt.menu.as_ref(){
         if mode==Mode::Menu&&!frontend {comp["pause"]=pause_screen(menu,&rt.assets);}
         comp["collectibles"]=collectibles(menu,&gs.0,&rt.assets,&mut cache,hud);
@@ -304,41 +311,11 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
     *published().write().unwrap_or_else(|e|e.into_inner())=snapshot;
 }
 
-/// Publish menu choices, rather than a reduced image of the primary screen.
-/// Widget identity and index retain the game's validation and normal action path.
-/// Complex map/inventory/confirmation pages keep their existing native panels.
+/// Serialize the shared, host-tested projection of the game's menu state.
 fn pause_screen(menu:&PageMenu,a:&MenuAssets)->Value {
-    let Some(page)=menu.pages.get(&menu.current) else{return Value::Null};
-    let mut rows=Vec::new();let mut descriptions=Vec::new();let mut supported=true;
-    let mut title=if menu.current==menu.addrs.root {"Paused".to_owned()} else {"Game menu".to_owned()};
-    for w in menu.widgets.values(){if let Data::List(l)=&w.data {for it in &l.items {
-        if matches!(it.action,3|4|5)&&it.arg==menu.current {
-            let label=text(a.msg(it.label as u16 as i32));if !label.is_empty(){title=label;}
-        }
-    }}}
-    for id in page.widgets {
-        let Some(w)=menu.widgets.get(&id) else{continue};
-        if w.dflags&4!=0||w.draw==0 {continue;}
-        match &w.data {
-            Data::List(l)=>{
-                for (i,it) in l.items.iter().enumerate(){
-                    let label=text(a.msg(it.label as u16 as i32));if label.is_empty(){continue;}
-                    rows.push(json!({"label":label,"detail":text(a.msg(it.sublabel as u16 as i32)),"enabled":it.action>0&&it.action!=2,"selected":page.focus==id&&l.cursor==i as i32,"widget":id,"index":i}));
-                }
-            },
-            Data::Label(l)=>{
-                let id=if l.flags&4!=0||l.flags&0x1000!=0 {l.id} else {
-                    let addr=l.id.wrapping_add((l.content as u32).wrapping_mul(l.stride)&!3).wrapping_add(l.variant as u32*4);
-                    l.table.as_ref().or_else(||menu.label_tables.get(&l.id)).and_then(|t|usize::try_from(l.content).ok().and_then(|i|t.get(i))).copied().unwrap_or_else(||a.overlay.u32(addr).unwrap_or(0))
-                };
-                let label=text(a.msg_in(id as i32,menu.text_swap==2));
-                if !label.is_empty()&&label!=title&&!descriptions.contains(&label){descriptions.push(label);}
-            },
-            Data::Other=>{},
-            _=>supported=false,
-        }
-    }
-    json!({"title":title,"root":menu.current==menu.addrs.root,"rows":rows,"descriptions":descriptions,"supported":supported&&!rows.is_empty(),"canResume":!menu.no_close,"busy":menu.trans!=0})
+    let Some(screen)=companion_menu::screen(menu,a) else{return Value::Null};
+    let rows:Vec<_>=screen.rows.into_iter().map(|r|json!({"label":r.label,"detail":r.detail,"enabled":r.enabled,"selected":r.selected,"widget":r.widget,"index":r.index})).collect();
+    json!({"title":screen.title,"root":screen.root,"rows":rows,"descriptions":screen.descriptions,"supported":screen.supported,"canResume":screen.can_resume,"busy":screen.busy})
 }
 
 /// The home button is the Q Force emblem, independent of imported disc data.
