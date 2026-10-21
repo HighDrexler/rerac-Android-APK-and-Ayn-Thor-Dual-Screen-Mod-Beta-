@@ -32,6 +32,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         View host=new View(context);host.layout(0,0,800,600);
         JSONArray rows=new JSONArray();String[] choices={"Weapons","Gadgets","Quick Select","Map","Help","Options","Goodies","Save Game","Load Game"};
         for(int i=0;i<choices.length;i++)rows.put(new JSONObject().put("label",choices[i]).put("enabled",true).put("selected",i==1).put("x",180).put("y",40+i*20));
+        rows.getJSONObject(0).put("detail","Paradox! This message does not exist");
         JSONObject menu=new JSONObject().put("title","Paused").put("root",true).put("rows",rows).put("supported",true).put("canResume",true);
         JSONObject snap=new JSONObject().put("menu",true).put("page",123).put("pause",menu);
         Bitmap image=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);
@@ -44,6 +45,8 @@ public final class CompanionUiInstrumentation extends Instrumentation {
         try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(dir,"pause-detail.png"))){image.compress(Bitmap.CompressFormat.PNG,100,out);}
         menu.put("supported",false);
         require(Boolean.FALSE.equals(render.invoke(null,host,new Canvas(image),snap)),"Complex game pages lost the original renderer");
+        menu.put("supported",true);rows.getJSONObject(0).put("label","Paradox! This message does not exist");
+        require(Boolean.FALSE.equals(render.invoke(null,host,new Canvas(image),snap)),"Missing imported menu labels must retain the native renderer");
         image.recycle();
     }
     @Override public void onCreate(Bundle args){start();}

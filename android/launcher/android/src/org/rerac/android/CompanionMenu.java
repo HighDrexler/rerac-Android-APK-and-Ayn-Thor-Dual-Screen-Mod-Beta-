@@ -35,6 +35,7 @@ final class CompanionMenu {
         Class<?> game=Class.forName("org.rerac.android.GameActivity");Method m=game.getDeclaredMethod(name,types);m.setAccessible(true);return m.invoke(null,args);
     }
     private static JSONObject snapshot()throws Exception{return new JSONObject((String)call("nativeCompanion",new Class<?>[0]));}
+    private static String clean(String value){return "Paradox! This message does not exist".equals(value)?"":value;}
     private static void button(int value)throws Exception{call("nativeMenuButton",new Class<?>[]{int.class},value);}
     private static boolean status(View view,MotionEvent event,State state){
         if(event.getActionMasked()!=MotionEvent.ACTION_UP||event.getEventTime()-event.getDownTime()<750)return false;
@@ -65,6 +66,9 @@ final class CompanionMenu {
         try{
             JSONObject menu=snap.optJSONObject("pause");
             if(menu==null||!snap.optBoolean("menu")||!menu.optBoolean("supported"))return false;
+            JSONArray choices=menu.optJSONArray("rows");
+            if(choices==null||choices.length()==0)return false;
+            for(int i=0;i<choices.length();i++)if(clean(choices.getJSONObject(i).optString("label")).isEmpty())return false;
             s.active=true;long page=snap.optLong("page");if(s.page!=page){s.offset=0;s.page=page;s.down=null;}
             float scale=Math.min(view.getWidth()/800f,view.getHeight()/600f);if(scale<=0)return true;
             saved=canvas.save();canvas.drawColor(BG);canvas.translate((view.getWidth()-800*scale)/2,(view.getHeight()-600*scale)/2);canvas.scale(scale,scale);
@@ -74,11 +78,11 @@ final class CompanionMenu {
             if(s.version==null)s.version=LauncherBuild.read(view.getContext()).launcher;
             text(canvas,s,"Q FORCE  /  COMPANION",100,40,15,MUTED,430);
             text(canvas,s,s.version,595,40,14,MUTED,180);
-            text(canvas,s,menu.optString("title","Paused"),100,77,30,TEXT,650);
+            String title=clean(menu.optString("title","Paused"));text(canvas,s,title.isEmpty()?"Game menu":title,100,77,30,TEXT,650);
             s.paint.setColor(BORDER);canvas.drawRect(24,99,776,100,s.paint);
             JSONArray rows=menu.optJSONArray("rows");boolean grid=menu.optBoolean("root");int count=rows.length(),cols=grid?2:1;
             JSONArray descriptions=menu.optJSONArray("descriptions");StringBuilder description=new StringBuilder();
-            if(!grid&&descriptions!=null)for(int i=0;i<descriptions.length();i++){if(description.length()>0)description.append("\n\n");description.append(descriptions.optString(i));}
+            if(!grid&&descriptions!=null)for(int i=0;i<descriptions.length();i++){String line=clean(descriptions.optString(i));if(line.isEmpty())continue;if(description.length()>0)description.append("\n\n");description.append(line);}
             s.text.setTextSize(20);s.text.setColor(MUTED);s.text.setTypeface(Typeface.create("sans-serif",Typeface.NORMAL));
             StaticLayout paragraph=description.length()==0?null:StaticLayout.Builder.obtain(description,0,description.length(),s.text,320).setAlignment(Layout.Alignment.ALIGN_NORMAL).setIncludePad(false).setLineSpacing(6,1).build();
             float top=122,bottom=500,rowH=grid?68:66,gap=10,width=paragraph!=null?366:(752-gap*(cols-1))/cols;
@@ -88,7 +92,7 @@ final class CompanionMenu {
                 JSONObject row=rows.getJSONObject(i);float x=24+(i%cols)*(width+gap),y=top+(i/cols)*(rowH+gap)-s.offset;
                 RectF r=new RectF(x,y,x+width,y+rowH);if(r.bottom<top||r.top>bottom)continue;
                 boolean enabled=row.optBoolean("enabled"),selected=row.optBoolean("selected");card(canvas,s,r,selected);
-                String detail=row.optString("detail");text(canvas,s,row.optString("label"),x+20,y+(detail.isEmpty()?42:28),22,enabled?TEXT:MUTED,width-58);
+                String detail=clean(row.optString("detail"));text(canvas,s,row.optString("label"),x+20,y+(detail.isEmpty()?42:28),22,enabled?TEXT:MUTED,width-58);
                 if(!detail.isEmpty())text(canvas,s,detail,x+20,y+51,15,MUTED,width-58);
                 text(canvas,s,enabled?"›":"—",x+width-30,y+42,26,enabled?CYAN:MUTED,24);
                 RectF hit=new RectF(r);hit.intersect(24,top,776,bottom);if(enabled&&!menu.optBoolean("busy"))s.hits.add(new Hit(hit,row,0));
