@@ -107,7 +107,13 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
             require(taps[0]==32,"Incomplete hybrid/dedicated page coverage");
-            JSONObject evidence=new JSONObject().put("status","passed").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
+            Method status=core.getDeclaredMethod("companionInputStatus");status.setAccessible(true);
+            JSONObject receipt=new JSONObject((String)status.invoke(null));
+            require(receipt.getJSONObject("lastTap").getInt("item")==25,"JNI did not receive the fixture's last item tap");
+            require("Item does not match the displayed slot".equals(receipt.getJSONObject("lastTap").getString("stage")),"Generation-zero fixture must be rejected, not counted as an applied equipment selection");
+            Method choice=core.getDeclaredMethod("menuChoice",long.class,long.class,long.class,int.class);choice.setAccessible(true);
+            require(Boolean.FALSE.equals(choice.invoke(null,0L,123L,456L,0)),"Stale menu choice accepted");
+            JSONObject evidence=new JSONObject().put("status","passed").put("scope","UI rendering and hit-testing plus native rejection/status ABI; no live gameplay").put("companion_view","actual retained WeaponWheel").put("hybrid_taps",16).put("hybrid_map_widgets",true).put("dedicated_taps",16).put("q_force_icon",true).put("pause_layouts",true).put("native_rejection_receipt",receipt).put("source_sha",build.getString("source_sha")).put("physical_thor_tested",false).put("live_gameplay_equipment_tested",false);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));

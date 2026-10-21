@@ -25,12 +25,12 @@ jobs:
         with:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
-      - name: Use the actual beta13 native candidate
+      - name: Use the actual pause/input-status native candidate
         run: |
           set -euo pipefail
           mkdir -p work/candidate work/reports work/test
-          gh run watch 39521775663 --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
-          gh run download 39521775663 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
+          gh run watch 39528247162 --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+          gh run download 39528247162 --repo "$GITHUB_REPOSITORY" --name android-native-candidate --dir work/candidate
           sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
           sudo apt-get update -qq && sudo apt-get install -y -qq python3-cryptography >/dev/null
       - name: Sign app and instrumentation with one disposable key
@@ -48,7 +48,7 @@ jobs:
           p=Path('android/release/parallel_package.py');s=importlib.util.spec_from_file_location('package',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
           pin=hashlib.sha256((Path(os.environ['KEYDIR'])/'cert.der').read_bytes()).hexdigest();m.EXPECTED_SIGNER=pin
           app=next(Path('work/candidate').rglob('ReRAC-Launcher-1.1.0-beta.13-unsigned.apk'))
-          m.transform(app,Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/app-unsigned.apk'),pin,version='1.1.0-beta.13',code=29)
+          m.transform(app,Path(os.environ['ANDROID_HOME'])/'build-tools/36.0.0/zipalign',Path('work/test/app-unsigned.apk'),pin,version='1.1.0-beta.14',code=30)
           PY
           python3 android/release/build_companion_ui_test.py --sdk "$ANDROID_HOME" --output work/test/test-unsigned.apk
           for name in app test; do
