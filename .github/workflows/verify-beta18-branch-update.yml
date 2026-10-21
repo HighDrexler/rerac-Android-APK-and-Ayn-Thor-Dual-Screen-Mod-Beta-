@@ -1,0 +1,61 @@
+name: Verify beta18 updating directly from update-channel3
+on:
+  push:
+    branches: [update-channel3]
+    paths: [development.json, .github/workflows/verify-beta18-branch-update.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  branch-update:
+    if: github.repository_id == '1424927008'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 4239609e07bb09a727f254f461ad4c87b2ecbd03907ce652fced6089ef9d30cb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Verify the hosted archive and get the signed lower-code updater fixture
+        run: |
+          set -euo pipefail
+          mkdir -p work/fixture work/reports work/download
+          gh run download 39678922650 --repo "$GITHUB_REPOSITORY" --name beta18-branch-upgrade-fixture --dir work/fixture
+          curl -fL --retry 3 'https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/beta18/ReRAC-Android-beta18.apk.zip' -o work/download/build.zip
+          echo '79942e900551d89555dfd8f8d7a7d26525dcc6b30fd033747a2af0327538aa56  work/download/build.zip' | sha256sum -c -
+          python3 - <<'PY'
+          import hashlib,zipfile
+          with zipfile.ZipFile('work/download/build.zip') as z:
+              assert z.namelist()==['ReRAC.apk']
+              assert hashlib.sha256(z.read('ReRAC.apk')).hexdigest()=='4239609e07bb09a727f254f461ad4c87b2ecbd03907ce652fced6089ef9d30cb'
+          PY
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify signed branch download, extraction, Android installation and retained data
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: default
+          disable-animations: true
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
+          script: python android/release/experimental_live_update_test.py --apk work/fixture/branch-upgrade-fixture.apk --output work/reports --initial-code 33 --target-code 34 --target-version 1.1.0-beta.18 --target-sha256 "$TARGET_SHA"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beta18-branch-only-update-proof
+          path: work/reports
+          retention-days: 21
