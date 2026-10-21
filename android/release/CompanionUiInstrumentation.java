@@ -197,7 +197,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                     int x=Math.round(location[0]+bounds.left+(centres[selectedSlot][0]-20f)/210f*bounds.width());
                     int y=Math.round(location[1]+bounds.top+(centres[selectedSlot][1]-108f)/200f*bounds.height());
                     int before=accepted.get();actions.clear();
-                    String command="input -d "+display[0].getDisplay().getDisplayId()+" touchscreen tap "+x+" "+y;
+                    String command="input touchscreen -d "+display[0].getDisplay().getDisplayId()+" tap "+x+" "+y;
                     String output;
                     try(java.io.InputStream input=new android.os.ParcelFileDescriptor.AutoCloseInputStream(getUiAutomation().executeShellCommand(command));java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream()){
                         byte[] buffer=new byte[4096];int count;while((count=input.read(buffer))!=-1)bytes.write(buffer,0,count);output=new String(bytes.toByteArray(),java.nio.charset.StandardCharsets.UTF_8);
