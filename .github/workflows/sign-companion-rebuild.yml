@@ -1,0 +1,264 @@
+name: Sign verified companion rebuild with the existing certificate
+
+on:
+  push:
+    branches: [rebuild/036-companion-quickselect]
+    paths: [.github/workflows/sign-companion-rebuild.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: sign-companion-rebuild-beta17
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: github.repository_id == '1424927008' && github.ref == 'refs/heads/rebuild/036-companion-quickselect'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: 0ab6c9ca4be8d2f8f671a457c069a5f181e6d9da
+      SOURCE_BRANCH: rebuild/036-companion-quickselect
+      UPSTREAM_SHA: 89c87e98f9d8296187df2a6310c67b32144090d3
+      NATIVE_RUN: '39549307255'
+      SMOKE_RUN: '39549307221'
+      COMPANION_RUN: '39549307365'
+      EXPECTED_SIGNER: e2253eb7370c495ef0265efcdbe6bfbe09832070558fe9ed7047e7a2361ad75e
+      UNSIGNED_APK: ReRAC-1.1.0-beta.17-production-unsigned.apk
+      SIGNED_APK: ReRAC-Android-0.3.6-Launcher-1.1-beta17-DEV.apk
+    steps:
+      - name: Require the existing original signing secrets
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.RERAC_035_KEYSTORE_B64 }}
+          RERAC_KEY_PASSWORD: ${{ secrets.RERAC_035_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_B64" || -z "$RERAC_KEY_PASSWORD" ]]; then
+            echo '::error::The existing RERAC_035_KEYSTORE_B64 and RERAC_035_KEYSTORE_PASSWORD secrets are required. No APK was signed.'
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: 0ab6c9ca4be8d2f8f671a457c069a5f181e6d9da
+          persist-credentials: false
+
+      - name: Require all three exact-source runs to finish successfully
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p work/run-checks work/proof work/candidate work/startup work/companion work/output
+          for run in "$NATIVE_RUN" "$SMOKE_RUN" "$COMPANION_RUN"; do
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "work/run-checks/$run.json"
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          expected = {
+              os.environ['NATIVE_RUN']: '.github/workflows/android-native-build.yml',
+              os.environ['SMOKE_RUN']: '.github/workflows/android-parallel-smoke.yml',
+              os.environ['COMPANION_RUN']: '.github/workflows/companion-ui-smoke.yml',
+          }
+          for run_id, workflow in expected.items():
+              run = json.loads(Path(f'work/run-checks/{run_id}.json').read_text())
+              assert run['id'] == int(run_id), 'Run ID mismatch'
+              assert run['repository']['id'] == 1424927008, 'Repository mismatch'
+              assert run['path'] == workflow, 'Workflow mismatch'
+              assert run['head_branch'] == os.environ['SOURCE_BRANCH'], 'Source branch mismatch'
+              assert run['head_sha'] == os.environ['SOURCE_SHA'], 'Source commit mismatch'
+          candidate = json.loads(Path('android/native/candidate.json').read_text())
+          assert (candidate['launcher_version'], candidate['version_code'], candidate['channel']) == ('1.1.0-beta.17', 33, 'development')
+          PY
+          for run in "$NATIVE_RUN" "$SMOKE_RUN" "$COMPANION_RUN"; do
+            gh run watch "$run" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" > "work/run-checks/$run.json"
+          done
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          expected = {
+              os.environ['NATIVE_RUN']: '.github/workflows/android-native-build.yml',
+              os.environ['SMOKE_RUN']: '.github/workflows/android-parallel-smoke.yml',
+              os.environ['COMPANION_RUN']: '.github/workflows/companion-ui-smoke.yml',
+          }
+          verified = []
+          for run_id, workflow in expected.items():
+              run = json.loads(Path(f'work/run-checks/{run_id}.json').read_text())
+              assert run['id'] == int(run_id) and run['repository']['id'] == 1424927008
+              assert run['path'] == workflow and run['head_branch'] == os.environ['SOURCE_BRANCH']
+              assert run['head_sha'] == os.environ['SOURCE_SHA']
+              assert run['status'] == 'completed' and run['conclusion'] == 'success', 'Required run did not pass'
+              verified.append({key: run[key] for key in ('id', 'path', 'head_branch', 'head_sha', 'status', 'conclusion', 'html_url', 'run_attempt')})
+          proof = dict(schema=1, source_sha=os.environ['SOURCE_SHA'], upstream_sha=os.environ['UPSTREAM_SHA'], signing_workflow_sha=os.environ['GITHUB_SHA'], runs=verified)
+          Path('work/proof/tested-source.json').write_text(json.dumps(proof, indent=2) + '\n')
+          PY
+
+      - name: Download only the pinned production candidate and test evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$SMOKE_RUN" --repo "$GITHUB_REPOSITORY" --name android-production-unsigned --dir work/candidate
+          gh run download "$SMOKE_RUN" --repo "$GITHUB_REPOSITORY" --name android-sidecar-smoke-evidence --dir work/startup
+          gh run download "$COMPANION_RUN" --repo "$GITHUB_REPOSITORY" --name companion-ui-tap-proof --dir work/companion
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          for directory in ('startup', 'companion'):
+              assert Path(f'work/{directory}/native-build-run.txt').read_text().strip() == os.environ['NATIVE_RUN'], 'Evidence references another native build'
+          startup = Path('work/startup/result.txt').read_text()
+          assert startup.strip() == 'launcher_startup=passed', 'Launcher startup did not pass'
+          companion = Path('work/companion/companion-ui.txt').read_text()
+          assert '"status":"passed"' in companion, 'Companion UI test did not pass'
+          Path('work/proof/startup-result.txt').write_text(startup)
+          Path('work/proof/companion-ui.txt').write_text(companion)
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install the existing Android signing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python3-cryptography >/dev/null
+
+      - name: Verify unsigned hashes, production identity, source, and alignment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          directory = Path('work/candidate')
+          filename = os.environ['UNSIGNED_APK']
+          assert {p.name for p in directory.iterdir()} == {filename, 'package-report.json', 'SHA256SUMS'}, 'Unexpected production artifact files'
+          apk = directory / filename
+          report = json.loads((directory / 'package-report.json').read_text())
+          digest = hashlib.sha256(apk.read_bytes()).hexdigest()
+          assert report['schema'] == 1 and report['signed'] is False
+          assert report['sha256'] == digest and report['bytes'] == apk.stat().st_size, 'Unsigned APK hash/size mismatch'
+          assert (directory / 'SHA256SUMS').read_text() == f'{digest}  {filename}\n', 'Unsigned checksum manifest mismatch'
+          expected_report = dict(core_version='0.3.6', launcher_version='1.1.0-beta.17', version_code=33, app_id='org.rerac.android.ui035test', signer_sha256=os.environ['EXPECTED_SIGNER'], update_channel_branch='update-channel2', native_source_sha=os.environ['SOURCE_SHA'], packaging_source_sha=os.environ['SOURCE_SHA'], native_build_run=int(os.environ['NATIVE_RUN']))
+          for key, value in expected_report.items():
+              assert report.get(key) == value, f'Package report mismatch: {key}'
+          with zipfile.ZipFile(apk) as archive:
+              names = archive.namelist()
+              assert len(names) == len(set(names)), 'Duplicate APK entries'
+              assert archive.testzip() is None, 'Corrupt APK entry'
+              metadata = json.loads(archive.read('assets/rerac-build.json'))
+              expected_metadata = dict(package_id='org.rerac.android.ui035test', core_version='0.3.6', launcher_version='1.1.0-beta.17', version_code=33, signer_sha256=os.environ['EXPECTED_SIGNER'], update_feed_branch='update-channel2', native_source_sha=os.environ['SOURCE_SHA'], upstream_sha=os.environ['UPSTREAM_SHA'])
+              for key, value in expected_metadata.items():
+                  assert metadata.get(key) == value, f'APK metadata mismatch: {key}'
+              assert metadata['native_source_rebuild'] is True
+              native = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in names if name.startswith('lib/') and name.endswith('.so')}
+              assert len(native) == 4 and native == report['native_sha256'] == metadata['native_sha256'], 'Native library hash mismatch'
+              assert all(f'lib/{abi}/librc_engine.so' in native for abi in ('arm64-v8a', 'x86_64'))
+              assert os.environ['EXPECTED_SIGNER'].encode() in archive.read('classes6.dex'), 'Production certificate pin missing'
+              assert b'update-channel2' in archive.read('classes6.dex'), 'Production feed identity missing'
+          Path('work/proof/unsigned-package-report.json').write_text(json.dumps(report, indent=2) + '\n')
+          Path('work/proof/apk-metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
+          PY
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/zipalign" -c -v -P 16 4 "work/candidate/$UNSIGNED_APK" > work/proof/unsigned-alignment.txt
+          "$tools/aapt" dump badging "work/candidate/$UNSIGNED_APK" > work/proof/unsigned-manifest.txt
+          if "$tools/apksigner" verify "work/candidate/$UNSIGNED_APK" >/dev/null 2>&1; then
+            echo '::error::The production input is already signed; refusing to replace its signature.'
+            exit 1
+          fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          manifest = Path('work/proof/unsigned-manifest.txt').read_text()
+          assert re.search(r"^package: name='org\.rerac\.android\.ui035test' versionCode='33' versionName='1\.1\.0-beta\.17'(?: |$)", manifest, re.MULTILINE), 'Binary manifest identity mismatch'
+          PY
+
+      - name: Sign using only the original certificate
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.RERAC_035_KEYSTORE_B64 }}
+          RERAC_KEY_PASSWORD: ${{ secrets.RERAC_035_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/rerac-beta17-original-signer.p12"
+          trap 'rm -f -- "$key"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$key"
+          python3 - "$key" <<'PY'
+          import hashlib, os, sys
+          from pathlib import Path
+          from cryptography.hazmat.primitives.serialization import Encoding, pkcs12
+          private, certificate, _ = pkcs12.load_key_and_certificates(Path(sys.argv[1]).read_bytes(), os.environ['RERAC_KEY_PASSWORD'].encode())
+          assert private is not None and certificate is not None, 'The original signing key and certificate are required'
+          digest = hashlib.sha256(certificate.public_bytes(Encoding.DER)).hexdigest()
+          assert digest == os.environ['EXPECTED_SIGNER'], 'Certificate does not match the installed app'
+          Path('work/proof/original-certificate-sha256.txt').write_text(digest + '\n')
+          PY
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --alignment-preserved \
+            --ks "$key" --ks-type PKCS12 --ks-pass env:RERAC_KEY_PASSWORD \
+            --v4-signing-enabled false \
+            --out "work/output/$SIGNED_APK" "work/candidate/$UNSIGNED_APK"
+
+      - name: Verify the signed APK and unchanged payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          "$tools/apksigner" verify --verbose --print-certs "work/output/$SIGNED_APK" > work/proof/signature.txt
+          "$tools/zipalign" -c -v -P 16 4 "work/output/$SIGNED_APK" > work/proof/signed-alignment.txt
+          "$tools/aapt" dump badging "work/output/$SIGNED_APK" > work/proof/signed-manifest.txt
+          python3 - <<'PY'
+          import hashlib, json, os, re, zipfile
+          from pathlib import Path
+          signature = Path('work/proof/signature.txt').read_text()
+          signers = re.findall(r'^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$', signature, re.MULTILINE)
+          assert [value.lower() for value in signers] == [os.environ['EXPECTED_SIGNER']], 'Final APK signer mismatch'
+          assert 'Verified using v2 scheme (APK Signature Scheme v2): true' in signature, 'APK v2 signature did not verify'
+          manifest = Path('work/proof/signed-manifest.txt').read_text()
+          assert re.search(r"^package: name='org\.rerac\.android\.ui035test' versionCode='33' versionName='1\.1\.0-beta\.17'(?: |$)", manifest, re.MULTILINE), 'Final binary manifest identity mismatch'
+          unsigned = Path('work/candidate') / os.environ['UNSIGNED_APK']
+          signed = Path('work/output') / os.environ['SIGNED_APK']
+          with zipfile.ZipFile(unsigned) as before, zipfile.ZipFile(signed) as after:
+              assert len(after.namelist()) == len(set(after.namelist())), 'Duplicate signed APK entries'
+              assert after.testzip() is None, 'Corrupt signed APK entry'
+              assert set(before.namelist()).issubset(after.namelist()), 'Signing removed APK entries'
+              assert all(name.startswith('META-INF/') for name in set(after.namelist()) - set(before.namelist())), 'Signing added unexpected payload'
+              for name in before.namelist():
+                  assert hashlib.sha256(before.read(name)).digest() == hashlib.sha256(after.read(name)).digest(), f'Signing changed payload: {name}'
+          digest = hashlib.sha256(signed.read_bytes()).hexdigest()
+          Path('work/output/SHA256SUMS').write_text(f'{digest}  {signed.name}\n')
+          proof = dict(schema=1, signed=True, apk=signed.name, sha256=digest, bytes=signed.stat().st_size, package_id='org.rerac.android.ui035test', launcher_version='1.1.0-beta.17', version_code=33, core_version='0.3.6', signer_sha256=os.environ['EXPECTED_SIGNER'], native_source_sha=os.environ['SOURCE_SHA'], upstream_sha=os.environ['UPSTREAM_SHA'], native_build_run=int(os.environ['NATIVE_RUN']), parallel_smoke_run=int(os.environ['SMOKE_RUN']), companion_ui_run=int(os.environ['COMPANION_RUN']), payload_unchanged=True)
+          Path('work/proof/signed-apk.json').write_text(json.dumps(proof, indent=2) + '\n')
+          print('Verified beta.17 signed APK SHA-256:', digest)
+          PY
+
+      - name: Remove the temporary original keystore
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/rerac-beta17-original-signer.p12"
+
+      - name: Upload only the verified APK and public proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-production-signed-beta17
+          path: |
+            work/output/ReRAC-Android-0.3.6-Launcher-1.1-beta17-DEV.apk
+            work/output/SHA256SUMS
+            work/proof
+          if-no-files-found: error
+          retention-days: 14
