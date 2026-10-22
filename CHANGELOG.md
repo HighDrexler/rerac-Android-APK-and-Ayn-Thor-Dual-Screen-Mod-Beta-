@@ -1,4 +1,12 @@
 # Changelog
+## Android launcher 1.1 — performance and companion-map build 39
+
+- Keep the companion map visible during temporary weapon/body/interaction locks, including ledge hangs, ambient quips and vendor proximity. Preserve the original equipment guards and cinematic/menu policy.
+- Reuse exact native map images and Android texture keys until fog, source, palette, level or Map-o-Matic set changes. Keep the camera, hero, objectives and markers live. Retain unchanged globe layers during fog updates.
+- Reuse one wheel/global working copy per publication and skip unchanged selection-receipt JSON.
+- Add reproducible native companion benchmarks and exact pixel/draw comparisons on all 19 maps, both picture sets. Host results show 98.7% fewer temporary allocations on unchanged-fog refreshes; no physical-device FPS claim.
+- Deliver same-key build 39 only through `update-channel3` at an immutable `builds/v1_1_r3` URL. No Release.
+
 ## Android launcher 1.1 — corrected build 38
 
 - Mobile pause-menu Back now delivers a fresh Triangle press, allowing touch users to leave submenus and resume from the root without a controller. Held gameplay wheel gestures cannot immediately close pause.

@@ -10,6 +10,6 @@ Map, skill-list and complex-menu components retain their original rendering. Ski
 
 `UpdateClient`, `UpdatePolicy` and `UpdateArchive` implement signed, bounded downloads from `update-channel3`, archive extraction and APK identity verification. Preserve these checks.
 
-Build and delivery are documented in [the branch update process](../UPDATE_PROCESS.md). Launcher 1.1 is Android versionCode 38 and uses the existing package/signing certificate.
+Build and delivery are documented in [the branch update process](../UPDATE_PROCESS.md). Launcher 1.1 is Android versionCode 39 and uses the existing package/signing certificate.
 
 Run the JVM tests with Maven after provisioning Android SDK 36. Companion instrumentation runs against the packaged APK in the branch verification workflow. The source compiler and DEX preparation tools are under `../release`; their temporary outputs are not application assets.
