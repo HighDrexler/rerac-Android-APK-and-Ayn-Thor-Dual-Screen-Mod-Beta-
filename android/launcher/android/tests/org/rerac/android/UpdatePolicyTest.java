@@ -65,6 +65,11 @@ public class UpdatePolicyTest {
         rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
         r.put("apk_url",r.getString("apk_url")+".zip");rejects(()->UpdatePolicy.parsePayload(bytes(o),"development"));
     }
+    @Test public void displayVersionUsesAnUpdaterCompatibleDirectory()throws Exception{
+        String prefix="https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/update-channel3/builds/";
+        assertNotNull(UpdatePolicy.releaseUrl(prefix+"v1_1/ReRAC-Android-1.1.apk.zip"));
+        rejects(()->UpdatePolicy.releaseUrl(prefix+"1.1/ReRAC-Android-1.1.apk.zip"));
+    }
     @Test public void branchPathCannotEscape()throws Exception{
         String prefix="https://raw.githubusercontent.com/"+LauncherBuild.REPOSITORY+"/";
         for(String tail:new String[]{"main/builds/beta18/a.apk","update-channel3/builds/../a.apk","update-channel3/builds/beta18/%61.apk","update-channel3/builds/beta18/a.apk?x=1","update-channel3/builds/beta18/a.apk#x","update-channel3/builds/beta18/a.zip"})rejects(()->UpdatePolicy.releaseUrl(prefix+tail));

@@ -10,3 +10,4 @@
 - The workflows are build-branch.yml, publish-branch.yml and verify-branch-update.yml. See android/UPDATE_PROCESS.md. Historical beta publication scripts/receipts were removed; use Git history for old investigations.
 - Distinguish native rendering/equipment tests, Android transport-fixture input tests and physical device acceptance. Do not claim a physical 1.1 test until the owner confirms it.
 - Do not ask the owner to relink Chat On Steroids, install Codex on the Thor or shuttle diagnostic text between devices.
+- Updater version directory names allow letters, digits, underscores and hyphens only. Display version 1.1 uses builds/v1_1; never put a dotted version in an update URL directory. Validate feeds with the existing updater policy before promotion.

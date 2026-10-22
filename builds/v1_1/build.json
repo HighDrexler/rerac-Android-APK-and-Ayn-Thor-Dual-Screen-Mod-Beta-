@@ -9,7 +9,7 @@
   "bytes": 254639017,
   "archive_sha256": "a6879afc03a6063f5007c32b2f67c91ea6342f8778699103dc6fbdc9daf180c5",
   "archive_bytes": 78848721,
-  "apk_url": "https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/1.1/ReRAC-Android-1.1.apk.zip",
+  "apk_url": "https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/v1_1/ReRAC-Android-1.1.apk.zip",
   "native_source_sha": "ee73946150c133ca42ceb28c9eb7692b1bbe5dc9",
   "native_sha256": {
     "lib/arm64-v8a/librc_engine.so": "b67119b9a6b165a850ae1029a796ee354033b9365b2e7b91c02a0b35e8887636",

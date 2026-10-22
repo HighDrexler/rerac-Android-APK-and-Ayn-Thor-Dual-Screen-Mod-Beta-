@@ -6,7 +6,7 @@ Android and AYN Thor adaptation of Ratchet & Clank (2002), based on [ReRAC](http
 
 Use **Updates → Development → Check for updates** in beta18 or newer.
 
-For a manual installation, [download launcher 1.1](builds/1.1/ReRAC-Android-1.1.apk.zip), extract the ZIP, and install `ReRAC.apk` over the existing app. Beta17 needs this one manual installation to enable branch downloads. Keep the existing app installed to preserve its data.
+For a manual installation, [download launcher 1.1](builds/v1_1/ReRAC-Android-1.1.apk.zip), extract the ZIP, and install `ReRAC.apk` over the existing app. Beta17 needs this one manual installation to enable branch downloads. Keep the existing app installed to preserve its data.
 
 Launcher 1.1 uses Android versionCode 37 and the same package and signing certificate as beta17–beta19. Downloads and signed update metadata are hosted directly on `update-channel3`. No GitHub Release is used, and the Stable channel is not promoted.
 
@@ -30,6 +30,6 @@ Android adapters are under `crates/rc-engine/src/android`; the original quick-se
 
 The branch contains three workflows: build source, verify and host a locally signed APK, and verify the live branch updater. Old beta publication workflows and their superseded signing helpers have been removed. Earlier versioned downloads remain immutable for compatibility with cached signed feeds.
 
-The signing key stays on the owner's PC. GitHub receives only public signing receipts, signed metadata, and signed builds. Checksums and native source identity are recorded in [the build report](builds/1.1/build.json).
+The signing key stays on the owner's PC. GitHub receives only public signing receipts, signed metadata, and signed builds. Checksums and native source identity are recorded in [the build report](builds/v1_1/build.json).
 
 This is an unofficial community adaptation. The original ReRAC project and ISC license remain credited; see [LICENSE](LICENSE).
