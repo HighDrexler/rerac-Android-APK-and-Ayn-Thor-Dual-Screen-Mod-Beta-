@@ -23,9 +23,3 @@ Install the APK from the ZIP linked above. In the launcher, import a supported o
 No copyrighted game content is supplied. Saves are stored separately from imported game data. Android gameplay and cutscene performance can vary with device and graphics drivers.
 
 Original ReRAC project and license: [re-rac/rerac](https://github.com/re-rac/rerac). This adaptation is an unofficial community project.
-
-## Native source on main
-
-`main` retains the native source base and its build/test inputs. Its Cargo version describes that source, not the current Android launcher. Build the runtime and extractor with `cargo build --release --locked -p rc-engine -p rc-extract --bins`; the runtime also needs the shaders in `crates/rc-engine/assets`.
-
-See [game-data setup](docs/workflows/game-data.md), [testing](docs/workflows/testing.md), [native packaging](tools/package/README.md) and [runtime switches](docs/workflows/dev-switches.md). File-format references are under `docs/formats`. Historical plans, test-request logs and retired investigation tools remain available in Git history.
