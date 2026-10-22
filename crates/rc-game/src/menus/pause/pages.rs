@@ -690,6 +690,20 @@ pub fn moves_label_enter(m: &mut PageMenu, w: u32, gs: &GameState) {
 
 /// `fun_002220f0` (0x295af8): the focused list entry's level (item +4): −1 → "All Levels" (0x5019) centred at
 /// (w/2, h/2 − 8); else its location name at (w/2, h/3 − 8) and planet name at (w/2, 2h/3 − 8); return 2.
+pub fn skill_description(m: &PageMenu, page: u32, index: usize, a: &MenuAssets) -> Vec<u8> {
+    let Some(page) = m.pages.get(&page) else { return Vec::new() };
+    for widget in page.widgets {
+        let Some(Data::Label(label)) = m.widgets.get(&widget).map(|w| &w.data) else { continue };
+        // The original skill description label indexes its own message table;
+        // the list's sublabel is unrelated and is normally zero.
+        if label.flags & 0x800 == 0 || label.id == 0 { continue; }
+        let id = label.table.as_ref().and_then(|t| t.get(index)).copied()
+            .or_else(|| a.overlay.u32(label.id.wrapping_add((index as u32).wrapping_mul(label.stride) & !3)));
+        if let Some(id) = id { return a.msg(id as i32).to_vec(); }
+    }
+    Vec::new()
+}
+
 pub fn skill_draw(m: &mut PageMenu, w: u32, a: &MenuAssets, out: &mut Vec<MenuDraw>) -> u32 {
     let lvl = focused_list(m).and_then(|l| l.items.get(l.cursor.max(0) as usize)).map_or(-1, |it| it.arg as i32);
     let names = m.level_names.clone();

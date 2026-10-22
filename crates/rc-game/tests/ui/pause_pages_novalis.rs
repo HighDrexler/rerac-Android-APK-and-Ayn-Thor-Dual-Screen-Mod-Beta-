@@ -391,6 +391,11 @@ fn goodies_skill_points_and_movies() {
     let lw = widget_of(&m.menu, |x| matches!(x, Data::List(_))).expect("the skill list");
     let Data::List(l) = &m.menu.widgets[&lw].data else { unreachable!() };
     assert!(l.flags & 0x200 != 0, "the skill list's check boxes: flags {:#x}", l.flags);
+    for i in 0..30 {
+        let description=pages::skill_description(&m.menu,SKILL,i,&m.assets);
+        assert!(!description.is_empty(), "missing skill description {i}");
+        assert_ne!(description,m.assets.msg(l.items[i].label as i32), "name used as description {i}");
+    }
     let tick = m.assets.frame(0xe99e, 1);
     let ticks = draws.iter().filter(|x| matches!(x, MenuDraw::Hud(rc_game::hud::Draw::Sprite { frame, .. }) if *frame == tick)).count();
     assert_eq!(ticks, 2, "one tick per earned skill point");

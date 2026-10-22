@@ -1,6 +1,8 @@
 //! The Android adapter runs against the real menu tick, without a game-data fixture.
 #[path = "../../rc-engine/src/android/companion_menu.rs"]
 mod companion_menu;
+#[path = "../../rc-engine/src/touch_input.rs"]
+mod touch_input;
 use rc_game::{game_state::GameState, menus::{MenuAssets, MenuInput, Overlay, pause::*}, pad::button};
 use rc_formats::{font::Glyph, save_game::ChunkTables, strings::Message};
 use std::collections::BTreeMap;
@@ -67,6 +69,27 @@ fn fixture()->(PageMenu,MenuAssets) {
     (m,MenuAssets::new(hud,Overlay::default()))
 }
 fn press(bits:u32)->MenuInput {MenuInput{pressed_u:bits,raw_pressed:bits,held_u:bits,connected:true,..Default::default()}}
+
+#[test]
+fn mobile_triangle_backs_out_of_a_page_then_resumes_from_root() {
+    let (mut menu,_)=fixture();let root=menu.current;
+    let mut game=GameState::zeroed(ChunkTables{global:Vec::new(),level:Vec::new()});
+    let mut touch=touch_input::InputState::default();let now=std::time::Instant::now();
+    assert!(companion_menu::choose(&mut menu,root,1,0));
+    menu.tick(&press(button::CROSS),&mut game,&MenuEnv::default());
+    for _ in 0..14{menu.tick(&press(0),&mut game,&MenuEnv::default());}
+    assert_eq!(menu.current,2);
+    for expected in [root,0] {
+        touch.touch(button::TRIANGLE,[0.;4],0,now);
+        touch.touch(0,[0.;4],0,now);
+        let sample=touch.tick_with_menu(now,false,false,false,true);
+        assert_eq!(sample.buttons,button::TRIANGLE);
+        let mut closed=menu.tick(&press(sample.buttons),&mut game,&MenuEnv::default()).exit.is_some();
+        for _ in 0..20{closed|=menu.tick(&press(touch.tick_with_menu(now,false,false,false,true).buttons),&mut game,&MenuEnv::default()).exit.is_some();}
+        if expected==0 {assert!(closed,"fresh mobile Triangle must resume gameplay");}
+        else {assert_eq!(menu.current,expected);assert!(!closed);}
+    }
+}
 
 #[test]
 fn signed_port_labels_and_the_active_message_table_match_native() {

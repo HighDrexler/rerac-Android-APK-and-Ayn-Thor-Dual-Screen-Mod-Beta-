@@ -129,8 +129,10 @@ fn sample_tick(
     let vendor = menu.as_ref().is_some_and(|m|
         m.state.mode == rc_game::menus::mode::Mode::Vendor)
         && !crate::saves::front_end_active();
+    let pause_menu = menu.as_ref().is_some_and(|m|
+        m.state.mode == rc_game::menus::mode::Mode::Menu);
     let sample=input().lock().unwrap_or_else(|e| e.into_inner())
-        .tick_with_vendor(Instant::now(), gameplay, prompt, vendor);
+        .tick_with_menu(Instant::now(), gameplay, prompt, vendor, pause_menu);
     const _: () = {
         assert!(crate::touch_input::TRIANGLE == rc_game::pad::button::TRIANGLE);
         assert!(crate::touch_input::CROSS == rc_game::pad::button::CROSS);

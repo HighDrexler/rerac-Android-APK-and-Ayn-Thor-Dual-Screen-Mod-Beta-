@@ -96,6 +96,12 @@ impl InputState {
     /// Vendor uses Triangle as Exit, even though it is not Gameplay mode.
     /// Forward only a fresh edge so a latched wheel cannot exit on entry.
     pub fn tick_with_vendor(&mut self, now: Instant, gameplay: bool, prompt: bool, vendor: bool) -> Sample {
+        self.tick_with_menu(now, gameplay, prompt, vendor, false)
+    }
+
+    /// Menu Back is Triangle too. Only a new contact may navigate: a wheel
+    /// held while opening pause must not immediately close the menu.
+    pub fn tick_with_menu(&mut self, now: Instant, gameplay: bool, prompt: bool, vendor: bool, menu: bool) -> Sample {
         if self.paused { return Sample::default(); }
         let mut out = self.physical;
         let physical_buttons = self.physical.buttons | std::mem::take(&mut self.pending_physical);
@@ -112,7 +118,7 @@ impl InputState {
         // the wheel. Only suppress a pre-existing gesture *while* a prompt
         // is displayed. Contextual Triangle still requires a fresh DOWN.
         if !gameplay || (prompt && !self.triangle_armed) { touch_buttons &= !TRIANGLE; }
-        if vendor { touch_buttons |= touch_edges & TRIANGLE; }
+        if vendor || menu { touch_buttons |= touch_edges & TRIANGLE; }
         // Unlike a finger hover, physical Triangle must always be retained.
         out.buttons = physical_buttons | touch_buttons;
         let fresh = self.touch_at.is_some_and(|t|
@@ -146,6 +152,17 @@ impl InputState {
 mod tests {
     use super::*;
     const ZERO: [f32;4] = [0.;4];
+    #[test] fn menu_triangle_requires_new_contact_and_survives_short_taps() {
+        let mut s=InputState::default();let n=Instant::now();
+        s.touch(TRIANGLE,ZERO,0,n);s.tick(n,true,false);
+        assert_eq!(s.tick_with_menu(n,false,false,false,true).buttons&TRIANGLE,0);
+        s.touch(0,ZERO,0,n);s.touch(TRIANGLE,ZERO,0,n);s.touch(0,ZERO,0,n);
+        assert_eq!(s.tick_with_menu(n,false,false,false,true).buttons&TRIANGLE,TRIANGLE);
+        assert_eq!(s.tick_with_menu(n,false,false,false,true).buttons&TRIANGLE,0);
+        s.touch(TRIANGLE,ZERO,0,n);
+        assert_eq!(s.tick_with_menu(n,false,false,false,true).buttons&TRIANGLE,TRIANGLE);
+        assert_eq!(s.tick_with_menu(n,false,false,false,true).buttons&TRIANGLE,0);
+    }
     fn tick(s:&mut InputState,now:Instant)->Sample {s.tick(now,true,false)}
     #[test] fn tap_survives_between_renders() {
         let mut s=InputState::default();s.physical(64,ZERO);s.physical(0,ZERO);

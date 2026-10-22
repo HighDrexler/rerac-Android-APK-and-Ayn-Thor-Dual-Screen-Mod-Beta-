@@ -226,12 +226,12 @@ fn collectibles(menu:&PageMenu,gs:&GameState,a:&MenuAssets,cache:&mut Cache,hud:
     // Locate the actual Skills list by its neighbouring Skill widget, rather
     // than hard-code overlay addresses that differ between planets.
     let mut skills=Vec::new();
-    for page in menu.pages.values() {
+    for (&page_id,page) in &menu.pages {
         if !page.widgets.iter().any(|id|menu.widgets.get(id).is_some_and(|w|matches!(w.data,Data::Skill))){continue;}
         for id in page.widgets {let Some(Data::List(l))=menu.widgets.get(&id).map(|w|&w.data) else{continue};
             if l.items.len()<20 {continue;}
             for (id,it) in l.items.iter().enumerate().take(30){if it.arg as i32!=gs.global.level&&it.arg as i32!=-1{continue;}
-                skills.push(json!({"id":id,"name":text(a.msg(it.label as i32)),"instruction":if it.sublabel!=0{text(a.msg(it.sublabel as i32))}else{String::new()},"complete":gs.global.skill_points.get(id).is_some_and(|&b|b!=0)}));
+                skills.push(json!({"id":id,"name":text(a.msg(it.label as i32)),"instruction":text(&rc_game::menus::pause::pages::skill_description(menu,page_id,id,a)),"complete":gs.global.skill_points.get(id).is_some_and(|&b|b!=0)}));
             }
         }
         if !skills.is_empty(){break;}
