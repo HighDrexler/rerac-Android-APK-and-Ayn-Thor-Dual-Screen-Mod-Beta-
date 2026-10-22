@@ -101,6 +101,7 @@ final class QuickSelectModel {
 
     interface Submit { long select(long generation,int item); }
     Snapshot snapshot;
+    private String packet;
     Geometry geometry;
     int page;
     long submittedSequence;
@@ -114,7 +115,14 @@ final class QuickSelectModel {
         snapshot=next;fresh=true;
         if(page>=next.pages.size()){page=0;cancel();geometry=null;}
     }
-    void failed(){fresh=false;cancel();}
+    /** Skip repeated JSON/allocation work between native publications. A failed
+     * refresh clears the key so an identical valid packet can recover input. */
+    void refresh(String next)throws JSONException{
+        if(fresh()&&next!=null&&next.equals(packet))return;
+        try{accept(Snapshot.parse(next));packet=next;}
+        catch(Exception failure){failed();throw failure;}
+    }
+    void failed(){packet=null;fresh=false;cancel();}
     boolean fresh(){return fresh&&snapshot!=null;}
     boolean available(){return fresh&&snapshot!=null&&snapshot.enabled;}
     Page current(){return snapshot.pages.get(page);}

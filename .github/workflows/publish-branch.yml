@@ -70,25 +70,25 @@ jobs:
         run: |
           set -euo pipefail
           sdkmanager 'build-tools;36.0.0' 'platforms;android-36'
-          mkdir -p work/base builds/v1_1
-          unzip -p builds/beta19r2/ReRAC-Android-beta19.apk.zip ReRAC.apk > work/base/beta19.apk
+          mkdir -p work/base builds/v1_1_r2
+          unzip -p builds/v1_1/ReRAC-Android-1.1.apk.zip ReRAC.apk > work/base/1.1.apk
           source="$(python3 -c 'import json;print(json.load(open("android/native/engine-build.json"))["source_sha"])')"
-          python3 android/release/build_branch.py --baseline work/base/beta19.apk --sdk "$ANDROID_HOME" --output work/candidate --arm64 work/native/engine-arm64-v8a/jniLibs/arm64-v8a/librc_engine.so --x86 work/native/engine-x86_64/jniLibs/x86_64/librc_engine.so --source "$source" --packaging-source "$GITHUB_SHA"
+          python3 android/release/build_branch.py --baseline work/base/1.1.apk --sdk "$ANDROID_HOME" --output work/candidate --arm64 work/native/engine-arm64-v8a/jniLibs/arm64-v8a/librc_engine.so --x86 work/native/engine-x86_64/jniLibs/x86_64/librc_engine.so --source "$source" --packaging-source "$GITHUB_SHA"
           python3 android/native/native_abi_gate.py work/candidate/launcher-unsigned.apk --require-source-companion --report work/candidate/abi.json
           python3 - <<'PY'
           import hashlib,json,zipfile
           from pathlib import Path
-          archive=Path('builds/v1_1/signing-candidate.apk.zip')
+          archive=Path('builds/v1_1_r2/signing-candidate.apk.zip')
           with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               z.write('work/candidate/launcher-unsigned.apk','unsigned.apk')
           assert archive.stat().st_size<100*1024*1024
           report=json.loads(Path('work/candidate/launcher-unsigned.json').read_text())
           report.update(archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),archive_bytes=archive.stat().st_size)
-          Path('builds/v1_1/signing-candidate.json').write_text(json.dumps(report,indent=2)+'\n')
+          Path('builds/v1_1_r2/signing-candidate.json').write_text(json.dumps(report,indent=2)+'\n')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add builds/v1_1/signing-candidate.apk.zip builds/v1_1/signing-candidate.json
+          git add builds/v1_1_r2/signing-candidate.apk.zip builds/v1_1_r2/signing-candidate.json
           git commit -m 'Stage source-built launcher 1.1 for local signing'
           git push origin HEAD:update-channel3
   verify-host:
@@ -136,7 +136,7 @@ jobs:
       - name: Apply the local signing receipt and verify source-built engines
         run: |
           set -euo pipefail
-          python3 android/release/prepare_branch.py --candidate builds/v1_1/signing-candidate.apk.zip --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
+          python3 android/release/prepare_branch.py --candidate builds/v1_1_r2/signing-candidate.apk.zip --output work/signed --tools "$ANDROID_HOME/build-tools/36.0.0"
           python3 android/native/native_abi_gate.py work/signed/ReRAC-Android-1.1.apk --require-source-companion --report work/reports/native-abi.json
       - name: Prepare matching disposable keys for APK instrumentation
         run: |
@@ -177,13 +177,15 @@ jobs:
             grep -q '"system_routed_secondary_taps":16' work/reports/1.1-companion.txt
             grep -q '"contact_once_multitouch":true' work/reports/1.1-companion.txt
             grep -q '"native_artwork_without_android_overlay":true' work/reports/1.1-companion.txt
+            grep -q '"mobile_pause_triangle_layouts":6' work/reports/1.1-companion.txt
+            grep -q '"companion_skill_description_expands":true' work/reports/1.1-companion.txt
       - name: Commit tested 1.1 directly to update-channel3
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add builds/v1_1/ReRAC-Android-1.1.apk.zip builds/v1_1/build.json builds/v1_1/SHA256SUMS.txt
-          git rm builds/v1_1/signing-candidate.apk.zip builds/v1_1/signing-candidate.json
+          git add builds/v1_1_r2/ReRAC-Android-1.1.apk.zip builds/v1_1_r2/build.json builds/v1_1_r2/SHA256SUMS.txt
+          git rm builds/v1_1_r2/signing-candidate.apk.zip builds/v1_1_r2/signing-candidate.json
           git commit -m 'Host tested signed launcher 1.1 on update-channel3'
           git push origin HEAD:update-channel3
       - uses: actions/upload-artifact@v4

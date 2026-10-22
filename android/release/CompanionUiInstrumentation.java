@@ -27,6 +27,47 @@ public final class CompanionUiInstrumentation extends Instrumentation {
     private Class<?> wheel;
     private Bundle arguments;
     private static void require(boolean ok,String why){if(!ok)throw new AssertionError(why);}
+    private static Object value(Object target,String name)throws Exception{
+        Field f=target.getClass().getDeclaredField(name);f.setAccessible(true);return f.get(target);
+    }
+    private void mobilePauseTriangle(Context context,ClassLoader loader)throws Exception{
+        Class<?> layoutType=Class.forName("org.rerac.android.TouchLayout",true,loader);
+        Class<?> inputType=Class.forName("org.rerac.android.TouchInputModel",true,loader);
+        Class<?> quickType=Class.forName("org.rerac.android.TouchQuickSelect",true,loader);
+        Constructor<?> lc=layoutType.getDeclaredConstructor(),ic=inputType.getDeclaredConstructor();lc.setAccessible(true);ic.setAccessible(true);
+        Method arrange=layoutType.getDeclaredMethod("arrange",float.class,float.class,float.class,float.class,float.class,float.class,int.class,boolean.class);arrange.setAccessible(true);
+        Method button=layoutType.getDeclaredMethod("button",int.class);button.setAccessible(true);
+        Method hit=layoutType.getDeclaredMethod("hit",float.class,float.class);hit.setAccessible(true);
+        Method down=quickType.getDeclaredMethod("down",int.class,float.class,float.class,long.class,layoutType);down.setAccessible(true);
+        Method up=quickType.getDeclaredMethod("up",int.class,long.class,layoutType);up.setAccessible(true);
+        Method snapshot=inputType.getDeclaredMethod("snapshot",long.class,layoutType);snapshot.setAccessible(true);
+        Constructor<?> qc=quickType.getDeclaredConstructor(Context.class,View.class,inputType,layoutType);qc.setAccessible(true);
+        Method qa=quickType.getDeclaredMethod("arrange");qa.setAccessible(true);
+        for(int[] size:new int[][]{{800,600},{1280,720},{640,960}})for(boolean more:new boolean[]{false,true}){
+            Object layout=lc.newInstance(),input=ic.newInstance();View host=new View(context);host.layout(0,0,size[0],size[1]);
+            Object quick=qc.newInstance(context,host,input,layout);
+            arrange.invoke(layout,0f,0f,(float)size[0],(float)size[1],2f,1f,1,more);qa.invoke(quick);
+            Object back=button.invoke(layout,6);require(back!=null,"No mobile menu Triangle button");
+            require(((Integer)value(back,"bit"))==16&&"BACK".equals(value(back,"label")),"Menu Back is not Triangle");
+            float x=(Float)value(back,"x"),y=(Float)value(back,"y");
+            require(hit.invoke(layout,x,y)==back,"Mobile Triangle is obscured by another control");
+            long now=SystemClock.uptimeMillis();down.invoke(quick,0,x,y,now,layout);snapshot.invoke(input,now,layout);
+            require((((Integer)value(input,"buttons"))&16)!=0,"Packaged mobile controls swallowed menu Triangle");
+            require(!((Boolean)value(quick,"open")),"Menu Triangle incorrectly opened the weapon wheel");
+            up.invoke(quick,0,now+20,layout);snapshot.invoke(input,now+500,layout);
+            require((((Integer)value(input,"buttons"))&16)==0,"Mobile menu Triangle remained held");
+        }
+    }
+    private void skillDescriptions(Context context,ClassLoader loader)throws Exception{
+        Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);View view=(View)ctor.newInstance(context);view.layout(0,0,800,600);
+        Class<?> rowType=Class.forName("org.rerac.android.WeaponWheel$SkillRow",true,loader);Constructor<?> rc=rowType.getDeclaredConstructor(JSONObject.class);rc.setAccessible(true);
+        Object row=rc.newInstance(new JSONObject().put("id",0).put("name","Take Aim").put("instruction","Shoot down a fighter with the Devastator.").put("complete",false));
+        java.util.ArrayList<Object> rows=new java.util.ArrayList<>();rows.add(row);put(view,"skillRows",rows);put(view,"collectibleInfo",new JSONObject().put("level",1).put("skillFound",0));
+        Object list=get(view,"skillList");Field selected=list.getClass().getDeclaredField("selected");selected.setAccessible(true);selected.setInt(list,0);
+        Method paint=wheel.getDeclaredMethod("skillsCanvas",Canvas.class,RectF.class);paint.setAccessible(true);Bitmap image=Bitmap.createBitmap(800,600,Bitmap.Config.ARGB_8888);
+        paint.invoke(view,new Canvas(image),new RectF(20,60,780,540));
+        require(!((java.util.List<?>)value(row,"lines")).isEmpty(),"Expanded companion skill description is missing");image.recycle();
+    }
     private static MotionEvent twoPointers(long time,int action,float x,float y){
         MotionEvent.PointerProperties[] properties={new MotionEvent.PointerProperties(),new MotionEvent.PointerProperties()};
         MotionEvent.PointerCoords[] coords={new MotionEvent.PointerCoords(),new MotionEvent.PointerCoords()};
@@ -351,6 +392,8 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 target.recycle();
                 failedPollRecovery(context,game);
                 pauseLayouts(context,loader);
+                mobilePauseTriangle(context,loader);
+                skillDescriptions(context,loader);
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
             secondaryStatus(context,loader);
@@ -366,6 +409,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             evidence.put("failed_poll_identical_packet_recovery",true);
             evidence.put("system_routed_secondary_taps",16);
             evidence.put("native_artwork_without_android_overlay",true);
+            evidence.put("mobile_pause_triangle_layouts",6).put("companion_skill_description_expands",true);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));

@@ -58,9 +58,10 @@ final class CompanionQuickSelect {
         Controller(Bridge bridge){this.bridge=bridge;}
         void refresh(){
             try{
-                QuickSelectModel.Snapshot next=QuickSelectModel.Snapshot.parse(bridge.snapshot());
+                model.refresh(bridge.snapshot());
+                QuickSelectModel.Snapshot next=model.snapshot;
                 if(textureGeneration!=next.generation){textures.clear();textureGeneration=next.generation;dedicatedPage=0;}
-                model.accept(next);error="";
+                error="";
             }catch(Exception|LinkageError failure){model.failed();error=failure.getClass().getSimpleName();}
         }
         void layout(int screen){if(layout!=screen){layout=screen;model.hide();model.showPage(screen==1?dedicatedPage:0);}}

@@ -5,6 +5,16 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class QuickSelectModelTest {
+    @Test public void unchangedSnapshotsReuseParsedStateButFailuresAndChangesRefresh()throws Exception{
+        QuickSelectModel m=new QuickSelectModel();String original=packet().toString();m.refresh(original);
+        QuickSelectModel.Snapshot first=m.snapshot;
+        for(int i=0;i<1000;i++)m.refresh(new String(original));
+        assertSame(first,m.snapshot);assertTrue(m.available());
+        try{m.refresh("broken");fail("invalid packet accepted");}catch(org.json.JSONException expected){}
+        assertFalse(m.available());m.refresh(original);assertNotSame(first,m.snapshot);assertTrue(m.available());
+        m.refresh(packet().put("enabled",false).toString());assertFalse(m.available());
+        m.failed();m.refresh(original);assertTrue(m.available());
+    }
     private static final int[][] CENTRES={{125,134},{179,156},{202,208},{179,260},{125,282},{71,260},{48,208},{71,156}};
     static JSONObject packet()throws Exception{
         JSONArray pages=new JSONArray();
