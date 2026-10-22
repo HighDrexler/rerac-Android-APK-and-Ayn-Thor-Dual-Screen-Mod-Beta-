@@ -252,6 +252,31 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             }
         }finally{runOnMainSync(()->{if(presentation[0]!=null)presentation[0].dismiss();if(display[0]!=null)display[0].release();if(image[0]!=null){image[0].setOnImageAvailableListener(null,null);image[0].close();}host.finish();});}
     }
+    private void worldRemainsVisible(Context context,ClassLoader loader)throws Exception{
+        String[] states={"ledge hang","Gadgetron proximity","health-desk ambient quip","vendor"};
+        for(int[] size:new int[][]{{800,600},{1280,720}})for(int state=0;state<states.length;state++){
+            Constructor<?> ctor=wheel.getDeclaredConstructor(Context.class);ctor.setAccessible(true);View view=(View)ctor.newInstance(context);view.layout(0,0,size[0],size[1]);
+            JSONObject slot=new JSONObject().put("id",10).put("x",125).put("y",134).put("enabled",false);
+            JSONObject page=new JSONObject().put("slots",new JSONArray().put(slot)).put("draws",new JSONArray());
+            JSONObject packet=new JSONObject().put("generation",41).put("world",true).put("enabled",false).put("menu",false).put("mode",state==3?5:0).put("box",new JSONArray("[20,108,210,200]")).put("pages",new JSONArray().put(page).put(page));
+            Class<?> source=Class.forName("org.rerac.android.CompanionQuickSelect",true,loader),bridge=Class.forName("org.rerac.android.CompanionQuickSelect$Bridge",true,loader);
+            int[] accepted={0};Object transport=java.lang.reflect.Proxy.newProxyInstance(loader,new Class<?>[]{bridge},(proxy,method,args)->{
+                if(method.getName().equals("snapshot"))return packet.toString();if(method.getName().equals("icon"))return new int[]{2,2,-1,-1,-1,-1};if(method.getName().equals("select"))return (long)++accepted[0];return null;
+            });
+            Method attach=source.getDeclaredMethod("attach",View.class,bridge);attach.setAccessible(true);attach.invoke(null,view,transport);
+            Class<?> command=Class.forName("org.rerac.android.WeaponWheel$DrawCommand",true,loader);Constructor<?> dc=command.getDeclaredConstructor(wheel,JSONArray.class);dc.setAccessible(true);
+            java.util.ArrayList<Object> mapCommands=new java.util.ArrayList<>();mapCommands.add(dc.newInstance(view,new JSONArray("[0,[[0,0],[512,0],[0,384],[512,384]],[[0,0],[1,0],[0,1],[1,1]],-1,[0,511,0,383],false,false]")));put(view,"mapCommands",mapCommands);
+            Bitmap image=Bitmap.createBitmap(size[0],size[1],Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));
+            require(!((RectF)get(view,"homeBox")).isEmpty()&&!((RectF)get(view,"mapBox")).isEmpty(),states[state]+" hid the normal companion map");
+            RectF box=(RectF)get(view,"wheelBox");float x=box.left+(125-20f)/210f*box.width(),y=box.top+(134-108f)/200f*box.height();
+            for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){long now=SystemClock.uptimeMillis();MotionEvent event=MotionEvent.obtain(now,now,action,x,y,0);view.dispatchTouchEvent(event);event.recycle();}
+            require(accepted[0]==0,"World visibility bypassed a weapon lock");
+            float unit=Math.min(size[0]/640f,size[1]/480f);x=size[0]/2f;y=size[1]-21*unit;
+            for(int action:new int[]{MotionEvent.ACTION_DOWN,MotionEvent.ACTION_UP}){long now=SystemClock.uptimeMillis();MotionEvent event=MotionEvent.obtain(now,now,action,x,y,0);view.dispatchTouchEvent(event);event.recycle();}
+            require(((Integer)get(view,"companionPage"))==2,"Map navigation stopped during "+states[state]);view.draw(new Canvas(image));require(!((RectF)get(view,"mapBox")).isEmpty(),"Dedicated map disappeared");
+            packet.put("world",false).put("mode",1);view.draw(new Canvas(image));require(((RectF)get(view,"mapBox")).isEmpty(),"Cinematic/loading policy was bypassed");image.recycle();
+        }
+    }
     private void staleMapRegression(Context context,ClassLoader loader,boolean oldBuild)throws Exception{
         final Throwable[] failure={null};
         runOnMainSync(()->{try{
@@ -394,6 +419,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
                 pauseLayouts(context,loader);
                 mobilePauseTriangle(context,loader);
                 skillDescriptions(context,loader);
+                worldRemainsVisible(context,loader);
             }catch(Throwable error){failure[0]=error;}});
             if(failure[0]!=null)throw new AssertionError("Actual companion view failed",failure[0]);
             secondaryStatus(context,loader);
@@ -410,6 +436,7 @@ public final class CompanionUiInstrumentation extends Instrumentation {
             evidence.put("system_routed_secondary_taps",16);
             evidence.put("native_artwork_without_android_overlay",true);
             evidence.put("mobile_pause_triangle_layouts",6).put("companion_skill_description_expands",true);
+            evidence.put("world_map_visibility_states",8).put("map_navigation_during_weapon_lock",true);
             result.putString("stream",evidence.toString()+"\n");finish(Activity.RESULT_OK,result);
         }catch(Throwable error){
             java.io.StringWriter trace=new java.io.StringWriter();error.printStackTrace(new java.io.PrintWriter(trace));

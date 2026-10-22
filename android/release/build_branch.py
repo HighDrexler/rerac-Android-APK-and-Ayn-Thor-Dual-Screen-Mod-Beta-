@@ -8,7 +8,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'launcher/tools/androi
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'native'))
 from apk_format import axml_chunks, string_pool, make_string_pool, manifest_values
 
-BASE_SHA='4f08bbdd6027d0a440c4b0fcec9221f345dc14f0cea84dde07e59e04e4694944'
+BASE_SHA='1fc723d70a20da5dff97d789edcdaeeecbdbbbbdf56aa5ce1e8f835e6d669003'
 from package_core import core_stamp
 
 def sha(data):return hashlib.sha256(data).hexdigest()
@@ -28,7 +28,7 @@ def manifest(data,version,code):
         for j in range(count):
             pos=16+start+j*size
             if strings[struct.unpack_from('<I',node,pos+4)[0]]=='versionCode':
-                assert struct.unpack_from('<I',node,pos+16)[0]==37
+                assert struct.unpack_from('<I',node,pos+16)[0]==38
                 struct.pack_into('<I',node,pos+16,code);changed+=1
     assert changed==1
     result=struct.pack('<HHI',3,8,8+sum(map(len,parts)))+b''.join(parts)
@@ -45,9 +45,9 @@ def build(baseline,sdk,output,arm64,x86,source,packaging):
     output.mkdir(parents=True,exist_ok=True)
     with zipfile.ZipFile(baseline) as old:
         original=json.loads(old.read('assets/rerac-build.json'))
-        assert original['native_source_sha']=='ee73946150c133ca42ceb28c9eb7692b1bbe5dc9' and original['signer_sha256']==EXPECTED_SIGNER
+        assert original['native_source_sha']=='7ece329abb56f20253dfa3e6303eee9ed01b663b' and original['signer_sha256']==EXPECTED_SIGNER
         assert original['package_id']=='org.rerac.android.ui035test' and original['core_version']=='0.3.6'
-        assert original['version_code']==37 and not original.get('upgrade_test_fixture',False)
+        assert original['version_code']==38 and not original.get('upgrade_test_fixture',False)
         native={n:sha(old.read(n)) for n in old.namelist() if n.startswith('lib/') and n.endswith('.so')}
         assert len(native)==4 and native==original['native_sha256']
         libraries={'lib/arm64-v8a/librc_engine.so':arm64.read_bytes(),'lib/x86_64/librc_engine.so':x86.read_bytes()}
@@ -57,8 +57,8 @@ def build(baseline,sdk,output,arm64,x86,source,packaging):
         native.update({name:sha(data) for name,data in libraries.items()})
         name='launcher-unsigned.apk'
         metadata=dict(original)
-        metadata.update(update_feed_branch='update-channel3',build_delivery='branch-archive-v1')
-        version,code='1.1',38
+        metadata.update(update_feed_branch='update-channel3',build_delivery='branch-archive-v1',baseline_apk_sha256=BASE_SHA,companion_world_visibility='independent-of-weapon-lock-v1',companion_map_image_cache='exact-mask-and-palette-v1',companion_wheel_copy='per-publication-v1')
+        version,code='1.1',39
         metadata.update(launcher_version=version,version_code=code,companion_input='contact-once-v1',companion_presentation='rac1-native-selection-v1',source_sha=source,native_source_sha=source,packaging_source_sha=packaging,native_sha256=native,core_provenance='Source-built ReRAC 0.3.6 / '+source[:12])
         metadata.pop('upgrade_test_fixture',None)
         raw=output/(name+'.unaligned');target=output/name

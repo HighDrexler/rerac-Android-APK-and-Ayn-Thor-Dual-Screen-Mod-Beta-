@@ -148,7 +148,7 @@ final class CompanionQuickSelect {
         float unit=unit(view),w=view.getWidth(),h=view.getHeight();if(unit<=0)return;
         int layout=integer(view,"companionPage"),mode=s.model.snapshot==null?0:s.model.snapshot.mode;s.layout(layout);
         float bottom=h-(menu?76:42)*unit;c.drawColor(Color.rgb(8,8,16));rect(view,"pagerBox").setEmpty();rect(view,"skillButton").setEmpty();
-        if(!menu&&!s.model.available()){
+        if(!menu&&!s.model.worldVisible()){
             s.model.hide();
             rect(view,"homeBox").setEmpty();rect(view,"wheelBox").setEmpty();rect(view,"mapBox").setEmpty();rect(view,"mapControls").setEmpty();
             s.planet(c,w/2,h/2,96*unit,255);if(mode==1||mode==2||mode==6)s.label(c,"Skip",w/2,h-30*unit,unit,BLUE);return;
@@ -205,7 +205,7 @@ final class CompanionQuickSelect {
             return true;
         }
         float unit=unit(view),bottom=view.getHeight()-42*unit;int mode=s.model.snapshot.mode,layout=integer(view,"companionPage");s.layout(layout);
-        if(!s.model.available()){
+        if(!s.model.worldVisible()){
             if(action==MotionEvent.ACTION_DOWN&&y>=bottom&&(mode==1||mode==2||mode==6)){button(2048);view.performClick();}return true;
         }
         if(event.getPointerCount()>1&&!bool(view,"draggingMap"))return true;

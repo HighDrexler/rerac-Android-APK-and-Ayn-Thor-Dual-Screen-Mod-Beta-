@@ -14,10 +14,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - folder: v1_1
+          - folder: v1_1_r2
             apk: ReRAC-Android-1.1.apk.zip
-            code: 37
-            sha: 4f08bbdd6027d0a440c4b0fcec9221f345dc14f0cea84dde07e59e04e4694944
+            code: 38
+            sha: 1fc723d70a20da5dff97d789edcdaeeecbdbbbbdf56aa5ce1e8f835e6d669003
     env:
       BASELINE: builds/${{ matrix.folder }}/${{ matrix.apk }}
       BASE_SHA: ${{ matrix.sha }}
@@ -43,9 +43,9 @@ jobs:
               data=z.read('ReRAC.apk')
           assert hashlib.sha256(data).hexdigest()==os.environ['BASE_SHA']
           Path('work/fixture/beta18.apk').write_bytes(data)
-          report=json.loads(Path('builds/v1_1_r2/build.json').read_text())
-          assert report['version_code']==38 and report['launcher_version']=='1.1'
-          assert report['apk_url']=='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/v1_1_r2/ReRAC-Android-1.1.apk.zip'
+          report=json.loads(Path('builds/v1_1_r3/build.json').read_text())
+          assert report['version_code']==39 and report['launcher_version']=='1.1'
+          assert report['apk_url']=='https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/v1_1_r3/ReRAC-Android-1.1.apk.zip'
           archive=urllib.request.urlopen(report['apk_url'],timeout=120).read()
           assert len(archive)==report['archive_bytes'] and hashlib.sha256(archive).hexdigest()==report['archive_sha256']
           Path('work/download/beta19.zip').write_bytes(archive)
@@ -67,7 +67,7 @@ jobs:
           disable-animations: true
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-metrics -camera-back none -camera-front none
-          script: python android/release/experimental_live_update_test.py --apk work/fixture/beta18.apk --output work/reports --initial-code ${{ matrix.code }} --target-code 38 --target-version 1.1 --target-sha256 "$(python -c 'import json; print(json.load(open("builds/v1_1_r2/build.json"))["sha256"])')"
+          script: python android/release/experimental_live_update_test.py --apk work/fixture/beta18.apk --output work/reports --initial-code ${{ matrix.code }} --target-code 39 --target-version 1.1 --target-sha256 "$(python -c 'import json; print(json.load(open("builds/v1_1_r3/build.json"))["sha256"])')"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -38,13 +38,14 @@ final class QuickSelectModel {
         final long generation,sequence;
         final int selectedItem;
         final String selectionState;
-        final boolean enabled,menu,transition;
+        final boolean enabled,world,menu,transition;
         final int mode;
         final float x,y,width,height;
         final List<Page> pages;
         final JSONArray glyphs;
         Snapshot(JSONObject root)throws JSONException{
             generation=root.getLong("generation");enabled=root.getBoolean("enabled");
+            world=root.optBoolean("world",enabled);
             menu=root.optBoolean("menu");mode=root.optInt("mode");transition=root.optBoolean("transition");
             JSONArray box=root.getJSONArray("box");
             if(box.length()!=4)throw new JSONException("Invalid wheel bounds");
@@ -125,6 +126,7 @@ final class QuickSelectModel {
     void failed(){packet=null;fresh=false;cancel();}
     boolean fresh(){return fresh&&snapshot!=null;}
     boolean available(){return fresh&&snapshot!=null&&snapshot.enabled;}
+    boolean worldVisible(){return fresh()&&snapshot.world;}
     Page current(){return snapshot.pages.get(page);}
     void nextPage(){if(snapshot!=null){page=(page+1)%snapshot.pages.size();cancel();geometry=null;}}
     void showPage(int next){next=snapshot==null?0:Math.max(0,Math.min(next,snapshot.pages.size()-1));if(next!=page){page=next;cancel();geometry=null;}}

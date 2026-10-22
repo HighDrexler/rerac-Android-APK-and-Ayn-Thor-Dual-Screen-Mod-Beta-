@@ -5,6 +5,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class QuickSelectModelTest {
+    @Test public void temporaryWeaponLocksPreserveWorldWithoutAcceptingEquipment()throws Exception{
+        QuickSelectModel m=create(packet().put("world",true).put("enabled",false));Sink sink=new Sink();
+        assertTrue(m.worldVisible());assertFalse(m.available());assertFalse(press(m,0,sink));assertEquals(0,sink.calls);
+        m.refresh(packet().put("world",false).put("enabled",false).toString());assertFalse(m.worldVisible());
+        m.refresh(packet().put("world",true).put("enabled",true).toString());arrange(m);assertTrue(press(m,0,sink));
+        m.failed();assertFalse(m.worldVisible());
+    }
     @Test public void unchangedSnapshotsReuseParsedStateButFailuresAndChangesRefresh()throws Exception{
         QuickSelectModel m=new QuickSelectModel();String original=packet().toString();m.refresh(original);
         QuickSelectModel.Snapshot first=m.snapshot;
