@@ -29,16 +29,11 @@ pub(crate) struct Cache {
     icons: HashMap<i32,Arc<[i32]>>,
     dynamics: HashMap<(u32,u64),(usize,u64)>,
     map_menu: Option<PageMenu>,
+    map_image: super::companion_map::ImageCache,
 }
 fn text(raw:&[u8])->String { raw.iter().copied().take_while(|&c|c!=0).filter(|&c|c>=32||c==10).map(char::from).collect() }
 fn pixels(t:&Texture)->Arc<[i32]> {
-    let n=(t.width as usize).saturating_mul(t.height as usize);
-    if n>1024*1024 || t.rgba.len()<n*4 {return Arc::from([0,0]);}
-    let mut out=Vec::with_capacity(n+2);out.push(t.width as i32);out.push(t.height as i32);
-    out.extend(t.rgba.chunks_exact(4).take(n).map(|p| {
-        let a=(u32::from(p[3])*255/128).min(255);
-        ((a<<24)|(u32::from(p[0])<<16)|(u32::from(p[1])<<8)|u32::from(p[2])) as i32
-    })); out.into()
+    super::companion_map::android_pixels(t).into()
 }
 impl Cache {
     fn texture(&mut self, tex:Tex, hud:&LevelHud)->i32 {
@@ -197,10 +192,13 @@ fn map_draws(cache:&mut Cache,source:&PageMenu,play:&Play,gs:&GameState,a:&MenuA
     let (hu,hv)=rc_game::map::world_to_map(&live.transforms,live.level,live.alt,h.pos[0].to_f32(),h.pos[1].to_f32());
     let v=*view().lock().unwrap_or_else(|e|e.into_inner());let (u,w)=if v.follow {(hu,hv)}else{(v.u,v.v)};
     if let Some(view)=m.map.state.view.get_mut(m.dest.max(0) as usize){view.zoom=v.zoom;view.pan=[(u*(1u64<<28) as f32) as i32,(w*(1u64<<28) as f32) as i32];}
-    m.map.shown=-2;map_page::enter(m,gs);map_page::compose(m,gs);
-    // Unique keys across cloned map compositions prevent Java from retaining
-    // stale fog textures when the user explores or returns from the pause map.
-    m.map.composed=cache.frame;
+    // Palettes can become available when the primary menu first opens.
+    // Keep their identity current without allocating copies on every refresh.
+    if m.map.palettes!=source.map.palettes {m.map.palettes.clone_from(&source.map.palettes);}
+    map_page::enter(m,gs);
+    if cache.map_image.refresh(m,gs) {
+        m.map.composed=super::companion_map::image_revision(cache.frame);
+    }
     let Some(id)=m.widgets.iter().find(|(_,w)|matches!(w.data,Data::Map{..})).map(|(&i,_)|i) else{return(Vec::new(),json!({}));};
     if let Some(w)=m.widgets.get_mut(&id){w.rect=[0,0,512,384];}
     let mut out=Vec::new();map_page::draw(m,id,a,gs,&mut out);
@@ -273,9 +271,10 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
         }
         ids.resize(ids.len().max(16).div_ceil(8)*8,0);
         if play.game.hero.mode==1 {ids=q.commands.as_ref().map(|c|c.entries.iter().map(|e|e.item).collect()).unwrap_or_default();ids.resize(8,0);}
-        for group in ids.chunks(8){
-            let command=(play.game.hero.mode==1).then_some(if play.svc.units.bot_listeners>0 {play.game.hero.bodies.command}else{0});
-            let (ring,page_global)=super::companion_wheel::page(q,group,&gs.0.global,play.game.hero.items.slot.id,command);
+        let command=(play.game.hero.mode==1).then_some(if play.svc.units.bot_listeners>0 {play.game.hero.bodies.command}else{0});
+        let (mut ring,mut page_global)=super::companion_wheel::page(q,&ids[..8],&gs.0.global,play.game.hero.items.slot.id,command);
+        for (page,group) in ids.chunks(8).enumerate(){
+            if page!=0 {super::companion_wheel::prepare(&mut ring,group,&mut page_global,play.game.hero.items.slot.id,command);}
             let mut slots=Vec::new();
             for (i,&item) in group.iter().enumerate(){
                 let selectable=item!=0&&if play.game.hero.mode==1 {play.svc.units.bot_listeners>0}else{available(item)&&!(play.game.hero.mode==3&&item==24)};
@@ -291,7 +290,7 @@ pub(crate) fn publish(rt:Option<Res<MenuRt>>,level:Res<crate::Level>,play:Option
     while pages.len()<2 {pages.push(json!({"slots":[],"draws":[]}));}
     // The small font (FX1) is v16's key -2.
     cache.texture(Tex::Fx(1),hud);
-    let wheel=json!({"protocol":2,"generation":generation,"enabled":allow,"mode":mode.raw(),"menu":in_menu,"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"box":bounds,"glyphs":hud.glyphs[0].iter().map(|g|[g.u as i32,g.v as i32,g.y_off as i32,g.advance as i32]).collect::<Vec<_>>(),"pages":pages,"selection":selection_snapshot(),"held":play.game.hero.items.slot.id}).to_string();
+    let wheel=json!({"protocol":2,"generation":generation,"enabled":allow,"world":super::companion_policy::world_visible(mode.raw(),frontend),"mode":mode.raw(),"menu":in_menu,"transition":rt.menu.as_ref().is_some_and(|m|m.trans!=0),"box":bounds,"glyphs":hud.glyphs[0].iter().map(|g|[g.u as i32,g.v as i32,g.y_off as i32,g.advance as i32]).collect::<Vec<_>>(),"pages":pages,"selection":selection_snapshot(),"held":play.game.hero.items.slot.id}).to_string();
     // Only the title duplicates Java's Start/Load text. Front-end pages and
     // save/overwrite dialogs must retain their native labels and choices.
     let frontend_mode=front.as_deref().and_then(|r|r.fe.as_ref()).map(|fe|fe.mode);

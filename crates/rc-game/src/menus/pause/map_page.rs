@@ -99,7 +99,9 @@ impl MapPage {
         MapPage { radii: (0..map::LEVELS as u32).map(|l| ov.i32(t + 4 * l).unwrap_or(0)).collect(), shown: -1, tables: MapTables::read(ov), ..MapPage::default() }
     }
 
-    fn file(&mut self, index: usize) -> Option<MapFile> {
+    /// Shared immutable map asset cache for presentation adapters. This does
+    /// not compose a picture or change gameplay/fog state.
+    pub fn file(&mut self, index: usize) -> Option<MapFile> {
         if let Some(f) = self.cache.get(&index) { return f.clone(); }
         let f = self.loader.0.as_ref().and_then(|l| l(index));
         self.cache.insert(index, f.clone());

@@ -3,6 +3,7 @@
 //! mutations happen on Bevy's simulation thread; no Rust references cross JNI.
 mod companion;
 mod companion_wheel;
+mod companion_map;
 mod companion_policy;
 mod companion_select;
 mod skip_policy;
@@ -47,6 +48,10 @@ fn selection_receipt(sequence:u64,item:i32,state:&str) {
     if sequence==0 {return;}
     let mut last=SELECT_STATUS.get_or_init(||Mutex::new(serde_json::json!({}))).lock().unwrap_or_else(|e|e.into_inner());
     if last.get("sequence").and_then(serde_json::Value::as_u64).unwrap_or(0)>sequence {return;}
+    if last.get("sequence").and_then(serde_json::Value::as_u64)==Some(sequence)
+        && last.get("item").and_then(serde_json::Value::as_i64)==Some(item as i64)
+        && last.get("state").and_then(serde_json::Value::as_str)==Some(state)
+        && last.get("stage").and_then(serde_json::Value::as_str)==Some(state) {return;}
     *last=serde_json::json!({"sequence":sequence,"item":item,"state":state,"stage":state});
 }
 fn selection_snapshot()->serde_json::Value {
@@ -60,7 +65,7 @@ pub(super) struct Snapshot {
 }
 impl Default for Snapshot {
     fn default() -> Self {
-        Self { wheel: Arc::from(r#"{"protocol":2,"generation":0,"enabled":false,"mode":0,"menu":false,"transition":false,"box":[0,0,256,256],"glyphs":[],"pages":[{"slots":[],"draws":[]},{"slots":[],"draws":[]}]}"#), companion: Arc::from(r#"{"menu":false,"mode":0,"transition":false,"map":[],"prims":[],"panels":[],"objectives":[],"textures":0}"#), icons: HashMap::new(), selection: Vec::new(), generation: 0, enabled: false }
+        Self { wheel: Arc::from(r#"{"protocol":2,"generation":0,"enabled":false,"world":false,"mode":0,"menu":false,"transition":false,"box":[0,0,256,256],"glyphs":[],"pages":[{"slots":[],"draws":[]},{"slots":[],"draws":[]}]}"#), companion: Arc::from(r#"{"menu":false,"mode":0,"transition":false,"map":[],"prims":[],"panels":[],"objectives":[],"textures":0}"#), icons: HashMap::new(), selection: Vec::new(), generation: 0, enabled: false }
     }
 }
 #[derive(Clone, Copy, Debug)]

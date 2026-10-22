@@ -3,6 +3,10 @@
 mod companion_menu;
 #[path = "../../rc-engine/src/touch_input.rs"]
 mod touch_input;
+#[path = "../../rc-engine/src/android/companion_map.rs"]
+mod companion_map;
+#[path = "../../rc-engine/src/android/companion_policy.rs"]
+mod companion_policy;
 use rc_game::{game_state::GameState, menus::{MenuAssets, MenuInput, Overlay, pause::*}, pad::button};
 use rc_formats::{font::Glyph, save_game::ChunkTables, strings::Message};
 use std::collections::BTreeMap;
@@ -69,6 +73,55 @@ fn fixture()->(PageMenu,MenuAssets) {
     (m,MenuAssets::new(hud,Overlay::default()))
 }
 fn press(bits:u32)->MenuInput {MenuInput{pressed_u:bits,raw_pressed:bits,held_u:bits,connected:true,..Default::default()}}
+
+fn map_fixture() -> (PageMenu,MenuAssets,GameState) {
+    use rc_game::map::{MapFile,Mask,SIZE};use std::sync::Arc;
+    let (mut menu,assets)=fixture();
+    let fog=552;let revealed=fog+SIZE*SIZE;let palette=revealed+SIZE*SIZE;let end=palette+0x420;
+    let mut bytes=vec![0;end];bytes[fog..revealed].fill(1);bytes[revealed..palette].fill(2);
+    for i in 0..256 {bytes[palette+0x20+i*4..palette+0x24+i*4].copy_from_slice(&[i as u8,255-i as u8,0,128]);}
+    let file=MapFile{bytes:Arc::new(bytes),hdr:[32,552,fog,revealed,palette,end,end,end]};
+    menu.dest=1;menu.map.state.level=1;menu.map.state.file=Some(file.clone());menu.map.state.mask=Mask::empty();menu.map.available=true;
+    menu.map.loader=map_page::Loader(Some(Arc::new(move |_|Some(file.clone()))));
+    let game=GameState::zeroed(ChunkTables{global:Vec::new(),level:Vec::new()});
+    (menu,assets,game)
+}
+
+#[test]
+fn companion_map_reuses_pixels_but_keeps_camera_and_native_draws_live() {
+    use std::sync::Arc;
+    let (mut cached,assets,game)=map_fixture();let mut baseline=cached.clone();
+    let mut cache=companion_map::ImageCache::default();
+    assert!(cache.refresh(&mut cached,&game));let picture=cached.map.picture.clone().unwrap();
+    let pixels=companion_map::android_pixels(&picture);
+    assert_eq!(&pixels[..2],&[512,512]);assert_eq!(pixels.len(),512*512+2);assert_eq!(pixels[2] as u32,0xff02fd00);
+    for frame in 0..20 {
+        for m in [&mut cached,&mut baseline] {
+            m.map.hero.pos=[frame as f32,frame as f32*2.,3.];m.map.hero.yaw=frame as f32/10.;
+            m.map.state.view[1].pan=[frame*1000,frame*2000];m.map.state.view[1].zoom=1.+frame as f32/40.;m.map.mirror=frame%2==0;
+            map_page::enter(m,&game);
+        }
+        baseline.map.shown=-2;map_page::compose(&mut baseline,&game);
+        assert!(!cache.refresh(&mut cached,&game));assert!(Arc::ptr_eq(&picture,cached.map.picture.as_ref().unwrap()));
+        baseline.map.composed=cached.map.composed;
+        assert_eq!(cached.map.picture.as_ref().unwrap().rgba,baseline.map.picture.as_ref().unwrap().rgba);
+        let (mut a,mut b)=(Vec::new(),Vec::new());map_page::draw(&mut cached,1,&assets,&game,&mut a);map_page::draw(&mut baseline,1,&assets,&game,&mut b);assert_eq!(a,b);
+    }
+}
+
+#[test]
+fn companion_map_invalidates_for_fog_palette_file_and_map_o_matic() {
+    use std::sync::Arc;
+    let (mut menu,_,game)=map_fixture();let mut cache=companion_map::ImageCache::default();assert!(cache.refresh(&mut menu,&game));
+    let original=menu.map.picture.clone().unwrap();menu.map.state.mask.set(0,0,true);
+    assert!(cache.refresh(&mut menu,&game));assert_ne!(original.rgba,menu.map.picture.as_ref().unwrap().rgba);
+    let mut palette=menu.map.state.file.as_ref().unwrap().palette().to_vec();palette[4]=7;menu.map.palettes.resize(2,None);menu.map.palettes[1]=Some(palette);
+    assert!(cache.refresh(&mut menu,&game));assert!(!cache.refresh(&mut menu,&game));
+    let file=menu.map.state.file.as_mut().unwrap();file.bytes=Arc::new(file.bytes.as_ref().clone());
+    assert!(cache.refresh(&mut menu,&game));menu.map.state.map_o_matic=true;assert!(cache.refresh(&mut menu,&game));
+    menu.map.picture=None;assert!(cache.refresh(&mut menu,&game));
+    assert_ne!(companion_map::image_revision(7),7);
+}
 
 #[test]
 fn mobile_triangle_backs_out_of_a_page_then_resumes_from_root() {

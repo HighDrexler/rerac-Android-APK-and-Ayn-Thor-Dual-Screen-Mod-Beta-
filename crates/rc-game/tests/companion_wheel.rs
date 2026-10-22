@@ -69,6 +69,17 @@ fn sprites(q:&QuickSelect,g:&Global,tick:u64)->Vec<(usize,i32,i32,i32,i32,i32)> 
 #[test] fn absent_equipment_and_empty_slots_have_no_false_cursor(){
     for held in [0,8,12] {let(q,g)=companion_wheel::page(&ring(),&[10,0],&Global::zeroed(),held,None);assert_eq!(q.sel,-1);assert!(!sprites(&q,&g,0).iter().any(|s|s.0==2));}
 }
+#[test] fn reused_page_projection_matches_fresh_copies_and_does_not_mutate_game(){
+    let source=ring();let mut global=Global::zeroed();global.quick_select=[11;8];global.ammo[10]=12;
+    let (mut shared,mut local)=companion_wheel::page(&source,&[10,12],&global,10,None);
+    for page in [&[10,12][..],&[0,0,15][..],&[10,11,12,13,14,15,16,17][..],&[][..]] {
+        companion_wheel::prepare(&mut shared,page,&mut local,10,None);
+        let (fresh,state)=companion_wheel::page(&source,page,&global,10,None);
+        assert_eq!(local.quick_select,state.quick_select);assert_eq!(shared.sel,fresh.sel);
+        let (mut a,mut b)=(vec![],vec![]);shared.draw(&assets(),&local,8,1,&mut a);fresh.draw(&assets(),&state,8,1,&mut b);assert_eq!(a,b);
+        assert_eq!(global.quick_select,[11;8]);assert_eq!(global.ammo[10],12);
+    }
+}
 #[test] fn clank_command_uses_original_command_cursor(){
     let mut q=ring();let mut entries=[Entry::default();CMD_SLOTS];
     for(i,e) in entries.iter_mut().enumerate(){e.item=i as i32+1;e.icon=30035;}

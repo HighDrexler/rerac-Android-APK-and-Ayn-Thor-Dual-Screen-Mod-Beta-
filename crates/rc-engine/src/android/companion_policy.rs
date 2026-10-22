@@ -11,6 +11,10 @@ pub fn display_mode(mode:i32,front_end:bool)->(bool,u32) {
     (visible_menu,touch)
 }
 
+/// World visibility is independent of whether Ratchet's hand may accept a
+/// weapon change (ledge hangs, ambient quips and interaction ownership).
+pub fn world_visible(mode:i32,front_end:bool)->bool { !front_end && matches!(mode,0|5) }
+
 /// The Java title screen already provides its Start/Load text. Native glyphs
 /// from the game title must not draw a second overlapping copy underneath.
 pub fn native_frontend_primitive(title_only:bool,is_font:bool)->bool { !title_only || !is_font }
@@ -24,6 +28,10 @@ pub fn title_only(front_end:bool,mode:Option<i32>)->bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn gameplay_and_vendor_keep_the_world_companion(){
+        for mode in [0,5] {assert!(world_visible(mode,false));assert!(!world_visible(mode,true));}
+        for mode in [-1,1,2,3,4,6,7] {assert!(!world_visible(mode,false));}
+    }
     #[test] fn cutscene_and_dialogue_keep_companion_active(){
         assert_eq!(display_mode(2,false),(true,1));
         assert_eq!(display_mode(4,false),(true,1));

@@ -2,6 +2,8 @@
 //! lifecycle, including actual put-away, deletion, creation, and a ready item.
 #[path = "../../rc-engine/src/android/companion_select.rs"]
 mod companion_select;
+#[path = "../../rc-engine/src/android/companion_policy.rs"]
+mod companion_policy;
 
 use companion_select::{Controller, Stage};
 use rc_formats::moby_anim::{MobyAnimClass, MobyFrame, MobyFrameHeader, MobySequence, MobySequenceHeader};
@@ -9,6 +11,14 @@ use rc_game::game_state::{Global, SessionState};
 use rc_game::hero::{anim::RecordingAnim, items::{items_update, ItemClass, ItemData, ItemDef, ItemEnv, ItemGlobals, NoHits}, Hero};
 use rc_game::menus::quick_select::HeroGate;
 use rc_game::{moby_runtime::MobyTable, pad::PadState, rng::Rng};
+
+#[test]
+fn keeping_the_map_visible_does_not_relax_weapon_or_interaction_guards() {
+    for gate in [HeroGate{b13fc:1,..Default::default()},HeroGate{b13f7:1,..Default::default()},HeroGate{f594:1,..Default::default()},HeroGate{b13f4:2,..Default::default()},HeroGate{early_exit:true,..Default::default()}] {
+        assert!(companion_policy::world_visible(0,false));
+        assert!(!companion_select::allowed(&gate));
+    }
+}
 
 fn data() -> ItemData {
     let frame = MobyFrame { header: MobyFrameHeader { rate: 1.0, ..Default::default() },
