@@ -1,5 +1,12 @@
 # Changelog
-## Android launcher 1.1
+## Android launcher 1.1 — corrected build 38
+
+- Mobile pause-menu Back now delivers a fresh Triangle press, allowing touch users to leave submenus and resume from the root without a controller. Held gameplay wheel gestures cannot immediately close pause.
+- Restore all 30 companion skill-point descriptions from the original game’s description table, with the existing expandable list presentation.
+- Reuse unchanged parsed companion snapshots to reduce UI CPU and allocation overhead, preserving retry and generation-change behavior.
+- Preserve the signing key/package, 1.1 display version, native quick-select presentation, both Android architectures and in-place updater. Download through `update-channel3` at a new immutable `builds/v1_1_r2` URL. No Release is created.
+
+## Android launcher 1.1 — initial build 37
 
 - Restore RAC1's native quick-select cursor pulse, selected-icon brightness, weapon name and ammo, including extra pages and Clank commands.
 - Preserve contact activation, stale-map precedence, lost-release recovery and cancellation cleanup from the owner-confirmed beta19 build.

@@ -1,6 +1,6 @@
 # Android native integration
 
-Launcher 1.1 uses source-built ReRAC 0.3.6 engines for ARM64 and x86-64. The native libraries embed their actual source revision, upstream revision, ABI and minimum Android API. The exact hashes and revision are in `builds/v1_1/build.json`.
+Launcher 1.1 uses source-built ReRAC 0.3.6 engines for ARM64 and x86-64. The native libraries embed their actual source revision, upstream revision, ABI and minimum Android API. The exact hashes and revision are in `builds/v1_1_r2/build.json`.
 
 The current branch build is `.github/workflows/build-branch.yml`; signed verification is `.github/workflows/publish-branch.yml`. Both operate on `update-channel3`. See [the update process](../UPDATE_PROCESS.md). Historical beta publication workflows and their receipts were removed; Git history preserves the investigation record.
 
