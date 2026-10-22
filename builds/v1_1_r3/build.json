@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "launcher_version": "1.1",
+  "version_code": 39,
+  "core_version": "0.3.6",
+  "package_id": "org.rerac.android.ui035test",
+  "signer_sha256": "57188113b5796632a7d4db37622abf7c4d2fb3d9b0bccdc9830b01560ee0f81e",
+  "sha256": "b98774fe15d822e461e37839c224ce21503f6884aa123069a26a68b4188b579d",
+  "bytes": 254655401,
+  "archive_sha256": "81aab5f9dd2987258a34ef7b46a52b2009d8a879c495fca0fccdb8611ed8d1ce",
+  "archive_bytes": 78849375,
+  "apk_url": "https://raw.githubusercontent.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/update-channel3/builds/v1_1_r3/ReRAC-Android-1.1.apk.zip",
+  "native_source_sha": "7983695dc507835df5df642f5cfb5a965830137c",
+  "native_sha256": {
+    "lib/arm64-v8a/librc_engine.so": "125d3193d94c7bb68c5e531344161c985e0406ed37e7bdbc882f78e03a7a1772",
+    "lib/arm64-v8a/librc_extract.so": "2c2d849308dfcb167349246d50d4a8526500e678df02ae8a8b6d431a21e39a79",
+    "lib/x86_64/librc_engine.so": "410d6c3b8edb44655a75f8335cbe998851af89f9d64684076ca5c2795248759c",
+    "lib/x86_64/librc_extract.so": "b3ea84cd0ebe49879b542cb3d0a0a1c18a090c36ca318975cb5001615b2feecf"
+  }
+}
