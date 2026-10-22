@@ -1,10 +1,10 @@
-//! Repository-layout guards (dev only, never ships; tests in `tests/guards.rs`, doc `tools/repo-checks/README.md`
-//! and `docs/plan/repo_reorg.md`). Plain text reads, no dependencies.
+//! Repository-layout guards (dev only; tests in `tests/guards.rs`, doc `tools/repo-checks/README.md`).
+//! Plain text reads, no dependencies.
 //!
 //! 1. No product crate (`crates/*/Cargo.toml`) depends on anything under `tools/`.
 //! 2. No test and no product file names personal material or dev output ([`PERSONAL_PATTERNS`]; test files also
-//!    [`TEST_ONLY_PATTERNS`]). No allow-list: tests never rely on the user's personal files (docs/workflows/testing.md §10).
-//! 3. The top level holds only the agreed folders ([`TOP_LEVEL_DIRS`]), dotfiles and the Cargo / README / CHANGELOG / LICENSE files.
+//!    [`TEST_ONLY_PATTERNS`]). No allow-list: tests never rely on the user's personal files (docs/workflows/testing.md).
+//! 3. The top level holds only the agreed folders ([`TOP_LEVEL_DIRS`]), dotfiles and the Cargo / README / LICENSE files.
 //! 4. Tests run only through `cargo xtask test-*` (docs/workflows/testing.md §1): no Cargo alias runs tests, and no doc
 //!    or source comment recommends the retired alias or a by-hand `cargo test` ([`stale_test_command_hits`]).
 
@@ -16,7 +16,7 @@ pub fn repo_root() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("
 /// Allowed top-level folders.
 pub const TOP_LEVEL_DIRS: &[&str] = &["crates", "tools", "docs", "extracted", "work", "target", "dist"];
 /// Allowed top-level files (besides dotfiles).
-pub const TOP_LEVEL_FILES: &[&str] = &["Cargo.toml", "Cargo.lock", "README.md", "CHANGELOG.md", "LICENSE"];
+pub const TOP_LEVEL_FILES: &[&str] = &["Cargo.toml", "Cargo.lock", "README.md", "LICENSE"];
 
 /// Text no product or test file may contain: savestates, the personal folder, dev output, recordings, the personal
 /// env var. `work/`, `/traces/` and `.mov` count only as a path segment / extension ([`personal_hits`]).
@@ -29,8 +29,7 @@ pub const TEST_ONLY_PATTERNS: &[&str] = &["var(\"RC_ISO\")", "var_os(\"RC_ISO\")
 
 /// The folders the personal-path guard scans, repo-relative: all of `crates/` (product sources and their tests) and
 /// every tool's `tests/` folder. Tool sources (`tools/*/src`) are deliberately not scanned: the dev tools read personal
-/// material by design (`rc-trace`: savestates and recordings in the personal folder, output under `work/`; `xtask
-/// regen-data`: the disc image), and they never ship.
+/// material by design (`xtask regen-data`: the disc image), and they never ship.
 pub fn guarded_dirs(root: &Path) -> Vec<PathBuf> {
     let mut out = vec![root.join("crates")];
     if let Ok(rd) = std::fs::read_dir(root.join("tools")) {
@@ -122,10 +121,9 @@ pub const BY_HAND_TEST_COMMANDS: &[&str] = &["cargo test --workspace", "cargo te
 /// Words that mark a line as explaining why not (or naming the xtask fallback's flags), not recommending.
 pub const EXPLAINING_WORDS: &[&str] = &["plain", "never", "Never", "by-hand", "rc-engine/dev"];
 
-/// The workflow docs: where commands are recommended (README.md, docs/workflows/, the orchestration handbook, the tool
-/// READMEs). Plan docs elsewhere keep their historical records.
+/// The workflow docs: where commands are recommended (README.md, docs/workflows/, the tool READMEs).
 pub fn is_workflow_doc(rel: &str) -> bool {
-    rel == "README.md" || rel.starts_with("docs/workflows/") || rel == "docs/plan/orchestration.md" || (rel.starts_with("tools/") && rel.ends_with("/README.md"))
+    rel == "README.md" || rel.starts_with("docs/workflows/") || (rel.starts_with("tools/") && rel.ends_with("/README.md"))
 }
 
 /// Stale test commands on one line of `rel` (rule 4): the retired alias anywhere (a line about the alias itself, naming

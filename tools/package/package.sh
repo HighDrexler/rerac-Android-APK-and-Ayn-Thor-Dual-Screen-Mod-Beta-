@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a ReRAC version folder and zips it (launcher contract: docs/plan/launcher_contract.md).
+# Builds a local ReRAC version folder and ZIP (tools/package/README.md).
 #
 #   tools/package/package.sh              release build of `rerac` + `rerac-extract`, then package
 #   tools/package/package.sh --no-build   package the binaries already in target/release

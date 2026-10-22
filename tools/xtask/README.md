@@ -8,7 +8,7 @@ dependencies: it shells out to `cargo` and to `tools/package/package.sh`, so bui
 |---|---|
 | `cargo xtask help` | Lists the commands (also `cargo xtask` alone). |
 | `cargo xtask regen-data` | Rebuilds the dev game data folder `extracted/` from your disc image (below). |
-| `cargo xtask package [--no-build]` | Runs `tools/package/package.sh` with the same arguments (`docs/workflows/release.md`). |
+| `cargo xtask package [--no-build]` | Runs `tools/package/package.sh` with the same arguments (`tools/package/README.md`). |
 | `cargo xtask test-quick [crate]` | Unit tests of every crate (`--lib --bins`); with nextest, a crate name runs only its. |
 | `cargo xtask test-job <area…>` | A job's test tier: the unit tests plus each area's integration binaries (below). |
 | `cargo xtask test-job --test <binary>…` | One or more integration binaries alone (no unit tests, no digest). |
@@ -18,7 +18,7 @@ dependencies: it shells out to `cargo` and to `tools/package/package.sh`, so bui
 
 ## The test commands
 
-The tiers of `docs/workflows/testing.md` §2 (the doc has the policy; this is the mechanics). They are the only way to
+The tiers of `docs/workflows/testing.md` (the doc has the policy; this is the mechanics). They are the only way to
 run tests in this repo: there is no Cargo test alias, and `cargo test` / `cargo nextest` are never run by hand.
 Every test command:
 * sets `RC_AUDIO=0` and runs from the repo root (other variables, e.g. `RC_SNAPSHOT_WRITE=1`, pass through);
@@ -44,10 +44,10 @@ hero --filter hero_novalis::novalis_hero_digest --exact`, `cargo xtask test-job 
 creature_classes:: --ignored --nocapture`. A filtered or `--ignored` `test-job shared` skips the digest; `test-full`
 takes no targeting options.
 
-The areas of `test-job` are the table `AREAS` in `src/test.rs` (testing.md §3 documents it): `hero`, `weapons`,
+The areas of `test-job` are the table `AREAS` in `src/test.rs` (testing.md documents it): `hero`, `weapons`,
 `classes` (`creatures`, `mobys`), `world` (`levels`, `collision`, `water`), `ui` (`menus`, `hud`, `map`, `save`,
 `vendor`), `audio` (the two conformance modules of `ui` and one Ryno test of `weapons`), `formats`, `data`, `extract`,
-`video` (`movies`), `engine` (`render`, `input`; unit tests only), `trace`, `repo` (`guards`, `layout`), and `shared`:
+`video` (`movies`), `engine` (`render`, `input`; unit tests only), `repo` (`guards`, `layout`), and `shared`:
 the all-levels smoke plus the NO_IDLE hero digest, written to `work/test-results/digest_job.txt` and compared byte
 for byte with the baseline (missing baseline: the step fails and says to run `digest-baseline`). With nextest a job is
 one run with a filterset; with `cargo test` it is one run for the whole binaries plus one per filtered part.
@@ -64,7 +64,7 @@ on the workspace's `target/`. The limit defaults to 30 GB; sizes take a unit: `3
 before and after and the build units removed (`--dry-run`: would remove). It refuses (exit 1) while any `cargo`,
 `rustc` or `cargo-nextest` other than its own ancestors runs (`ps -axo pid,ppid,comm`), and exits 0 with the install
 line (`cargo install cargo-sweep --locked`) when cargo-sweep is missing. `test-full` calls it last and only warns on a
-refusal or failure. What it removes and what it never touches: `docs/workflows/testing.md` §9.
+refusal or failure. It only removes compiled build output, never extracted game data or source files.
 
 
 

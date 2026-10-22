@@ -1,4 +1,4 @@
-//! Repository-layout guards (docs/plan/repo_reorg.md "Rules"). Read-only; no data needed.
+//! Repository-layout guards (tools/repo-checks/README.md). Read-only; no data needed.
 
 use repo_checks::*;
 use std::path::Path;
@@ -16,7 +16,7 @@ fn product_crates_do_not_depend_on_tools() {
         let dir = Path::new("crates").join(e.file_name());
         for p in tool_dependencies(&dir, &text) { bad.push(format!("{}: path = {p:?}", manifest.display())); }
         // A workspace-inherited or git dependency naming a tool package would also be a dependency on tools/.
-        for tool in ["rc-trace", "repo-checks", "xtask"] {
+        for tool in ["repo-checks", "xtask"] {
             if text.lines().any(|l| l.trim_start().starts_with(&format!("{tool} ")) || l.trim_start().starts_with(&format!("{tool}="))) {
                 bad.push(format!("{}: depends on the tool package {tool}", manifest.display()));
             }
@@ -29,12 +29,12 @@ fn product_crates_do_not_depend_on_tools() {
 /// The manifest scan itself: a path under tools/ is caught, product paths are not.
 #[test]
 fn manifest_scan_catches_a_tool_path() {
-    let toml = "[dependencies]\nrc-formats = { path = \"../rc-formats\" }\nrc-trace = { path = \"../../tools/trace\" } # dev\n[lib]\npath = \"src/lib.rs\"\n";
-    assert_eq!(manifest_paths(toml), ["../rc-formats", "../../tools/trace", "src/lib.rs"]);
-    assert_eq!(tool_dependencies(Path::new("crates/rc-game"), toml), ["../../tools/trace"]);
+    let toml = "[dependencies]\nrc-formats = { path = \"../rc-formats\" }\nrepo-checks = { path = \"../../tools/repo-checks\" } # dev\n[lib]\npath = \"src/lib.rs\"\n";
+    assert_eq!(manifest_paths(toml), ["../rc-formats", "../../tools/repo-checks", "src/lib.rs"]);
+    assert_eq!(tool_dependencies(Path::new("crates/rc-game"), toml), ["../../tools/repo-checks"]);
 }
 
-/// Rule: no test relies on the user's personal files, and no product file names them (docs/workflows/testing.md §10):
+/// Rule: no test relies on the user's personal files, and no product file names them (docs/workflows/testing.md):
 /// every file under `crates/` and every tool's `tests/` folder is free of [`PERSONAL_PATTERNS`], and test files also
 /// of [`TEST_ONLY_PATTERNS`] (reading the disc image or the home folder). No exceptions.
 #[test]
@@ -56,7 +56,7 @@ fn no_test_or_product_file_references_personal_paths() {
         }
     }
     assert!(scanned > 100, "scanned only {scanned} files");
-    assert!(hits.is_empty(), "test / product files reference personal paths (docs/workflows/testing.md §10):\n{}", hits.join("\n"));
+    assert!(hits.is_empty(), "test / product files reference personal paths (docs/workflows/testing.md):\n{}", hits.join("\n"));
 }
 
 /// The scanned folders: all of crates/ and the tools' tests/, never a tool's src/.
@@ -65,9 +65,9 @@ fn guard_scans_crates_and_tool_tests() {
     let root = repo_root();
     let dirs: Vec<String> = guarded_dirs(&root).iter().map(|d| d.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/")).collect();
     assert_eq!(dirs[0], "crates");
-    for t in ["tools/repo-checks/tests", "tools/trace/tests"] { assert!(dirs.iter().any(|d| d == t), "{t} not scanned: {dirs:?}"); }
+    for t in ["tools/repo-checks/tests"] { assert!(dirs.iter().any(|d| d == t), "{t} not scanned: {dirs:?}"); }
     assert!(dirs.iter().all(|d| d == "crates" || d.ends_with("/tests")), "{dirs:?}");
-    assert!(is_test_file("crates/rc-game/tests/hero/hero_novalis.rs") && is_test_file("tools/trace/tests/trace/main.rs"));
+    assert!(is_test_file("crates/rc-game/tests/hero/hero_novalis.rs") && is_test_file("tools/repo-checks/tests/guards.rs"));
     assert!(!is_test_file("crates/rc-extract/src/main.rs"));
 }
 
@@ -88,7 +88,7 @@ fn personal_patterns_match_segments_only() {
 }
 
 /// Rule: the top level holds only crates tools docs extracted work target dist, dotfiles, and the Cargo /
-/// README / CHANGELOG / LICENSE files.
+/// README / LICENSE files.
 #[test]
 fn top_level_holds_only_the_agreed_folders() {
     let root = repo_root();
@@ -134,8 +134,8 @@ fn stale_test_command_matcher() {
     let ws = format!("cargo test --{}", "workspace");
     assert_eq!(stale_test_command_hits("README.md", &format!("Run `{ws}`.")).len(), 1);
     assert!(stale_test_command_hits("README.md", &format!("plain `{ws}` rebuilds Bevy")).is_empty());
-    assert!(stale_test_command_hits("docs/plan/particles.md", &format!("`{ws}` green")).is_empty(), "plan records are history");
+    assert!(stale_test_command_hits("docs/formats/pss.md", &format!("`{ws}` green")).is_empty(), "format references are not workflow instructions");
     assert_eq!(stale_test_command_hits(".cargo/config.toml", &format!("t{} = \"test --workspace\"", "a")).len(), 1);
     assert!(stale_test_command_hits(".cargo/config.toml", "check-all = \"check --workspace --all-targets\"").is_empty());
-    assert!(is_workflow_doc("tools/trace/README.md") && !is_workflow_doc("docs/plan/particles.md"));
+    assert!(is_workflow_doc("tools/repo-checks/README.md") && !is_workflow_doc("docs/formats/pss.md"));
 }

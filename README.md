@@ -4,7 +4,7 @@ Android and AYN Thor dual-screen adaptation of **Ratchet & Clank (2002)**, based
 
 **[Download the current Android release (v1.0 Beta)](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/releases/tag/v1.1)**
 
-See the [editable launcher source on dev](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/tree/dev/android/launcher) and [release/update instructions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/blob/dev/android/RELEASE_PROCESS.md).
+The current Android launcher and native build source are maintained on [update-channel3](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/tree/update-channel3). See its [launcher source](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/tree/update-channel3/android/launcher) and [branch update instructions](https://github.com/HighDrexler/rerac-Android-APK-and-Ayn-Thor-Dual-Screen-Mod-Beta-/blob/update-channel3/android/UPDATE_PROCESS.md).
 
 ## Android and dual-screen features
 
@@ -23,3 +23,9 @@ Install the APK from the ZIP linked above. In the launcher, import a supported o
 No copyrighted game content is supplied. Saves are stored separately from imported game data. Android gameplay and cutscene performance can vary with device and graphics drivers.
 
 Original ReRAC project and license: [re-rac/rerac](https://github.com/re-rac/rerac). This adaptation is an unofficial community project.
+
+## Native source on main
+
+`main` retains the native source base and its build/test inputs. Its Cargo version describes that source, not the current Android launcher. Build the runtime and extractor with `cargo build --release --locked -p rc-engine -p rc-extract --bins`; the runtime also needs the shaders in `crates/rc-engine/assets`.
+
+See [game-data setup](docs/workflows/game-data.md), [testing](docs/workflows/testing.md), [native packaging](tools/package/README.md) and [runtime switches](docs/workflows/dev-switches.md). File-format references are under `docs/formats`. Historical plans, test-request logs and retired investigation tools remain available in Git history.

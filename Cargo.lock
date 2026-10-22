@@ -4419,18 +4419,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rc-trace"
-version = "0.3.4"
-dependencies = [
- "anyhow",
- "miniz_oxide 0.8.9",
- "rc-extract",
- "rc-formats",
- "rc-game",
- "ruzstd",
-]
-
-[[package]]
 name = "rc-video"
 version = "0.3.4"
 dependencies = [

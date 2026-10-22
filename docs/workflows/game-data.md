@@ -1,102 +1,32 @@
-# Workflow: game data (extract, verify, prepare, export)
+# Game data
 
-Tool: `rerac-extract` (product crate `crates/rc-extract`; the launcher runs the same binary). Layout of a data
-folder: `docs/plan/launcher_extractor.md` §4.1. All commands run from the repo root with
-`export PATH="/opt/homebrew/opt/rustup/bin:$PATH"`; `RC_ISO` can stand in for `--iso`.
+The project supplies no game data. Use an original USA v1.00 Ratchet & Clank disc image (SCUS-97199).
 
-## The commands
+## Extract and verify
 
-| Task | Command |
-|---|---|
-| Identify a disc image | `cargo run --release -p rc-extract -- identify --iso "<disc>.iso"` |
-| Extract (Tier 0 archive, then the engine cache) | `cargo run --release -p rc-extract -- extract --iso "<disc>.iso" --out <data folder>` |
-| Verify a data folder against the built-in size/SHA-1 table | `cargo run --release -p rc-extract -- verify --out <data folder>` |
-| Rebuild the engine cache (`<data folder>/cache/v1`) | `cargo run --release -p rc-extract -- prepare --out <data folder>` |
-| Export usable formats (PNG, WAV, glTF, JSON) | `cargo run --release -p rc-extract -- export --out <data folder> --to work/exports` |
+Run from the repository root:
 
-`export` defaults to `<data folder>/exports/`; for dev work send it to `work/exports/` (git-ignored) so `extracted/`
-stays game data only.
-
-## The development data folder: `extracted/`
-
-Tests, `rc-trace` and `cargo dev` read `<repo>/extracted` (`RC_EXTRACTED` overrides it). **The one command to
-(re)build it:**
-
-```
-cargo xtask regen-data
+```sh
+cargo run --release -p rc-extract -- identify --iso "<disc>.iso"
+cargo run --release -p rc-extract -- extract --iso "<disc>.iso" --out extracted
+cargo run --release -p rc-extract -- verify --out extracted
+cargo run --release -p rc-engine -- --data-dir extracted
 ```
 
-It needs the disc image: set `RC_ISO` once (fish: `set -Ux RC_ISO "<disc>.iso"`; zsh / bash: an
-`export RC_ISO="<disc>.iso"` line in `~/.zshrc` / `~/.bashrc`; without it the command prints these lines with your
-disc's path), or pass `--iso <disc>.iso`. It lists what `extracted/` holds, builds the dev `rerac-extract`, extracts
-into `work/data-staging`, verifies it, and only then swaps it in and deletes the old folder, so a failure never
-leaves you without data. About 8 s; the new data is about 4.4 GiB (3,072 files: 2,937 Tier 0 files,
-`extract-info.json`, a 438 MiB engine cache). `cargo xtask regen-data --check` only lists what the folder holds.
-Details and exit codes: `tools/xtask/README.md`.
+The extractor verifies supported files against its committed size/SHA-1 table and prepares `cache/v1`. Rebuild the cache without rereading the disc with `cargo run --release -p rc-extract -- prepare --out extracted`. The runtime rebuilds missing or stale cache entries; `RC_CACHE=0` bypasses that cache.
 
-The retired C++ extractor's leftovers (`.dec` copies, `*_dump.bin`, `core/` / `gameplay/` / `textures/` splits,
-PNG / OBJ previews, `overlay.elf` / `overlay.txt`, `vu/`) are read by nothing; the overlay ELFs and VU listings were
-copied to `work/ghidra-import/` and `work/vu/` on 2026-09-27. `regen-data` recognises them, lists their counts and
-deletes them with the old folder. Any other file stops it (move it to `work/` or `~/PS2/ratchet1/`, or pass
-`--force` to delete it).
+`cargo xtask regen-data --iso "<disc>.iso"` safely rebuilds the development data folder: classify its existing contents, extract into staging, verify, then swap. Unknown files stop it. `--check` only lists contents. See [the task tool](../../tools/xtask/README.md) for options and safety checks.
 
-**What may live in `extracted/`:** only what `rerac-extract` writes: the Tier 0 archive (`toc.bin`, `boot/`,
-`global/`, `levels/NN/*.bin` and their `bindata/ music/ speech/ scene/` folders, `extract-info.json`) and the engine
-cache `cache/`. **What may not:** trace dumps, savestates, reports, captures, exports, Ghidra material, anything a dev
-tool writes. Those go to `work/` (generated) or `~/PS2/ratchet1/` (personal).
+## Paths
 
-## How the engine finds its data
+The runtime chooses its data folder from `--data-dir`, then `RC_DATA_DIR`, then `RC_EXTRACTED`, then `<repo>/extracted`. Tests use `RC_EXTRACTED` or that development default. A data folder contains the extractor's archive, `extract-info.json`, and generated cache. Keep personal and generated data out of Git; the repository ignores `extracted/`, `iso/`, `assets/`, `out/` and `work/`.
 
-The engine never reads the disc image; it reads only a data folder that `rerac-extract` wrote (layout:
-`docs/plan/launcher_extractor.md` §4.1; contract: `docs/plan/launcher_contract.md`).
+`rerac --version-json` reports the native source version without opening a window or reading game data. The runtime's version is independent of the Android launcher version.
 
-```
-cargo dev -- --data-dir <data folder>     # or RC_DATA_DIR=<data folder> cargo dev
-cargo dev -- --version-json               # {"name":"rerac","version":"0.2.0","game":"rac1","data_format":1}
+## Optional exports
+
+```sh
+cargo run --release -p rc-extract -- export --out extracted --to work/exports
 ```
 
-The data folder is chosen in this order:
-
-1. `--data-dir <folder>` (also `--data-dir=<folder>`), how the launcher starts the game;
-2. `RC_DATA_DIR`;
-3. the development default: `RC_EXTRACTED`, else `<repo>/extracted` (a `rerac-extract` data folder, same layout).
-
-The folder must exist and hold `toc.bin`, and for 1 and 2 also the extractor's `extract-info.json` with a matching
-`data_format` (the development tree may lack it: one warning). Otherwise the engine prints one `error:` line saying
-what to do (re-extract via the launcher) and exits before opening a window: code 3 (folder missing, not a data folder,
-or extraction incomplete), code 4 (data format mismatch or unreadable `extract-info.json`), code 2 (`--data-dir`
-without a value). `--version-json` prints the contract line and exits without touching any data.
-
-## The engine cache (Tier 1)
-
-`extract` ends by building `<data folder>/cache/v1/` (stage `prepare`, about 0.2 s, 440 MiB): every level's core
-data, gameplay file and HUD banks, WAD-decompressed once, plus `stamp.toml`. `rerac-extract prepare --out <data
-folder>` rebuilds or refreshes it from the archive alone (no disc). The engine reads lumps through `rc-data` (once per
-process each); when the cache is missing, stale (stamp: cache version, converter versions, `extract-info.json` hash)
-or a lump is corrupt (XXH64 trailer), it rebuilds what it needs on the fly with one log line per lump, and falls back
-to in-memory decompression when the folder cannot be written. The development `extracted/` tree therefore gets
-`extracted/cache/v1/` on the first `cargo dev`. The folder can be deleted at any time. `RC_CACHE=0` skips it;
-`RC_PERF_LOG=1` prints where each lump came from.
-
-## Exports (Tier 2, optional)
-
-`rerac-extract export --out <data folder> [--to <dir>] [--what textures,audio,models,levels,collision,text|all]
-[--level NN]` writes usable formats from the archive (no disc): indexed PNG textures with JSON sidecars (original CLUT
-and GS format), WAV audio with loop points, glTF 2.0 levels, collision and skinned, animated moby models, and JSON
-tables and text. Default folder `<data folder>/exports/`; the full disc is about 60,000 files and 3.5 GiB in about
-10 s. The game never reads them; the launcher's "Export assets…" runs the same command. Layout and what is lossy:
-`docs/plan/launcher_extractor.md` §5.5; how mods will use them: `docs/plan/mods.md` §2.1a.
-
-## What tests read
-
-Tests and `rc-trace` read the development `extracted/` tree (`RC_EXTRACTED` overrides it;
-`rc_formats::test_data::root()`); they read only Tier 0 files, so any `rerac-extract` data folder works, and they
-skip when it is absent. Decompressed lumps, core blocks (`moby_class/NNNN`, `ratchet_seq/NNN`, …) and gameplay
-sections (`level_settings`, …) come from the Rust loaders (`rc_formats::test_data`). An `extracted/` tree written by
-the retired C++ extractor still works; its extra files are no longer read, and `cargo xtask regen-data` regenerates a
-clean tree (above).
-
-## Players
-
-Players never run these by hand: the launcher (docs/workflows/launcher.md) runs `extract` into its own data folder
-and starts the game with `--data-dir`.
+This writes PNG, WAV, glTF and JSON files for inspection. `--what` selects textures, audio, models, levels, collision or text; `--level NN` selects a level. The game does not consume these exports. Keep them under the ignored `work/` folder.

@@ -40,12 +40,12 @@ RC_AUDIO=0; cargo-nextest when installed, else `cargo test --workspace --feature
       The per-job tier: the unit tests plus the integration binaries of each area. Areas (aliases):
         hero, weapons, classes (creatures, mobys), world (levels, collision, water), ui (menus, hud, map, save,
         vendor), audio, formats, data, extract, video (movies), engine (render, input: unit tests only), particles
-        (fx: the ported classes' particle consumers), trace,
+        (fx: the ported classes' particle consumers),
         repo (guards, layout), shared (for shared code: the all-levels smoke, and the NO_IDLE hero digest
         compared with work/test-results/hero_digest_no_idle.txt).
       --test <binary>     also run this integration binary whole (repeatable); with no area, only the binaries
                           (no unit tests, no digest). Binaries: hero weapons classes world ui formats data extract
-                          movies trace guards.
+                          movies guards.
   test-full
       The full suite (on merge to main, or when the coordinator asks), then the NO_IDLE hero digest compared
       with the baseline; a mismatch fails. It never rewrites the baseline. Then `sweep` (a failure only warns).
